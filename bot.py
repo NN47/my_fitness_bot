@@ -512,7 +512,11 @@ async def delete_from_history_start(message: Message):
 
 
 # -------------------- run --------------------
-import nest_asyncio
 nest_asyncio.apply()
 
-await dp.start_polling(bot)
+async def main():
+    print("🚀 Бот запущен и готов к работе!")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
