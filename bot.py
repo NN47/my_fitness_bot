@@ -7,6 +7,20 @@ import os
 import json
 from datetime import date
 from dotenv import load_dotenv
+import threading
+import http.server
+import socketserver
+
+def start_keepalive_server():
+    PORT = 10000
+    handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), handler) as httpd:
+        print(f"✅ Keep-alive сервер запущен на порту {PORT}")
+        httpd.serve_forever()
+
+# Запуск мини-сервера в отдельном потоке
+threading.Thread(target=start_keepalive_server, daemon=True).start()
+
 
 load_dotenv()
 API_TOKEN = os.getenv("API_TOKEN")
