@@ -203,7 +203,7 @@ exercise_menu = ReplyKeyboardMarkup(
 
 my_data_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🏋️ Тренировки")],
+        [KeyboardButton(text="🏋️ История тренировок")],
         [KeyboardButton(text="⚖️ Вес")],
         [KeyboardButton(text="📏 Замеры")],
         [KeyboardButton(text="⬅️ Назад")]
@@ -562,7 +562,7 @@ async def go_back(message: Message):
 
 from sqlalchemy.orm import Session
 
-@dp.message(F.text == "История тренировок")
+@dp.message(F.text == "🏋️ История тренировок")
 async def my_workouts(message: Message):
     user_id = str(message.from_user.id)
     
