@@ -14,7 +14,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import date
 from sqlalchemy import create_engine, Column, Integer, String, Date, Float
-
+import random
+from datetime import datetime
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -99,13 +100,23 @@ def add_workout(user_id, exercise, variant, count):
 def get_today_summary_text(user_id: str) -> str:
     session = SessionLocal()
     today = date.today()
+    today_str = datetime.now().strftime("%d.%m.%Y")
+
+    greetings = [
+        "🔥 Новый день — новые победы!",
+        "🚀 Пора действовать!",
+        "💪 Сегодня ты становишься сильнее!",
+        "🌟 Всё получится, просто начни!",
+        "🏁 Вперёд к цели!"
+    ]
+    motivation = random.choice(greetings)
 
     # --- тренировки ---
     workouts = session.query(Workout).filter_by(user_id=user_id, date=today).all()
     if not workouts:
-        summary = "Сегодня тренировок пока нет 💭\n"
+        summary = f"Сегодня ({today_str}) тренировок пока нет 💭\n"
     else:
-        summary = "💪 Результаты за сегодня:\n"
+        summary = f"📅 {today_str}\n💪 События:\n"
         totals = {}
         for w in workouts:
             totals[w.exercise] = totals.get(w.exercise, 0) + w.count
@@ -120,12 +131,15 @@ def get_today_summary_text(user_id: str) -> str:
     # --- последние замеры ---
     m = session.query(Measurement).filter_by(user_id=user_id).order_by(Measurement.id.desc()).first()
     if m:
-        data = json.loads(m.data)
-        parts = [f"{k}={v} см" for k, v in data.items()]
-        summary += f"\n📏 Замеры ({m.date}): {', '.join(parts)}"
+        parts = []
+        if m.chest: parts.append(f"Грудь {m.chest} см")
+        if m.waist: parts.append(f"Талия {m.waist} см")
+        if m.hips: parts.append(f"Бёдра {m.hips} см")
+        if parts:
+            summary += f"\n📏 Замеры: {', '.join(parts)} ({m.date})"
 
     session.close()
-    return summary
+    return f"{motivation}\n\n{summary}"
 
 
 def add_weight(user_id, value):
@@ -155,7 +169,7 @@ def add_measurements(user_id, measurements: dict):
 # -------------------- keyboards --------------------
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Тренировки"), KeyboardButton(text="Мои данные")]
+        [KeyboardButton(text="💪Тренировки"), KeyboardButton(text="📊История событий")]
     ],
     resize_keyboard=True
 )
@@ -163,7 +177,7 @@ main_menu = ReplyKeyboardMarkup(
 
 activity_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Добавить упражнение")],
+        [KeyboardButton(text="💪Добавить упражнение")],
         [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
@@ -245,7 +259,16 @@ measurements_menu = ReplyKeyboardMarkup(
 async def start(message: Message):
     user_id = str(message.from_user.id)
     text = get_today_summary_text(user_id)
-    await message.answer(f"Привет! 👋\n\n{text}", reply_markup=main_menu)
+    name = message.from_user.first_name or "друг"
+    welcome = (
+        f"👋 Привет, {name}!\n"
+        f"Твой фитнес-помощник готов 💪\n\n"
+        f"{text}\n\n"
+        "Выбери действие ниже:"
+    )
+    await message.answer(welcome, reply_markup=main_menu)
+
+
 
 
 @dp.message(F.text == "Тренировки")
