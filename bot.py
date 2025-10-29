@@ -597,13 +597,7 @@ async def my_workouts(message: Message):
 
 
 
-@dp.message(F.text == "⚖️ Вес")
-async def my_weight(message: Message):
-    await message.answer("📊 Здесь будет твой вес (можно хранить/добавлять записи).")
 
-@dp.message(F.text == "📏 Замеры")
-async def my_measurements(message: Message):
-    await message.answer("📐 Здесь будут твои замеры (грудь, талия, руки и т.д.).")
 
 
 
