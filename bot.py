@@ -13,7 +13,8 @@ import socketserver
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import date
-from sqlalchemy import create_engine, Column, Integer, String, Date, Float
+from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func
+
 import random
 from datetime import datetime
 
