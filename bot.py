@@ -169,7 +169,7 @@ def add_measurements(user_id, measurements: dict):
 # -------------------- keyboards --------------------
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="💪Тренировки"), KeyboardButton(text="📊История событий")]
+        [KeyboardButton(text="🏋️ Тренировки"), KeyboardButton(text="📊История событий")]
     ],
     resize_keyboard=True
 )
@@ -271,7 +271,7 @@ async def start(message: Message):
 
 
 
-@dp.message(F.text == "Тренировки")
+@dp.message(F.text == "🏋️ Тренировки")
 async def workouts(message: Message):
     await message.answer("Выбери упражнение:", reply_markup=exercise_menu)
 
@@ -548,7 +548,7 @@ async def process_measurements(message: Message):
     await message.answer(f"✅ Замеры сохранены: {measurements}", reply_markup=measurements_menu)
 
 
-@dp.message(F.text == "Мои данные")
+@dp.message(F.text == "📊История событий")
 async def my_data(message: Message):
     await message.answer("Выбери, что посмотреть:", reply_markup=my_data_menu)
 
