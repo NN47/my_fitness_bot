@@ -349,7 +349,7 @@ async def process_number(message: Message):
                 session.commit()
                 session.close()
                 message.bot.todays_workouts.pop(index)
-                await message.answer(f"Удалил: {entry['exercise']} ({entry['variant']}) - {entry['count']}")
+                await message.answer(f"Удалил: {entry.exercise} ({entry.variant}) - {entry.count}")
             else:
                 session.close()
                 await message.answer("Не нашёл такую запись в базе.")
@@ -381,8 +381,8 @@ async def process_number(message: Message):
                 session.commit()
                 message.bot.history_workouts.pop(index)
                 await message.answer(
-                    f"Удалил из истории: {entry['date']} — {entry['exercise']} ({entry['variant']}) - {entry['count']}"
-                )
+                    f"Удалил из истории: {entry.date} — {entry.exercise} ({entry.variant}) - {entry.count}"
+            )
             else:
                 await message.answer("Не нашёл такую запись в базе.")
 
