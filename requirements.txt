@@ -1,3 +1,15 @@
-python-dotenv
-aiogram==3.13.1
+# Telegram bot
+aiogram==3.10.0
 nest_asyncio
+python-dotenv
+
+# Database
+SQLAlchemy==2.0.35
+psycopg2-binary  # если PostgreSQL (удали, если используешь SQLite)
+
+# Server / API (если у тебя FastAPI-сервер)
+fastapi
+uvicorn
+
+# Прочее (если используешь HTTP-запросы или JSON)
+requests
