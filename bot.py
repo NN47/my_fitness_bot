@@ -562,7 +562,7 @@ async def go_back(message: Message):
 
 from sqlalchemy.orm import Session
 
-@dp.message(F.text == "🏋️ История тренировок")
+@dp.message(F.text == "История тренировок")
 async def my_workouts(message: Message):
     user_id = str(message.from_user.id)
     
