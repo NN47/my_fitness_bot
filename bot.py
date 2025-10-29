@@ -338,10 +338,10 @@ async def process_number(message: Message):
             # Удаляем запись из базы, совпадающую по всем полям
             workout = session.query(Workout).filter_by(
                 user_id=user_id,
-                exercise=entry["exercise"],
-                variant=entry["variant"],
-                count=entry["count"],
-                date=entry["date"]
+                exercise=entry.exercise,
+                variant=entry.variant,
+                count=entry.count,
+                date=entry.date
             ).first()
 
             if workout:
@@ -370,10 +370,10 @@ async def process_number(message: Message):
             session = SessionLocal()
             workout = session.query(Workout).filter_by(
                 user_id=user_id,
-                exercise=entry["exercise"],
-                variant=entry["variant"],
-                count=entry["count"],
-                date=entry["date"]
+                exercise=entry.exercise,
+                variant=entry.variant,
+                count=entry.count,
+                date=entry.date
             ).first()
 
             if workout:
