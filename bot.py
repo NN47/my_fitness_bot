@@ -10,6 +10,54 @@ from dotenv import load_dotenv
 import threading
 import http.server
 import socketserver
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from datetime import date
+from sqlalchemy import create_engine, Column, Integer, String, Date, Float
+
+
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
+Base = declarative_base()
+SessionLocal = sessionmaker(bind=engine)
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, unique=True, nullable=False)
+
+class Workout(Base):
+    __tablename__ = "workouts"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False)
+    exercise = Column(String, nullable=False)
+    variant = Column(String)
+    count = Column(Integer)
+    date = Column(Date, default=date.today)
+
+class Weight(Base):
+    __tablename__ = "weights"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False)
+    value = Column(String, nullable=False)
+    date = Column(Date, default=date.today)
+
+class Measurement(Base):
+    __tablename__ = "measurements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, index=True)
+    chest = Column(Float, nullable=True)
+    waist = Column(Float, nullable=True)
+    hips = Column(Float, nullable=True)
+    biceps = Column(Float, nullable=True)
+    thigh = Column(Float, nullable=True)
+    date = Column(Date, default=date.today)
+
+
+Base.metadata.create_all(engine)
+
 
 def start_keepalive_server():
     PORT = 10000
@@ -31,95 +79,76 @@ if not API_TOKEN:
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-DATA_FILE = "data.json"
 
 # -------------------- helpers --------------------
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
 
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def add_workout(user_id, exercise, variant, count):
-    data = load_data()
-    user_id = str(user_id)
-    if user_id not in data:
-        data[user_id] = {"workouts": []}
-    data[user_id]["workouts"].append({
-        "exercise": exercise,
-        "variant": variant,
-        "count": count,
-        "date": str(date.today())  
-    })
-    save_data(data)
+    session = SessionLocal()
+    workout = Workout(
+        user_id=str(user_id),
+        exercise=exercise,
+        variant=variant,
+        count=count,
+        date=date.today()
+    )
+    session.add(workout)
+    session.commit()
+    session.close()
 
 def get_today_summary_text(user_id: str) -> str:
-    data = load_data()
-    today = str(date.today())
+    session = SessionLocal()
+    today = date.today()
 
-    if user_id not in data:
-        return "Сегодня записей нет 😕"
-
-    user = data[user_id]
-    workouts = user.get("workouts", [])
-    weights = user.get("weights", [])
-    measurements = user.get("measurements", [])
-
-    # --- собираем тренировки за сегодня ---
-    todays_workouts = [w for w in workouts if w["date"] == today]
-    if not todays_workouts:
+    # --- тренировки ---
+    workouts = session.query(Workout).filter_by(user_id=user_id, date=today).all()
+    if not workouts:
         summary = "Сегодня тренировок пока нет 💭\n"
     else:
         summary = "💪 Результаты за сегодня:\n"
         totals = {}
-        for w in todays_workouts:
-            ex = w["exercise"]
-            totals[ex] = totals.get(ex, 0) + w["count"]
-
+        for w in workouts:
+            totals[w.exercise] = totals.get(w.exercise, 0) + w.count
         for ex, total in totals.items():
             summary += f"• {ex}: {total}\n"
 
-    # --- добавляем последний вес ---
-    if weights:
-        last_weight = weights[-1]
-        summary += f"\n⚖️ Вес: {last_weight['value']} кг (от {last_weight['date']})"
+    # --- последний вес ---
+    weight = session.query(Weight).filter_by(user_id=user_id).order_by(Weight.id.desc()).first()
+    if weight:
+        summary += f"\n⚖️ Вес: {weight.value} кг (от {weight.date})"
 
-    # --- добавляем последние замеры ---
-    if measurements:
-        last_m = measurements[-1]
-        parts = [f"{k}={v} см" for k, v in last_m.items() if k != "date"]
-        summary += f"\n📏 Замеры ({last_m['date']}): {', '.join(parts)}"
+    # --- последние замеры ---
+    m = session.query(Measurement).filter_by(user_id=user_id).order_by(Measurement.id.desc()).first()
+    if m:
+        data = json.loads(m.data)
+        parts = [f"{k}={v} см" for k, v in data.items()]
+        summary += f"\n📏 Замеры ({m.date}): {', '.join(parts)}"
 
+    session.close()
     return summary
 
 
 def add_weight(user_id, value):
-    data = load_data()
-    if user_id not in data:
-        data[user_id] = {"workouts": [], "weights": []}
-    if "weights" not in data[user_id]:
-        data[user_id]["weights"] = []
-    data[user_id]["weights"].append({
-        "value": value,
-        "date": str(date.today())
-    })
-    save_data(data)
+    session = SessionLocal()
+    weight = Weight(
+        user_id=str(user_id),
+        value=str(value),
+        date=date.today()
+    )
+    session.add(weight)
+    session.commit()
+    session.close()
 
 def add_measurements(user_id, measurements: dict):
-    data = load_data()
-    if user_id not in data:
-        data[user_id] = {"workouts": [], "weights": [], "measurements": []}
-    if "measurements" not in data[user_id]:
-        data[user_id]["measurements"] = []
-    data[user_id]["measurements"].append({
-        "date": str(date.today()),
-        **measurements
-    })
-    save_data(data)
+    session = SessionLocal()
+    m = Measurement(
+        user_id=str(user_id),
+        data=json.dumps(measurements, ensure_ascii=False),
+        date=date.today()
+    )
+    session.add(m)
+    session.commit()
+    session.close()
 
 
 
@@ -277,27 +306,36 @@ async def process_number(message: Message):
     # --- режим удаления сегодняшних тренировок ---
     if getattr(message.bot, "expecting_delete", False):
         index = number - 1
+
         if 0 <= index < len(message.bot.todays_workouts):
             entry = message.bot.todays_workouts[index]
 
-            data = load_data()
-            for w in data[user_id]["workouts"]:
-                if (w["exercise"] == entry["exercise"] and
-                    w["variant"] == entry["variant"] and
-                    w["count"] == entry["count"] and
-                    w["date"] == entry["date"]):
-                    data[user_id]["workouts"].remove(w)
-                    break
+            session = SessionLocal()
+            # Удаляем запись из базы, совпадающую по всем полям
+            workout = session.query(Workout).filter_by(
+                user_id=user_id,
+                exercise=entry["exercise"],
+                variant=entry["variant"],
+                count=entry["count"],
+                date=entry["date"]
+            ).first()
 
-            save_data(data)
-            message.bot.todays_workouts.pop(index)
+            if workout:
+                session.delete(workout)
+                session.commit()
+                session.close()
+                message.bot.todays_workouts.pop(index)
+                await message.answer(f"Удалил: {entry['exercise']} ({entry['variant']}) - {entry['count']}")
+            else:
+                session.close()
+                await message.answer("Не нашёл такую запись в базе.")
 
-            await message.answer(f"Удалил: {entry['exercise']} ({entry['variant']}) - {entry['count']}")
         else:
             await message.answer("Нет такой записи.")
 
         message.bot.expecting_delete = False
         return
+
 
     # --- режим удаления из всей истории ---
     if getattr(message.bot, "expecting_history_delete", False):
@@ -305,17 +343,36 @@ async def process_number(message: Message):
         if 0 <= index < len(message.bot.history_workouts):
             entry = message.bot.history_workouts[index]
 
-            data = load_data()
-            data[user_id]["workouts"].remove(entry)
-            save_data(data)
-            message.bot.history_workouts.pop(index)
+            session = SessionLocal()
+            workout = session.query(Workout).filter_by(
+                user_id=user_id,
+                exercise=entry["exercise"],
+                variant=entry["variant"],
+                count=entry["count"],
+                date=entry["date"]
+            ).first()
 
-            await message.answer(f"Удалил из истории: {entry['date']} — {entry['exercise']} ({entry['variant']}) - {entry['count']}")
+            if workout:
+                session.delete(workout)
+                session.commit()
+                message.bot.history_workouts.pop(index)
+                await message.answer(
+                    f"Удалил из истории: {entry['date']} — {entry['exercise']} ({entry['variant']}) - {entry['count']}"
+                )
+            else:
+                await message.answer("Не нашёл такую запись в базе.")
+
+            session.close()
         else:
             await message.answer("Нет такой записи.")
 
         message.bot.expecting_history_delete = False
         return
+
+
+
+
+   
 
     # --- режим добавления подхода ---
     if not hasattr(message.bot, "current_exercise"):
@@ -323,26 +380,50 @@ async def process_number(message: Message):
         return
 
     count = number
-    add_workout(user_id, message.bot.current_exercise, message.bot.current_variant, count)
+    exercise = message.bot.current_exercise
+    variant = message.bot.current_variant
 
-    data = load_data()
-    today = str(date.today())
-    total_today = sum(
-        w["count"]
-        for w in data[user_id]["workouts"]
-        if w["exercise"] == message.bot.current_exercise and w["date"] == today
+    # Сохраняем тренировку в базу
+    session = SessionLocal()
+    new_workout = Workout(
+        user_id=user_id,
+        exercise=exercise,
+        variant=variant,
+        count=count,
+        date=date.today()
     )
+    session.add(new_workout)
+    session.commit()
+
+    # Считаем общее количество за сегодня по этому упражнению
+    total_today = (
+        session.query(Workout)
+        .filter_by(user_id=user_id, exercise=exercise, date=date.today())
+        .with_entities(func.sum(Workout.count))
+        .scalar()
+    ) or 0
+
+    session.close()
 
     await message.answer(
-        f"Записал! 👍\nВсего {message.bot.current_exercise} сегодня: {total_today} повторений"
+        f"Записал! 👍\nВсего {exercise} сегодня: {total_today} повторений"
     )
     await message.answer("Если хочешь — введи ещё количество или вернись через '⬅️ Назад'")
+
+
 
 @dp.message(F.text == "⚖️ Вес")
 async def my_weight(message: Message):
     user_id = str(message.from_user.id)
-    data = load_data()
-    weights = data.get(user_id, {}).get("weights", [])
+    session = SessionLocal()
+
+    weights = (
+        session.query(Weight)
+        .filter_by(user_id=user_id)
+        .order_by(Weight.date.desc())
+        .all()
+    )
+    session.close()
 
     if not weights:
         await message.answer("⚖️ У тебя пока нет записей веса.", reply_markup=weight_menu)
@@ -350,9 +431,10 @@ async def my_weight(message: Message):
 
     text = "📊 История твоего веса:\n\n"
     for i, w in enumerate(weights, 1):
-        text += f"{i}. {w['date']} — {w['value']} кг\n"
+        text += f"{i}. {w.date.strftime('%d.%m.%Y')} — {w.value} кг\n"
 
     await message.answer(text, reply_markup=weight_menu)
+
 
 @dp.message(F.text == "➕ Добавить вес")
 async def add_weight_start(message: Message):
@@ -377,8 +459,15 @@ async def process_weight_or_number(message: Message):
 @dp.message(F.text == "📏 Замеры")
 async def my_measurements(message: Message):
     user_id = str(message.from_user.id)
-    data = load_data()
-    measurements = data.get(user_id, {}).get("measurements", [])
+    session = SessionLocal()
+
+    measurements = (
+        session.query(Measurement)
+        .filter_by(user_id=user_id)
+        .order_by(Measurement.date.desc())
+        .all()
+    )
+    session.close()
 
     if not measurements:
         await message.answer("📐 У тебя пока нет замеров.", reply_markup=measurements_menu)
@@ -386,10 +475,22 @@ async def my_measurements(message: Message):
 
     text = "📊 История замеров:\n\n"
     for i, m in enumerate(measurements, 1):
-        parts = [f"{k}: {v} см" for k, v in m.items() if k != "date"]
-        text += f"{i}. {m['date']} — {', '.join(parts)}\n"
+        parts = []
+        if m.chest:
+            parts.append(f"Грудь: {m.chest} см")
+        if m.waist:
+            parts.append(f"Талия: {m.waist} см")
+        if m.hips:
+            parts.append(f"Бёдра: {m.hips} см")
+        if m.biceps:
+            parts.append(f"Бицепс: {m.biceps} см")
+        if m.thigh:
+            parts.append(f"Бедро: {m.thigh} см")
+
+        text += f"{i}. {m.date.strftime('%d.%m.%Y')} — {', '.join(parts)}\n"
 
     await message.answer(text, reply_markup=measurements_menu)
+
 
 @dp.message(F.text == "➕ Добавить замеры")
 async def add_measurements_start(message: Message):
@@ -436,28 +537,41 @@ async def go_back(message: Message):
     await message.answer(text, reply_markup=main_menu)
 
 
+from sqlalchemy.orm import Session
+
 @dp.message(F.text == "🏋️ Тренировки")
 async def my_workouts(message: Message):
     user_id = str(message.from_user.id)
-    data = load_data()
-
-    # получаем всю историю
-    history = data.get(user_id, {}).get("workouts", [])
+    
+    # создаём сессию
+    db = SessionLocal()
+    try:
+        # получаем все тренировки пользователя
+        history = (
+            db.query(Workout)
+            .filter(Workout.user_id == user_id)
+            .order_by(Workout.date.desc())
+            .all()
+        )
+    finally:
+        db.close()
 
     if not history:
         await message.answer("У тебя пока нет истории тренировок 📭", reply_markup=my_workouts_menu)
         return
 
-    # сохраняем историю для удаления
+    # сохраняем историю для удаления (в оперативной памяти)
     message.bot.history_workouts = history
     message.bot.expecting_history_delete = False
 
     # формируем текст для вывода
     text = "📜 История твоих тренировок:\n\n"
     for i, w in enumerate(history, 1):
-        text += f"{i}. {w['date']} — {w['exercise']} ({w['variant']}): {w['count']}\n"
+        variant_text = f" ({w.variant})" if w.variant else ""
+        text += f"{i}. {w.date} — {w.exercise}{variant_text}: {w.count}\n"
 
     await message.answer(text, reply_markup=history_menu)
+
 
 
 @dp.message(F.text == "⚖️ Вес")
@@ -473,54 +587,103 @@ async def my_measurements(message: Message):
 @dp.message(F.text == "Сегодня")
 async def workouts_today(message: Message):
     user_id = str(message.from_user.id)
-    text = get_today_summary_text(user_id)
 
-    if "нет" in text:
-        await message.answer(text, reply_markup=my_workouts_menu)
-    else:
-        await message.answer(text, reply_markup=today_menu)
+    # создаём сессию
+    db = SessionLocal()
+    try:
+        # получаем все тренировки пользователя за сегодня
+        today = date.today()
+        todays_workouts = (
+            db.query(Workout)
+            .filter(Workout.user_id == user_id, Workout.date == today)
+            .all()
+        )
+    finally:
+        db.close()
 
-        # сохраняем список для удаления
-        data = load_data()
-        today = str(date.today())
-        message.bot.todays_workouts = [w for w in data[user_id]["workouts"] if w["date"] == today]
+    # если ничего нет — выводим сообщение
+    if not todays_workouts:
+        await message.answer("Сегодня ты ещё ничего не записывал 💤", reply_markup=my_workouts_menu)
+        return
 
+    # сохраняем список для возможности удаления
+    message.bot.todays_workouts = todays_workouts
+    message.bot.expecting_delete = False
+
+    # формируем текст для вывода
+    text = "💪 Результаты за сегодня:\n\n"
+    for i, w in enumerate(todays_workouts, 1):
+        variant_text = f" ({w.variant})" if w.variant else ""
+        text += f"{i}. {w.exercise}{variant_text}: {w.count}\n"
+
+    await message.answer(text, reply_markup=today_menu)
 
 
 
 @dp.message(F.text == "В другие дни")
 async def workouts_history(message: Message):
     user_id = str(message.from_user.id)
-    data = load_data()
 
-    if user_id not in data or not data[user_id]["workouts"]:
+    # создаём сессию
+    db = SessionLocal()
+    try:
+        # получаем все тренировки, кроме сегодняшних
+        history = (
+            db.query(Workout)
+            .filter(Workout.user_id == user_id, Workout.date != date.today())
+            .order_by(Workout.date.desc())
+            .all()
+        )
+    finally:
+        db.close()
+
+    # если записей нет
+    if not history:
         await message.answer("У тебя пока нет истории тренировок 📭", reply_markup=my_workouts_menu)
-    else:
-        text = "История твоих тренировок:\n\n"
-        for w in data[user_id]["workouts"]:
-            text += f"{w['date']}: {w['exercise']} ({w['variant']}): {w['count']} раз\n"
-        await message.answer(text, reply_markup=history_menu)
+        return
+
+    # формируем текст
+    text = "📅 История твоих тренировок:\n\n"
+    for w in history:
+        variant_text = f" ({w.variant})" if w.variant else ""
+        text += f"{w.date}: {w.exercise}{variant_text}: {w.count} раз\n"
+
+    await message.answer(text, reply_markup=history_menu)
+
 
 
 @dp.message(F.text == "Удалить запись из истории")
 async def delete_from_history_start(message: Message):
     user_id = str(message.from_user.id)
-    data = load_data()
 
-    if user_id not in data or not data[user_id]["workouts"]:
+    # создаём сессию
+    db = SessionLocal()
+    try:
+        # получаем все тренировки пользователя
+        history = (
+            db.query(Workout)
+            .filter(Workout.user_id == user_id)
+            .order_by(Workout.date.desc())
+            .all()
+        )
+    finally:
+        db.close()
+
+    if not history:
         await message.answer("История пуста 📭", reply_markup=my_workouts_menu)
         return
 
+    # сохраняем в оперативную память (для следующего шага — удаления)
     message.bot.expecting_history_delete = True
-    message.bot.history_workouts = data[user_id]["workouts"]
+    message.bot.history_workouts = history
 
+    # формируем текст
     text = "Выбери номер записи для удаления:\n\n"
-    for i, w in enumerate(data[user_id]["workouts"], 1):
-        text += f"{i}. {w['date']} — {w['exercise']} ({w['variant']}): {w['count']}\n"
+    for i, w in enumerate(history, 1):
+        variant_text = f" ({w.variant})" if w.variant else ""
+        text += f"{i}. {w.date} — {w.exercise}{variant_text}: {w.count}\n"
 
     await message.answer(text)
-
-
 
 
 
