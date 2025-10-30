@@ -179,7 +179,15 @@ main_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-
+# Подменю "Тренировка"
+training_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="➕ Добавить тренировку")],
+        [KeyboardButton(text="📖 История тренировок")],
+        [KeyboardButton(text="⬅️ Назад")]
+    ],
+    resize_keyboard=True
+)
 
 activity_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -278,8 +286,13 @@ async def start(message: Message):
 
 
 @dp.message(F.text == "🏋️ Тренировка")
-async def workouts(message: Message):
+async def show_training_menu(message: Message):
+    await message.answer("Выбери действие:", reply_markup=training_menu)
+
+@dp.message(F.text == "➕ Добавить тренировку")
+async def show_add_training_menu(message: Message):
     await message.answer("Выбери упражнение:", reply_markup=exercise_menu)
+
 
 
 @dp.message(F.text.in_(["Подтягивания", "Отжимания", "Приседания", "Пресс", "Берпи", "Шаги", "Пробежка", "Скакалка", "Другое"]))
