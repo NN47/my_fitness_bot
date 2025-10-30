@@ -170,10 +170,17 @@ def add_measurements(user_id, measurements: dict):
 # -------------------- keyboards --------------------
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🏋️ Тренировки"), KeyboardButton(text="📊История событий")]
+        [KeyboardButton(text="🏋️ Тренировка")],
+        [KeyboardButton(text="⚖️ Вес / 📏 Замеры")],
+        [KeyboardButton(text="💊 Добавки")],
+        [KeyboardButton(text="🍱 КБЖУ")],
+        [KeyboardButton(text="📆 Календарь")],
+        [KeyboardButton(text="📊 История событий")],
+        [KeyboardButton(text="💬 Обратная связь")]
     ],
     resize_keyboard=True
 )
+
 
 
 activity_menu = ReplyKeyboardMarkup(
@@ -272,7 +279,7 @@ async def start(message: Message):
 
 
 
-@dp.message(F.text == "🏋️ Тренировки")
+@dp.message(F.text == "🏋️ Тренировка")
 async def workouts(message: Message):
     await message.answer("Выбери упражнение:", reply_markup=exercise_menu)
 
@@ -549,7 +556,7 @@ async def process_measurements(message: Message):
     await message.answer(f"✅ Замеры сохранены: {measurements}", reply_markup=measurements_menu)
 
 
-@dp.message(F.text == "📊История событий")
+@dp.message(F.text == "📊 История событий")
 async def my_data(message: Message):
     await message.answer("Выбери, что посмотреть:", reply_markup=my_data_menu)
 
@@ -559,6 +566,30 @@ async def go_back(message: Message):
     user_id = str(message.from_user.id)
     text = get_today_summary_text(user_id)
     await message.answer(text, reply_markup=main_menu)
+
+@dp.message(F.text == "⚖️ Вес / 📏 Замеры")
+async def weight_and_measurements(message: Message):
+    await message.answer("Выбери, что хочешь посмотреть:", reply_markup=my_data_menu)
+
+
+@dp.message(F.text == "💊 Добавки")
+async def supplements(message: Message):
+    await message.answer("💊 Функционал добавок в разработке 💭")
+
+
+@dp.message(F.text == "🍱 КБЖУ")
+async def calories(message: Message):
+    await message.answer("🍱 Раздел КБЖУ в разработке 💭")
+
+
+@dp.message(F.text == "📆 Календарь")
+async def calendar(message: Message):
+    await message.answer("📆 Календарь появится в следующем обновлении 💭")
+
+
+@dp.message(F.text == "💬 Обратная связь")
+async def feedback(message: Message):
+    await message.answer("💬 Раздел обратной связи в разработке 💭")
 
 
 from sqlalchemy.orm import Session
