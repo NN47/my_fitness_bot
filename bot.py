@@ -170,10 +170,8 @@ def add_measurements(user_id, measurements: dict):
 # -------------------- keyboards --------------------
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🏋️ Тренировка")],
-        [KeyboardButton(text="⚖️ Вес / 📏 Замеры")],
-        [KeyboardButton(text="💊 Добавки")],
-        [KeyboardButton(text="🍱 КБЖУ")],
+        [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
+        [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="🍶 Добавки")],
         [KeyboardButton(text="📆 Календарь")],
         [KeyboardButton(text="📊 История событий")],
         [KeyboardButton(text="💬 Обратная связь")]
@@ -572,9 +570,9 @@ async def weight_and_measurements(message: Message):
     await message.answer("Выбери, что хочешь посмотреть:", reply_markup=my_data_menu)
 
 
-@dp.message(F.text == "💊 Добавки")
+@dp.message(F.text == "🍶 Добавки")
 async def supplements(message: Message):
-    await message.answer("💊 Функционал добавок в разработке 💭")
+    await message.answer("🍶 Функционал добавок в разработке 💭")
 
 
 @dp.message(F.text == "🍱 КБЖУ")
