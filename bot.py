@@ -117,7 +117,7 @@ def get_today_summary_text(user_id: str) -> str:
     if not workouts:
         summary = f"Сегодня ({today_str}) тренировок пока нет 💭\n"
     else:
-        summary = f"📅 {today_str}\n💪 События:\n"
+        summary = f"📅 {today_str}\n 🏋️ Тренировка:\n"
         totals = {}
         for w in workouts:
             totals[w.exercise] = totals.get(w.exercise, 0) + w.count
