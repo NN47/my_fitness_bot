@@ -173,7 +173,6 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="🍶 Добавки")],
         [KeyboardButton(text="📆 Календарь")],
-        [KeyboardButton(text="📊 История событий")],
         [KeyboardButton(text="💬 Обратная связь")]
     ],
     resize_keyboard=True
@@ -183,7 +182,7 @@ main_menu = ReplyKeyboardMarkup(
 training_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить тренировку")],
-        [KeyboardButton(text="📖 История тренировок")],
+        [KeyboardButton(text="🏋️ История тренировок")],
         [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
@@ -217,7 +216,6 @@ exercise_menu = ReplyKeyboardMarkup(
 
 my_data_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🏋️ История тренировок")],
         [KeyboardButton(text="⚖️ Вес")],
         [KeyboardButton(text="📏 Замеры")],
         [KeyboardButton(text="⬅️ Назад")]
