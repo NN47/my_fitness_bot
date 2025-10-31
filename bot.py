@@ -198,6 +198,16 @@ training_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# Меню выбора даты тренировки
+training_date_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📅 Сегодня"), KeyboardButton(text="📆 Другой день")],
+        [KeyboardButton(text="⬅️ Назад")]
+    ],
+    resize_keyboard=True
+)
+
+
 activity_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💪Добавить упражнение")],
@@ -303,7 +313,15 @@ async def show_training_menu(message: Message):
 
 @dp.message(F.text == "➕ Добавить тренировку")
 async def show_add_training_menu(message: Message):
+    await message.answer("За какой день добавить тренировку?", reply_markup=training_date_menu)
+
+@dp.message(F.text == "📅 Сегодня")
+async def add_training_today(message: Message):
     await message.answer("Выбери упражнение:", reply_markup=exercise_menu)
+
+@dp.message(F.text == "📆 Другой день")
+async def add_training_other_day(message: Message):
+    await message.answer("Функция добавления тренировок за другие дни пока в разработке 💭", reply_markup=training_menu)
 
 
 
