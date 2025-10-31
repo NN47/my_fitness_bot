@@ -252,10 +252,12 @@ history_menu = ReplyKeyboardMarkup(
 weight_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить вес")],
+        [KeyboardButton(text="🗑 Удалить вес")],
         [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
 )
+
 
 measurements_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -342,6 +344,36 @@ async def delete_entry_start(message: Message):
 async def process_number(message: Message):
     user_id = str(message.from_user.id)
     number = int(message.text)
+
+
+    # --- режим удаления веса ---
+    if getattr(message.bot, "expecting_weight_delete", False):
+        index = number - 1
+        if 0 <= index < len(message.bot.user_weights):
+            entry = message.bot.user_weights[index]
+
+            session = SessionLocal()
+            weight = session.query(Weight).filter_by(
+                user_id=user_id,
+                value=entry.value,
+                date=entry.date
+            ).first()
+
+            if weight:
+                session.delete(weight)
+                session.commit()
+                session.close()
+                message.bot.user_weights.pop(index)
+                await message.answer(f"✅ Удалил запись: {entry.date.strftime('%d.%m.%Y')} — {entry.value} кг")
+            else:
+                session.close()
+                await message.answer("❌ Не нашёл такую запись в базе.")
+
+        else:
+            await message.answer("⚠️ Нет такой записи.")
+        message.bot.expecting_weight_delete = False
+        return
+
 
     # --- режим удаления сегодняшних тренировок ---
     if getattr(message.bot, "expecting_delete", False):
@@ -480,6 +512,33 @@ async def my_weight(message: Message):
 async def add_weight_start(message: Message):
     message.bot.expecting_weight = True
     await message.answer("Введи свой вес в килограммах (например: 72.5):")
+
+@dp.message(F.text == "🗑 Удалить вес")
+async def delete_weight_start(message: Message):
+    user_id = str(message.from_user.id)
+    session = SessionLocal()
+    weights = (
+        session.query(Weight)
+        .filter_by(user_id=user_id)
+        .order_by(Weight.date.desc())
+        .all()
+    )
+    session.close()
+
+    if not weights:
+        await message.answer("⚖️ У тебя нет записей веса для удаления.", reply_markup=weight_menu)
+        return
+
+    # сохраняем в оперативную память
+    message.bot.expecting_weight_delete = True
+    message.bot.user_weights = weights
+
+    text = "Выбери номер веса для удаления:\n\n"
+    for i, w in enumerate(weights, 1):
+        text += f"{i}. {w.date.strftime('%d.%m.%Y')} — {w.value} кг\n"
+
+    await message.answer(text)
+
 
 @dp.message(F.text.regexp(r"^\d+(\.\d+)?$"))
 async def process_weight_or_number(message: Message):
