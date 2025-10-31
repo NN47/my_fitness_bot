@@ -240,6 +240,20 @@ exercise_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+count_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text="5"), KeyboardButton(text="8"), KeyboardButton(text="10")
+        ],
+        [
+            KeyboardButton(text="12"), KeyboardButton(text="15"), KeyboardButton(text="20")
+        ],
+        [
+            KeyboardButton(text="✏️ Ввести вручную"), KeyboardButton(text="⬅️ Назад")
+        ]
+    ],
+    resize_keyboard=True
+)
 
 
 my_data_menu = ReplyKeyboardMarkup(
@@ -369,23 +383,34 @@ async def handle_custom_date(message: Message):
 async def choose_exercise(message: Message):
     message.bot.current_exercise = message.text
 
+    # обрабатываем "Другое"
     if message.text == "Другое":
         message.bot.current_variant = "Без варианта"
         await message.answer("Введи название упражнения:")
         message.bot.expecting_custom_exercise = True
+        return
+
+    # особые случаи (оставляем как есть)
     elif message.text == "Шаги":
         message.bot.current_variant = "Количество шагов"
         await message.answer("Сколько шагов сделал? Введи число:")
+        return
     elif message.text == "Пробежка":
         message.bot.current_variant = "Минуты"
         await message.answer("Сколько минут пробежал? Введи число:")
+        return
     elif message.text == "Скакалка":
         message.bot.current_variant = "Количество прыжков"
         await message.answer("Сколько раз прыгал на скакалке? Введи число:")
-    else:
-        message.bot.current_variant = "Без варианта"
-        await message.answer("Сколько раз сделал? Введи число:")
+        return
 
+    # обычные упражнения
+    message.bot.current_variant = "Без варианта"
+    await message.answer("Выбери количество повторений:", reply_markup=count_menu)
+
+@dp.message(F.text == "✏️ Ввести вручную")
+async def enter_manual_count(message: Message):
+    await message.answer("Введи количество повторений числом:")
 
 
 # пользователь ввёл название упражнения в "Другое"
