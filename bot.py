@@ -12,9 +12,8 @@ import http.server
 import socketserver
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from datetime import date
 from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func
-
+from datetime import timedelta
 import random
 from datetime import datetime
 
@@ -207,6 +206,15 @@ training_date_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+other_day_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📅 Вчера"), KeyboardButton(text="📆 Позавчера")],
+        [KeyboardButton(text="✏️ Ввести дату вручную")],
+        [KeyboardButton(text="⬅️ Назад")]
+    ],
+    resize_keyboard=True
+)
+
 
 activity_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -321,8 +329,40 @@ async def add_training_today(message: Message):
 
 @dp.message(F.text == "📆 Другой день")
 async def add_training_other_day(message: Message):
-    await message.answer("Функция добавления тренировок за другие дни пока в разработке 💭", reply_markup=training_menu)
+    await message.answer(
+        "Выбери день тренировки или введи дату вручную:",
+        reply_markup=other_day_menu
+    )
 
+@dp.message(F.text == "📅 Вчера")
+async def training_yesterday(message: Message):
+    message.bot.selected_date = date.today() - timedelta(days=1)
+    await message.answer(f"📅 Выбрана дата: {message.bot.selected_date.strftime('%d.%m.%Y')}")
+    await message.answer("Теперь выбери упражнение:", reply_markup=exercise_menu)
+
+
+@dp.message(F.text == "📆 Позавчера")
+async def training_day_before_yesterday(message: Message):
+    message.bot.selected_date = date.today() - timedelta(days=2)
+    await message.answer(f"📅 Выбрана дата: {message.bot.selected_date.strftime('%d.%m.%Y')}")
+    await message.answer("Теперь выбери упражнение:", reply_markup=exercise_menu)
+
+
+@dp.message(F.text == "✏️ Ввести дату вручную")
+async def enter_custom_date(message: Message):
+    message.bot.expecting_date_input = True
+    await message.answer("Введи дату тренировки в формате ДД.ММ.ГГГГ:")
+
+@dp.message(F.text.regexp(r"^\d{2}\.\d{2}\.\d{4}$"), lambda m: getattr(m.bot, "expecting_date_input", False))
+async def handle_custom_date(message: Message):
+    try:
+        entered_date = datetime.strptime(message.text, "%d.%m.%Y").date()
+        message.bot.selected_date = entered_date
+        message.bot.expecting_date_input = False
+        await message.answer(f"📅 Выбрана дата: {entered_date.strftime('%d.%m.%Y')}")
+        await message.answer("Теперь выбери упражнение:", reply_markup=exercise_menu)
+    except ValueError:
+        await message.answer("⚠️ Неверный формат. Попробуй так: 31.10.2025")
 
 
 @dp.message(F.text.in_(["Подтягивания", "Отжимания", "Приседания", "Пресс", "Берпи", "Шаги", "Пробежка", "Скакалка", "Другое"]))
@@ -514,13 +554,17 @@ async def process_number(message: Message):
 
     # Сохраняем тренировку в базу
     session = SessionLocal()
+    # если пользователь выбрал дату ранее — сохраняем на неё
+    selected_date = getattr(message.bot, "selected_date", date.today())
+
     new_workout = Workout(
         user_id=user_id,
         exercise=exercise,
         variant=variant,
         count=count,
-        date=date.today()
+        date=selected_date
     )
+
     session.add(new_workout)
     session.commit()
 
@@ -533,6 +577,11 @@ async def process_number(message: Message):
     ) or 0
 
     session.close()
+
+    # сбрасываем выбранную дату, чтобы не сохранялась для следующего раза
+    if hasattr(message.bot, "selected_date"):
+        delattr(message.bot, "selected_date")
+
 
     await message.answer(
         f"Записал! 👍\nВсего {exercise} сегодня: {total_today} повторений"
