@@ -435,7 +435,7 @@ async def delete_entry_start(message: Message):
     await message.answer("Введи номер записи, которую хочешь удалить:")
 
 
-@dp.message(F.text.regexp(r"^\d+$"))
+@dp.message(F.text.regexp(r"^\d+$"), lambda m: not getattr(m.bot, "expecting_weight", False))
 async def process_number(message: Message):
     user_id = str(message.from_user.id)
     number = int(message.text)
