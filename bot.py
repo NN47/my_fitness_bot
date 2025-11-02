@@ -771,10 +771,14 @@ async def delete_measurements_start(message: Message):
     await message.answer(text)
 
 
-@dp.message(F.text, lambda m: getattr(m.bot, "expecting_measurements", False))
+@dp.message(F.text, lambda m: getattr(m.bot, "expecting_measurements", False) and m.text != "⬅️ Назад")
 async def process_measurements(message: Message):
-    user_id = str(message.from_user.id)
-    raw = message.text
+    # дополнительная защита на случай, если куда-то ещё попадёт "⬅️ Назад"
+    if message.text.strip() == "⬅️ Назад":
+        message.bot.expecting_measurements = False
+        await message.answer("Отменено.", reply_markup=measurements_menu)
+        return
+
 
     try:
         # разбиваем на части: "грудь=100, талия=80, руки=35"
