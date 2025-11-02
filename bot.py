@@ -671,7 +671,7 @@ async def delete_weight_start(message: Message):
     await message.answer(text)
 
 
-@dp.message(F.text.regexp(r"^\d+(\.\d+)?$"))
+@dp.message(F.text.regexp(r"^\d+([.,]\d+)?$"))
 async def process_weight_or_number(message: Message):
     user_id = str(message.from_user.id)
 
@@ -685,6 +685,7 @@ async def process_weight_or_number(message: Message):
 
     # иначе пусть идёт обычная обработка числа (повторы и т.п.)
     await process_number(message)
+
 
 @dp.message(F.text == "📏 Замеры")
 async def my_measurements(message: Message):
