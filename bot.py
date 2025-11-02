@@ -267,19 +267,20 @@ my_data_menu = ReplyKeyboardMarkup(
 
 weight_day_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton("📅 Сегодня"), KeyboardButton("📆 Другой день")],
-        [KeyboardButton("⬅️ Назад")],
+        [KeyboardButton(text="📅 Сегодня"), KeyboardButton(text="📆 Другой день")],
+        [KeyboardButton(text="⬅️ Назад")],
     ],
     resize_keyboard=True
 )
 
 weight_other_day_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton("Вчера"), KeyboardButton("Позавчера")],
-        [KeyboardButton("🗓 Ввести дату"), KeyboardButton("⬅️ Назад")],
+        [KeyboardButton(text="Вчера"), KeyboardButton(text="Позавчера")],
+        [KeyboardButton(text="🗓 Ввести дату"), KeyboardButton(text="⬅️ Назад")],
     ],
     resize_keyboard=True
 )
+
 
 
 
