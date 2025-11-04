@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func
 from datetime import timedelta
 import random
 from datetime import datetime
+import re
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -142,16 +143,33 @@ def get_today_summary_text(user_id: str) -> str:
     return f"{motivation}\n\n{summary}"
 
 
-def add_weight(user_id, value):
+def add_weight(user_id, value, weight_date=None):
+    """
+    value: число (float) или строка
+    weight_date: date или None -> если None, ставим сегодня
+    """
     session = SessionLocal()
-    weight = Weight(
-        user_id=str(user_id),
-        value=str(value),
-        date=date.today()
-    )
-    session.add(weight)
-    session.commit()
-    session.close()
+    try:
+        if weight_date is None:
+            weight_date = date.today()
+        # если weight_date передали как строку — пробуем привести
+        if isinstance(weight_date, str):
+            try:
+                weight_date = date.fromisoformat(weight_date)
+            except Exception:
+                # в случае проблемы просто используем сегодня
+                weight_date = date.today()
+
+        weight = Weight(
+            user_id=str(user_id),
+            value=str(value),
+            date=weight_date
+        )
+        session.add(weight)
+        session.commit()
+    finally:
+        session.close()
+
 
 def add_measurements(user_id, measurements: dict):
     """
@@ -660,7 +678,9 @@ async def my_weight(message: Message):
 @dp.message(F.text == "➕ Добавить вес")
 async def add_weight_start(message: Message):
     message.bot.mode = "weight"  # <--- ставим флаг
-    await message.answer("Выберите день для добавления веса:", reply_markup=choose_weight_day)
+    # используем weight_day_menu (существует выше)
+    await message.answer("Выберите день для добавления веса:", reply_markup=weight_day_menu)
+
 
 
 
@@ -710,38 +730,47 @@ async def weight_enter_date(message: Message):
 
 @dp.message()
 async def process_weight_date_or_value(message: Message):
+    # этот хендлер должен реагировать только если мы в режиме "weight"
     if getattr(message.bot, "mode", None) != "weight":
         return
 
-    # если ждём дату
+    # если ждём дату (флаг weight.waiting_for_date или waiting_for_date)
     if getattr(message.bot, "waiting_for_date", False):
         try:
             input_date = date.fromisoformat(message.text.strip())
-            message.bot.selected_date = str(input_date)
+            message.bot.selected_date = input_date  # храним как date
             message.bot.waiting_for_date = False
             await message.answer("Введите ваш вес:", reply_markup=weight_menu)
         except ValueError:
             await message.answer("⚠️ Неверный формат. Введите дату в формате ГГГГ-ММ-ДД:")
         return
 
-    # если пользователь вводит вес
-    if re.match(r"^\d+([.,]\d+)?$", message.text):
+    # если пользователь вводит вес (поддержка "72.5" или "72,5")
+    if re.match(r"^\d+([.,]\d+)?$", message.text.strip()):
         user_id = str(message.from_user.id)
-        weight_value = float(message.text.replace(",", "."))
-        selected_date = getattr(message.bot, "selected_date", str(date.today()))
+        weight_value = float(message.text.replace(",", ".").strip())
+        selected_date = getattr(message.bot, "selected_date", date.today())
 
+        # Сохраняем вес с переданной датой
         add_weight(user_id, weight_value, selected_date)
 
         await message.answer(
-            f"✅ Вес {weight_value} кг записан за {selected_date}",
+            f"✅ Вес {weight_value} кг записан за {selected_date.strftime('%d.%m.%Y')}",
             reply_markup=weight_menu
         )
 
-        # сброс режима после завершения
+        # Сброс состояния
         message.bot.mode = None
-        message.bot.selected_date = None
+        if hasattr(message.bot, "selected_date"):
+            try:
+                delattr(message.bot, "selected_date")
+            except Exception:
+                message.bot.selected_date = None
         message.bot.waiting_for_date = False
+        return
 
+    # иначе — если это не число, проигнорируем (или можно ответить подсказкой)
+    await message.answer("⚠️ Ожидаю число веса (например: 72.5) или выбери '⬅️ Назад'.", reply_markup=weight_menu)
 
 
 @dp.message(F.text == "🗑 Удалить вес")
@@ -908,20 +937,22 @@ async def process_measurements(message: Message):
         await message.answer("Отменено.", reply_markup=measurements_menu)
         return
 
+    user_id = str(message.from_user.id)
 
     try:
         # разбиваем на части: "грудь=100, талия=80, руки=35"
-        parts = [p.strip() for p in raw.replace(",", " ").split()]
+        raw = message.text
+        parts = [p.strip() for p in raw.replace(",", " ").split() if p.strip()]
         if not parts:
             raise ValueError
 
         # нормализация и маппинг ключей к полям модели
         key_map = {
             "грудь": "chest", "груд": "chest",
-            "талия": "waist", "талияю": "waist",
-            "бёдра": "hips", "бедра": "hips", "бёдро": "thigh", "бедро": "thigh",
+            "талия": "waist", 
+            "бёдра": "hips", "бедра": "hips",
             "руки": "biceps", "бицепс": "biceps", "бицепсы": "biceps",
-            "бедро": "thigh"
+            "бедро": "thigh", "бёдро": "thigh"
         }
 
         measurements_mapped = {}
@@ -938,8 +969,9 @@ async def process_measurements(message: Message):
                 if field:
                     measurements_mapped[field] = val
                 else:
-                    # если ключ не в маппинге — пробуем использовать как есть (безопасно)
-                    measurements_mapped[k] = val
+                    # если ключ не в маппинге — игнорируем его (безопасно)
+                    # или можно сохранять в measurements_mapped[k] = val
+                    pass
 
         if not measurements_mapped:
             raise ValueError
@@ -951,7 +983,6 @@ async def process_measurements(message: Message):
     try:
         add_measurements(user_id, measurements_mapped)
     except Exception as e:
-        # на случай неожиданной ошибки — лог в консоль и сообщение пользователю
         print("Error saving measurements:", e)
         await message.answer("⚠️ Ошибка при сохранении. Повтори попытку позже.")
         message.bot.expecting_measurements = False
