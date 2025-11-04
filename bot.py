@@ -659,47 +659,89 @@ async def my_weight(message: Message):
 
 @dp.message(F.text == "➕ Добавить вес")
 async def add_weight_start(message: Message):
-    message.bot.expecting_weight = False
-    await message.answer("Выберите день для записи веса:", reply_markup=weight_day_menu)
+    message.bot.mode = "weight"  # <--- ставим флаг
+    await message.answer("Выберите день для добавления веса:", reply_markup=choose_weight_day)
+
 
 
 @dp.message(F.text.in_(["📅 Сегодня", "📆 Другой день"]))
 async def select_weight_day(message: Message):
+    # Проверяем — действительно ли сейчас режим "вес"
+    if getattr(message.bot, "mode", None) != "weight":
+        return  # если нет — игнорируем, пусть другой сценарий обрабатывает
+
     if message.text == "📅 Сегодня":
-        message.bot.expecting_weight = True
-        message.bot.weight_date = date.today()
-        await message.answer("Введите вес (например: 70,5):", reply_markup=back_menu)
+        message.bot.selected_date = str(date.today())
+        await message.answer("Введите ваш вес (например: 72.5):", reply_markup=weight_menu)
+
+    elif message.text == "📆 Другой день":
+        await message.answer(
+            "Выберите день:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton("📅 Вчера"), KeyboardButton("📆 Позавчера")],
+                    [KeyboardButton("📖 Ввести дату"), KeyboardButton("⬅️ Назад")]
+                ],
+                resize_keyboard=True
+            )
+        )
+
+
+@dp.message(F.text.in_(["📅 Вчера", "📆 Позавчера"]))
+async def weight_other_day(message: Message):
+    if getattr(message.bot, "mode", None) != "weight":
+        return
+
+    if message.text == "📅 Вчера":
+        message.bot.selected_date = str(date.today() - timedelta(days=1))
     else:
-        await message.answer("Выберите день:", reply_markup=weight_other_day_menu)
+        message.bot.selected_date = str(date.today() - timedelta(days=2))
 
-@dp.message(F.text.in_(["Вчера", "Позавчера", "🗓 Ввести дату"]))
-async def select_weight_specific_day(message: Message):
-    from datetime import timedelta
+    await message.answer("Введите ваш вес:", reply_markup=weight_menu)
 
-    if message.text == "Вчера":
-        message.bot.weight_date = date.today() - timedelta(days=1)
-        message.bot.expecting_weight = True
-        await message.answer("Введите вес для вчерашнего дня:", reply_markup=back_menu)
+@dp.message(F.text == "📖 Ввести дату")
+async def weight_enter_date(message: Message):
+    if getattr(message.bot, "mode", None) != "weight":
+        return
 
-    elif message.text == "Позавчера":
-        message.bot.weight_date = date.today() - timedelta(days=2)
-        message.bot.expecting_weight = True
-        await message.answer("Введите вес для позавчерашнего дня:", reply_markup=back_menu)
+    await message.answer("Введите дату в формате ГГГГ-ММ-ДД:")
+    message.bot.waiting_for_date = True
 
-    elif message.text == "🗓 Ввести дату":
-        await message.answer("Введите дату в формате ГГГГ-ММ-ДД:", reply_markup=back_menu)
-        message.bot.expecting_weight_date_input = True
 
-@dp.message(lambda m: getattr(m.bot, "expecting_weight_date_input", False))
-async def process_weight_date_input(message: Message):
-    try:
-        entered_date = date.fromisoformat(message.text.strip())
-        message.bot.weight_date = entered_date
-        message.bot.expecting_weight_date_input = False
-        message.bot.expecting_weight = True
-        await message.answer(f"Введите вес за {entered_date.strftime('%d.%m.%Y')}:")
-    except ValueError:
-        await message.answer("❌ Неверный формат. Введите дату в формате ГГГГ-ММ-ДД (например: 2025-11-02).")
+@dp.message()
+async def process_weight_date_or_value(message: Message):
+    if getattr(message.bot, "mode", None) != "weight":
+        return
+
+    # если ждём дату
+    if getattr(message.bot, "waiting_for_date", False):
+        try:
+            input_date = date.fromisoformat(message.text.strip())
+            message.bot.selected_date = str(input_date)
+            message.bot.waiting_for_date = False
+            await message.answer("Введите ваш вес:", reply_markup=weight_menu)
+        except ValueError:
+            await message.answer("⚠️ Неверный формат. Введите дату в формате ГГГГ-ММ-ДД:")
+        return
+
+    # если пользователь вводит вес
+    if re.match(r"^\d+([.,]\d+)?$", message.text):
+        user_id = str(message.from_user.id)
+        weight_value = float(message.text.replace(",", "."))
+        selected_date = getattr(message.bot, "selected_date", str(date.today()))
+
+        add_weight(user_id, weight_value, selected_date)
+
+        await message.answer(
+            f"✅ Вес {weight_value} кг записан за {selected_date}",
+            reply_markup=weight_menu
+        )
+
+        # сброс режима после завершения
+        message.bot.mode = None
+        message.bot.selected_date = None
+        message.bot.waiting_for_date = False
+
 
 
 @dp.message(F.text == "🗑 Удалить вес")
