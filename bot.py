@@ -85,16 +85,17 @@ Base.metadata.create_all(engine)
 
 
 def start_keepalive_server():
-    port = int(os.getenv("PORT", "10000"))
+    PORT = 10000
     handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", port), handler) as httpd:
-        print(f"✅ Keep-alive сервер запущен на порту {port}")
+    with socketserver.TCPServer(("", PORT), handler) as httpd:
+        print(f"✅ Keep-alive сервер запущен на порту {PORT}")
         httpd.serve_forever()
 
 # Запуск мини-сервера в отдельном потоке
 threading.Thread(target=start_keepalive_server, daemon=True).start()
 
 
+load_dotenv()
 API_TOKEN = os.getenv("API_TOKEN")
 if not API_TOKEN:
     raise RuntimeError("API_TOKEN не найден. Установи переменную окружения или создай .env с API_TOKEN.")
@@ -1133,32 +1134,11 @@ def get_user_supplements(message: Message) -> list[dict]:
     return message.bot.supplements.setdefault(str(message.from_user.id), [])
 
 
-def get_notification_status_for_user(message: Message | None = None) -> bool:
-    if message is None:
-        return True
-    if not hasattr(message.bot, "supplement_notifications"):
-        message.bot.supplement_notifications = {}
-    return message.bot.supplement_notifications.setdefault(str(message.from_user.id), True)
-
-
-def set_notification_status_for_user(message: Message, enabled: bool):
-    if not hasattr(message.bot, "supplement_notifications"):
-        message.bot.supplement_notifications = {}
-    message.bot.supplement_notifications[str(message.from_user.id)] = enabled
-
-
-def get_supplement_history(message: Message) -> list[dict]:
-    if not hasattr(message.bot, "supplement_history"):
-        message.bot.supplement_history = {}
-    return message.bot.supplement_history.setdefault(str(message.from_user.id), [])
-
-
 def reset_supplement_state(message: Message):
     for flag in [
         "expecting_supplement_name",
         "expecting_supplement_time",
         "selecting_days",
-        "choosing_duration",
     ]:
         if hasattr(message.bot, flag):
             setattr(message.bot, flag, False)
@@ -1177,13 +1157,6 @@ def get_active_supplement(message: Message) -> dict:
     )
 
 
-def supplements_main_menu(has_items: bool = False, message: Message | None = None) -> ReplyKeyboardMarkup:
-    notifications_enabled = get_notification_status_for_user(message) if message else True
-    buttons = [[KeyboardButton(text="➕ Создать добавку")]]
-    if has_items:
-        buttons.append([KeyboardButton(text="✏️ Редактировать добавку"), KeyboardButton(text="📜 История добавок")])
-        toggle_text = "🔕 Выключить уведомления" if notifications_enabled else "🔔 Включить уведомления"
-        buttons.append([KeyboardButton(text=toggle_text)])
 def supplements_main_menu(has_items: bool = False) -> ReplyKeyboardMarkup:
     buttons = [[KeyboardButton(text="➕ Создать добавку")]]
     if has_items:
@@ -1199,12 +1172,6 @@ async def supplements(message: Message):
         await message.answer(
             "💊 Добавки\n\n"
             "Привет! Здесь ты можешь записывать свои добавки, получать статистику записей и при желании включить напоминания, чтобы ничего не забыть.",
-            reply_markup=supplements_main_menu(has_items=False, message=message),
-        )
-        return
-
-    notif_status = "включены" if get_notification_status_for_user(message) else "выключены"
-    lines = ["Мои добавки", f"Уведомления: {notif_status}"]
             reply_markup=supplements_main_menu(has_items=False),
         )
         return
@@ -1216,7 +1183,6 @@ async def supplements(message: Message):
         lines.append(
             f"\n💊 {item['name']} \n⏰ Время приема: {times}\n📅 Дни приема: {days}\n⏳ Длительность: {item['duration']}"
         )
-    await message.answer("\n".join(lines), reply_markup=supplements_main_menu(has_items=True, message=message))
     await message.answer("\n".join(lines), reply_markup=supplements_main_menu(has_items=True))
 
 
@@ -1271,21 +1237,6 @@ async def ask_time_value(message: Message):
 async def handle_time_value(message: Message):
     text = message.text.strip()
     import re
-
-    if text == "⬅️ Вернуться":
-        message.bot.expecting_supplement_time = False
-        sup = get_active_supplement(message)
-        if sup["times"]:
-            await message.answer(
-                f"ℹ️ Добавьте время приема или удалите лишнее для {sup['name']}",
-                reply_markup=time_edit_menu(sup["times"]),
-            )
-        else:
-            await message.answer(
-                f"ℹ️ Добавьте первое время приема для {sup['name']}",
-                reply_markup=time_first_menu(),
-            )
-        return
 
     if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", text):
         await message.answer("Пожалуйста, укажите время в формате ЧЧ:ММ. Например: 09:00")
@@ -1353,15 +1304,6 @@ async def save_time_or_supplement(message: Message):
         "duration": sup["duration"],
     })
 
-    history = get_supplement_history(message)
-    history.append({
-        "name": sup["name"],
-        "times": sup["times"].copy(),
-        "days": sup["days"].copy(),
-        "duration": sup["duration"],
-        "created_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
-    })
-
     reset_supplement_state(message)
 
     await message.answer(
@@ -1370,7 +1312,6 @@ async def save_time_or_supplement(message: Message):
         f"⏰ Время приема: {', '.join(supplements_list[-1]['times']) or 'не выбрано'}\n"
         f"📅 Дни приема: {', '.join(supplements_list[-1]['days']) or 'не выбрано'}\n"
         f"⏳ Длительность: {supplements_list[-1]['duration']}",
-        reply_markup=supplements_main_menu(has_items=True, message=message),
         reply_markup=supplements_main_menu(has_items=True),
     )
 
@@ -1408,7 +1349,6 @@ async def select_all_days(message: Message):
 
 @dp.message(F.text == "⏳ Длительность приема")
 async def choose_duration(message: Message):
-    message.bot.choosing_duration = True
     await message.answer("Выберите длительность приема", reply_markup=duration_menu())
 
 
@@ -1417,8 +1357,6 @@ async def set_duration(message: Message):
     sup = get_active_supplement(message)
     sup["duration"] = message.text.lower()
     sup["ready"] = True
-    if getattr(message.bot, "choosing_duration", False):
-        message.bot.choosing_duration = False
     await message.answer(
         supplement_schedule_prompt(sup),
         reply_markup=supplement_edit_menu(show_save=True),
@@ -1427,34 +1365,10 @@ async def set_duration(message: Message):
 
 @dp.message(F.text == "⬅️ Вернуться")
 async def back_from_supplement_steps(message: Message):
-    if getattr(message.bot, "expecting_supplement_time", False):
-        message.bot.expecting_supplement_time = False
-        sup = get_active_supplement(message)
-        if sup["times"]:
-            await message.answer(
-                f"ℹ️ Добавьте время приема или удалите лишнее для {sup['name']}",
-                reply_markup=time_edit_menu(sup["times"]),
-            )
-        else:
-            await message.answer(
-                f"ℹ️ Добавьте первое время приема для {sup['name']}",
-                reply_markup=time_first_menu(),
-            )
-        return
-
     if getattr(message.bot, "selecting_days", False):
         message.bot.selecting_days = False
         sup = get_active_supplement(message)
         sup["ready"] = True
-        await message.answer(
-            supplement_schedule_prompt(sup),
-            reply_markup=supplement_edit_menu(show_save=True),
-        )
-        return
-
-    if getattr(message.bot, "choosing_duration", False):
-        message.bot.choosing_duration = False
-        sup = get_active_supplement(message)
         await message.answer(
             supplement_schedule_prompt(sup),
             reply_markup=supplement_edit_menu(show_save=True),
@@ -1474,15 +1388,6 @@ async def cancel_supplement(message: Message):
 async def edit_supplement_placeholder(message: Message):
     supplements_list = get_user_supplements(message)
     if not supplements_list:
-        await message.answer(
-            "Пока нет добавок для редактирования.",
-            reply_markup=supplements_main_menu(False, message=message),
-        )
-        return
-    await message.answer(
-        "Редактирование добавок скоро появится. Вы можете создать новые записи сейчас.",
-        reply_markup=supplements_main_menu(True, message=message),
-    )
         await message.answer("Пока нет добавок для редактирования.", reply_markup=supplements_main_menu(False))
         return
     await message.answer("Редактирование добавок скоро появится. Вы можете создать новые записи сейчас.", reply_markup=supplements_main_menu(True))
@@ -1492,44 +1397,6 @@ async def edit_supplement_placeholder(message: Message):
 async def supplements_history(message: Message):
     supplements_list = get_user_supplements(message)
     if not supplements_list:
-        await message.answer(
-            "История добавок пуста.", reply_markup=supplements_main_menu(False, message=message)
-        )
-        return
-    history = get_supplement_history(message)
-    lines = ["История добавок"]
-    if not history:
-        lines.append("Записей пока нет. Сохрани добавку и она появится здесь.")
-    else:
-        notif_status = "включены" if get_notification_status_for_user(message) else "выключены"
-        lines.append(f"Уведомления: {notif_status}")
-        lines.append("Напоминания приходят в указанные дни и время, если уведомления включены.")
-        for item in history:
-            days = ", ".join(item["days"]) if item["days"] else "не выбрано"
-            times = ", ".join(item["times"]) if item["times"] else "не выбрано"
-            lines.append(
-                f"💊 {item['name']} — {times}; дни: {days}; длительность: {item['duration']} (создано: {item['created_at']})"
-            )
-    await message.answer("\n".join(lines), reply_markup=supplements_main_menu(True, message=message))
-
-
-@dp.message(F.text.in_({"🔕 Выключить уведомления", "🔔 Включить уведомления"}))
-async def toggle_supplement_notifications(message: Message):
-    current_status = get_notification_status_for_user(message)
-    new_status = message.text.startswith("🔕") is False
-    if current_status == new_status:
-        await message.answer(
-            f"Уведомления уже {'включены' if current_status else 'выключены'}.",
-            reply_markup=supplements_main_menu(has_items=bool(get_user_supplements(message)), message=message),
-        )
-        return
-
-    set_notification_status_for_user(message, new_status)
-    status_text = "включил" if new_status else "выключил"
-    await message.answer(
-        f"Я {status_text} напоминания для добавок. Ты всегда можешь изменить это в разделе 'История добавок'.",
-        reply_markup=supplements_main_menu(has_items=bool(get_user_supplements(message)), message=message),
-    )
         await message.answer("История добавок пуста.", reply_markup=supplements_main_menu(False))
         return
     lines = ["Последние добавки"]
