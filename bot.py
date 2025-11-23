@@ -593,10 +593,10 @@ async def process_number(message: Message):
     session.add(new_workout)
     session.commit()
 
-    # Считаем общее количество за сегодня по этому упражнению
-    total_today = (
+    # Считаем общее количество по выбранной дате
+    total_for_date = (
         session.query(Workout)
-        .filter_by(user_id=user_id, exercise=exercise, date=date.today())
+        .filter_by(user_id=user_id, exercise=exercise, date=selected_date)
         .with_entities(func.sum(Workout.count))
         .scalar()
     ) or 0
@@ -608,8 +608,12 @@ async def process_number(message: Message):
         delattr(message.bot, "selected_date")
 
 
+    date_label = (
+        "сегодня" if selected_date == date.today() else selected_date.strftime("%d.%m.%Y")
+    )
+
     await message.answer(
-        f"Записал! 👍\nВсего {exercise} сегодня: {total_today} повторений"
+        f"Записал! 👍\nВсего {exercise} за {date_label}: {total_for_date} повторений"
     )
     await message.answer("Если хочешь — введи ещё количество или вернись через '⬅️ Назад'")
 
