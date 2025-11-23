@@ -1,7 +1,15 @@
 import asyncio
 import nest_asyncio
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+import calendar
+from aiogram.types import (
+    Message,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    CallbackQuery,
+)
 from aiogram.filters import Command
 import os
 import json
@@ -22,6 +30,22 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 Base = declarative_base()
 SessionLocal = sessionmaker(bind=engine)
+
+MONTH_NAMES = [
+    "",
+    "Январь",
+    "Февраль",
+    "Март",
+    "Апрель",
+    "Май",
+    "Июнь",
+    "Июль",
+    "Август",
+    "Сентябрь",
+    "Октябрь",
+    "Ноябрь",
+    "Декабрь",
+]
 
 class User(Base):
     __tablename__ = "users"
@@ -172,6 +196,144 @@ def add_measurements(user_id, measurements: dict, entry_date):
         session.commit()
     finally:
         session.close()
+
+
+def get_workouts_for_day(user_id: str, target_date: date):
+    session = SessionLocal()
+    try:
+        return (
+            session.query(Workout)
+            .filter(Workout.user_id == user_id, Workout.date == target_date)
+            .order_by(Workout.id)
+            .all()
+        )
+    finally:
+        session.close()
+
+
+def get_month_workout_days(user_id: str, year: int, month: int):
+    first_day = date(year, month, 1)
+    _, days_in_month = calendar.monthrange(year, month)
+    last_day = date(year, month, days_in_month)
+
+    session = SessionLocal()
+    try:
+        workouts = (
+            session.query(Workout.date)
+            .filter(
+                Workout.user_id == user_id,
+                Workout.date >= first_day,
+                Workout.date <= last_day,
+            )
+            .all()
+        )
+        return {w.date.day for w in workouts}
+    finally:
+        session.close()
+
+
+def build_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    workout_days = get_month_workout_days(user_id, year, month)
+    keyboard: list[list[InlineKeyboardButton]] = []
+
+    header = InlineKeyboardButton(text=f"{MONTH_NAMES[month]} {year}", callback_data="noop")
+    keyboard.append([header])
+
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([InlineKeyboardButton(text=d, callback_data="noop") for d in week_days])
+
+    month_calendar = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
+    for week in month_calendar:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
+            else:
+                marker = "●" if day in workout_days else ""
+                row.append(
+                    InlineKeyboardButton(
+                        text=f"{day}{marker}",
+                        callback_data=f"cal_day:{year}-{month:02d}-{day:02d}",
+                    )
+                )
+        keyboard.append(row)
+
+    prev_month = month - 1 or 12
+    prev_year = year - 1 if month == 1 else year
+    next_month = month % 12 + 1
+    next_year = year + 1 if month == 12 else year
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="◀️", callback_data=f"cal_nav:{prev_year}-{prev_month:02d}"
+            ),
+            InlineKeyboardButton(text="Закрыть", callback_data="cal_close"),
+            InlineKeyboardButton(
+                text="▶️", callback_data=f"cal_nav:{next_year}-{next_month:02d}"
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def build_day_actions_keyboard(workouts: list[Workout], target_date: date) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for w in workouts:
+        label = f"{w.exercise} ({w.count})"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"✏️ {label}", callback_data=f"wrk_edit:{w.id}"
+                ),
+                InlineKeyboardButton(
+                    text=f"🗑 {label}", callback_data=f"wrk_del:{w.id}"
+                ),
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к календарю",
+                callback_data=f"cal_back:{target_date.year}-{target_date.month:02d}",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def show_calendar(message: Message, user_id: str, year: int | None = None, month: int | None = None):
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    keyboard = build_calendar_keyboard(user_id, year, month)
+    await message.answer(
+        "📆 Выбери день, чтобы посмотреть, изменить или удалить тренировку:",
+        reply_markup=keyboard,
+    )
+
+
+async def show_day_workouts(message: Message, user_id: str, target_date: date):
+    workouts = get_workouts_for_day(user_id, target_date)
+    if not workouts:
+        await message.answer(
+            f"{target_date.strftime('%d.%m.%Y')}: нет тренировок.",
+            reply_markup=build_day_actions_keyboard([], target_date),
+        )
+        return
+
+    text = [f"📅 {target_date.strftime('%d.%m.%Y')} — тренировки:"]
+    for w in workouts:
+        variant_text = f" ({w.variant})" if w.variant else ""
+        text.append(f"• {w.exercise}{variant_text}: {w.count}")
+
+    await message.answer(
+        "\n".join(text), reply_markup=build_day_actions_keyboard(workouts, target_date)
+    )
 
 
 def start_date_selection(bot, context: str):
@@ -482,6 +644,28 @@ async def delete_entry_start(message: Message):
 async def process_number(message: Message):
     user_id = str(message.from_user.id)
     number = int(message.text)
+
+
+    if getattr(message.bot, "expecting_edit_workout_id", False):
+        workout_id = message.bot.expecting_edit_workout_id
+        session = SessionLocal()
+        try:
+            workout = session.query(Workout).filter_by(id=workout_id, user_id=user_id).first()
+            if not workout:
+                await message.answer("Не нашёл тренировку для изменения.")
+            else:
+                workout.count = number
+                session.commit()
+                target_date = workout.date
+                await message.answer(
+                    f"✏️ Обновил: {workout.exercise} — теперь {number} (от {target_date.strftime('%d.%m.%Y')})"
+                )
+                await show_day_workouts(message, user_id, target_date)
+        finally:
+            session.close()
+
+        message.bot.expecting_edit_workout_id = False
+        return
 
 
     # --- режим удаления веса ---
@@ -894,7 +1078,8 @@ async def go_back(message: Message):
         "expecting_weight_delete",
         "expecting_measurement_delete",
         "expecting_custom_exercise",
-        "expecting_date_input"
+        "expecting_date_input",
+        "expecting_edit_workout_id",
     ]:
         if hasattr(message.bot, attr):
             try:
@@ -914,6 +1099,13 @@ async def go_back(message: Message):
         if hasattr(message.bot, context_attr):
             try:
                 delattr(message.bot, context_attr)
+            except Exception:
+                pass
+
+    for calendar_attr in ["edit_workout_date", "edit_calendar_month"]:
+        if hasattr(message.bot, calendar_attr):
+            try:
+                delattr(message.bot, calendar_attr)
             except Exception:
                 pass
 
@@ -938,8 +1130,100 @@ async def calories(message: Message):
 
 
 @dp.message(F.text == "📆 Календарь")
-async def calendar(message: Message):
-    await message.answer("📆 Календарь появится в следующем обновлении 💭")
+async def calendar_view(message: Message):
+    user_id = str(message.from_user.id)
+    await show_calendar(message, user_id)
+
+
+@dp.callback_query(F.data == "cal_close")
+async def close_calendar(callback: CallbackQuery):
+    await callback.answer("Календарь закрыт")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data == "noop")
+async def ignore_callback(callback: CallbackQuery):
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("cal_nav:"))
+async def navigate_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, ym = callback.data.split(":", 1)
+    year, month = map(int, ym.split("-"))
+    user_id = str(callback.from_user.id)
+    await callback.message.edit_reply_markup(
+        reply_markup=build_calendar_keyboard(user_id, year, month)
+    )
+
+
+@dp.callback_query(F.data.startswith("cal_back:"))
+async def back_to_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, ym = callback.data.split(":", 1)
+    year, month = map(int, ym.split("-"))
+    user_id = str(callback.from_user.id)
+    await show_calendar(callback.message, user_id, year, month)
+
+
+@dp.callback_query(F.data.startswith("cal_day:"))
+async def select_calendar_day(callback: CallbackQuery):
+    await callback.answer()
+    _, date_str = callback.data.split(":", 1)
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    callback.bot.edit_calendar_month = date(target_date.year, target_date.month, 1)
+    await show_day_workouts(callback.message, str(callback.from_user.id), target_date)
+
+
+@dp.callback_query(F.data.startswith("wrk_del:"))
+async def delete_workout(callback: CallbackQuery):
+    await callback.answer()
+    workout_id = int(callback.data.split(":", 1)[1])
+    user_id = str(callback.from_user.id)
+
+    session = SessionLocal()
+    try:
+        workout = session.query(Workout).filter_by(id=workout_id, user_id=user_id).first()
+        if not workout:
+            await callback.message.answer("Не нашёл такую запись для удаления.")
+            return
+
+        target_date = workout.date
+        session.delete(workout)
+        session.commit()
+    finally:
+        session.close()
+
+    await callback.message.answer(
+        f"🗑 Удалил: {target_date.strftime('%d.%m.%Y')} — {workout.exercise} ({workout.count})"
+    )
+    await show_day_workouts(callback.message, user_id, target_date)
+
+
+@dp.callback_query(F.data.startswith("wrk_edit:"))
+async def edit_workout(callback: CallbackQuery):
+    await callback.answer()
+    workout_id = int(callback.data.split(":", 1)[1])
+    user_id = str(callback.from_user.id)
+
+    session = SessionLocal()
+    try:
+        workout = session.query(Workout).filter_by(id=workout_id, user_id=user_id).first()
+    finally:
+        session.close()
+
+    if not workout:
+        await callback.message.answer("Не нашёл тренировку для изменения.")
+        return
+
+    callback.bot.expecting_edit_workout_id = workout_id
+    callback.bot.edit_workout_date = workout.date
+    await callback.message.answer(
+        f"✏️ Введи новое количество для {workout.exercise} от {workout.date.strftime('%d.%m.%Y')}"
+    )
 
 
 @dp.message(F.text == "💬 Обратная связь")
