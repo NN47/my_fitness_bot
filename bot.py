@@ -26,13 +26,8 @@ import random
 from datetime import datetime
 
 
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///fitness.db")
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
 Base = declarative_base()
 SessionLocal = sessionmaker(bind=engine)
 
@@ -1189,6 +1184,10 @@ def supplements_main_menu(has_items: bool = False, message: Message | None = Non
         buttons.append([KeyboardButton(text="✏️ Редактировать добавку"), KeyboardButton(text="📜 История добавок")])
         toggle_text = "🔕 Выключить уведомления" if notifications_enabled else "🔔 Включить уведомления"
         buttons.append([KeyboardButton(text=toggle_text)])
+def supplements_main_menu(has_items: bool = False) -> ReplyKeyboardMarkup:
+    buttons = [[KeyboardButton(text="➕ Создать добавку")]]
+    if has_items:
+        buttons.append([KeyboardButton(text="✏️ Редактировать добавку"), KeyboardButton(text="📜 История добавок")])
     buttons.append([KeyboardButton(text="⬅️ Назад")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -1206,6 +1205,11 @@ async def supplements(message: Message):
 
     notif_status = "включены" if get_notification_status_for_user(message) else "выключены"
     lines = ["Мои добавки", f"Уведомления: {notif_status}"]
+            reply_markup=supplements_main_menu(has_items=False),
+        )
+        return
+
+    lines = ["Мои добавки"]
     for item in supplements_list:
         days = ", ".join(item["days"]) if item["days"] else "не выбрано"
         times = ", ".join(item["times"]) if item["times"] else "не выбрано"
@@ -1213,6 +1217,7 @@ async def supplements(message: Message):
             f"\n💊 {item['name']} \n⏰ Время приема: {times}\n📅 Дни приема: {days}\n⏳ Длительность: {item['duration']}"
         )
     await message.answer("\n".join(lines), reply_markup=supplements_main_menu(has_items=True, message=message))
+    await message.answer("\n".join(lines), reply_markup=supplements_main_menu(has_items=True))
 
 
 @dp.message(F.text == "➕ Создать добавку")
@@ -1366,6 +1371,7 @@ async def save_time_or_supplement(message: Message):
         f"📅 Дни приема: {', '.join(supplements_list[-1]['days']) or 'не выбрано'}\n"
         f"⏳ Длительность: {supplements_list[-1]['duration']}",
         reply_markup=supplements_main_menu(has_items=True, message=message),
+        reply_markup=supplements_main_menu(has_items=True),
     )
 
 
@@ -1477,6 +1483,9 @@ async def edit_supplement_placeholder(message: Message):
         "Редактирование добавок скоро появится. Вы можете создать новые записи сейчас.",
         reply_markup=supplements_main_menu(True, message=message),
     )
+        await message.answer("Пока нет добавок для редактирования.", reply_markup=supplements_main_menu(False))
+        return
+    await message.answer("Редактирование добавок скоро появится. Вы можете создать новые записи сейчас.", reply_markup=supplements_main_menu(True))
 
 
 @dp.message(F.text == "📜 История добавок")
@@ -1521,6 +1530,16 @@ async def toggle_supplement_notifications(message: Message):
         f"Я {status_text} напоминания для добавок. Ты всегда можешь изменить это в разделе 'История добавок'.",
         reply_markup=supplements_main_menu(has_items=bool(get_user_supplements(message)), message=message),
     )
+        await message.answer("История добавок пуста.", reply_markup=supplements_main_menu(False))
+        return
+    lines = ["Последние добавки"]
+    for item in supplements_list:
+        days = ", ".join(item["days"]) if item["days"] else "не выбрано"
+        times = ", ".join(item["times"]) if item["times"] else "не выбрано"
+        lines.append(
+            f"💊 {item['name']} — {times}; дни: {days}; длительность: {item['duration']}"
+        )
+    await message.answer("\n".join(lines), reply_markup=supplements_main_menu(True))
 
 
 def supplement_schedule_prompt(sup: dict) -> str:
