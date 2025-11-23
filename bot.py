@@ -142,18 +142,18 @@ def get_today_summary_text(user_id: str) -> str:
     return f"{motivation}\n\n{summary}"
 
 
-def add_weight(user_id, value):
+def add_weight(user_id, value, entry_date):
     session = SessionLocal()
     weight = Weight(
         user_id=str(user_id),
         value=str(value),
-        date=date.today()
+        date=entry_date
     )
     session.add(weight)
     session.commit()
     session.close()
 
-def add_measurements(user_id, measurements: dict):
+def add_measurements(user_id, measurements: dict, entry_date):
     """
     measurements: словарь с ключами среди {'chest','waist','hips','biceps','thigh'}
     """
@@ -166,13 +166,59 @@ def add_measurements(user_id, measurements: dict):
             hips=measurements.get("hips"),
             biceps=measurements.get("biceps"),
             thigh=measurements.get("thigh"),
-            date=date.today()
+            date=entry_date
         )
         session.add(m)
         session.commit()
     finally:
         session.close()
 
+
+def start_date_selection(bot, context: str):
+    """Сохраняет контекст выбора даты (тренировка/вес/замеры)."""
+    bot.date_selection_context = context
+    bot.selected_date = date.today()
+    bot.expecting_date_input = False
+
+
+def get_date_prompt(context: str) -> str:
+    prompts = {
+        "training": "За какой день добавить тренировку?",
+        "weight": "За какой день добавить вес?",
+        "measurements": "За какой день добавить замеры?",
+    }
+    return prompts.get(context, "За какую дату сделать запись?")
+
+
+def get_other_day_prompt(context: str) -> str:
+    prompts = {
+        "training": "Выбери день тренировки или введи дату вручную:",
+        "weight": "Выбери день для записи веса или введи дату вручную:",
+        "measurements": "Выбери день для замеров или введи дату вручную:",
+    }
+    return prompts.get(context, "Выбери нужный день или введи дату вручную:")
+
+
+async def proceed_after_date_selection(message: Message):
+    context = getattr(message.bot, "date_selection_context", "training")
+    selected_date = getattr(message.bot, "selected_date", date.today())
+    date_text = selected_date.strftime("%d.%m.%Y")
+
+    if context == "training":
+        await message.answer(f"📅 Выбрана дата: {date_text}")
+        await message.answer("Теперь выбери упражнение:", reply_markup=exercise_menu)
+    elif context == "weight":
+        message.bot.expecting_weight = True
+        await message.answer(f"📅 Выбрана дата: {date_text}")
+        await message.answer("Введи свой вес в килограммах (например: 72.5):")
+    elif context == "measurements":
+        message.bot.expecting_measurements = True
+        await message.answer(f"📅 Выбрана дата: {date_text}")
+        await message.answer(
+            "Введи замеры в формате:\n\n"
+            "грудь=100, талия=80, руки=35\n\n"
+            "Можно указать только нужные параметры."
+        )
 
 
 
@@ -335,40 +381,35 @@ async def show_training_menu(message: Message):
 
 @dp.message(F.text == "➕ Добавить тренировку")
 async def show_add_training_menu(message: Message):
-    # по умолчанию считаем текущую дату выбранной, чтобы сбросить прошлые выборы
-    message.bot.selected_date = date.today()
-    await message.answer("За какой день добавить тренировку?", reply_markup=training_date_menu)
+    start_date_selection(message.bot, "training")
+    await message.answer(get_date_prompt("training"), reply_markup=training_date_menu)
 
 @dp.message(F.text == "📅 Сегодня")
 async def add_training_today(message: Message):
     message.bot.selected_date = date.today()
-    await message.answer("Выбери упражнение:", reply_markup=exercise_menu)
+    await proceed_after_date_selection(message)
 
 @dp.message(F.text == "📆 Другой день")
 async def add_training_other_day(message: Message):
-    await message.answer(
-        "Выбери день тренировки или введи дату вручную:",
-        reply_markup=other_day_menu
-    )
+    context = getattr(message.bot, "date_selection_context", "training")
+    await message.answer(get_other_day_prompt(context), reply_markup=other_day_menu)
 
 @dp.message(F.text == "📅 Вчера")
 async def training_yesterday(message: Message):
     message.bot.selected_date = date.today() - timedelta(days=1)
-    await message.answer(f"📅 Выбрана дата: {message.bot.selected_date.strftime('%d.%m.%Y')}")
-    await message.answer("Теперь выбери упражнение:", reply_markup=exercise_menu)
+    await proceed_after_date_selection(message)
 
 
 @dp.message(F.text == "📆 Позавчера")
 async def training_day_before_yesterday(message: Message):
     message.bot.selected_date = date.today() - timedelta(days=2)
-    await message.answer(f"📅 Выбрана дата: {message.bot.selected_date.strftime('%d.%m.%Y')}")
-    await message.answer("Теперь выбери упражнение:", reply_markup=exercise_menu)
+    await proceed_after_date_selection(message)
 
 
 @dp.message(F.text == "✏️ Ввести дату вручную")
 async def enter_custom_date(message: Message):
     message.bot.expecting_date_input = True
-    await message.answer("Введи дату тренировки в формате ДД.ММ.ГГГГ:")
+    await message.answer("Введи дату в формате ДД.ММ.ГГГГ:")
 
 @dp.message(F.text.regexp(r"^\d{2}\.\d{2}\.\d{4}$"), lambda m: getattr(m.bot, "expecting_date_input", False))
 async def handle_custom_date(message: Message):
@@ -376,8 +417,7 @@ async def handle_custom_date(message: Message):
         entered_date = datetime.strptime(message.text, "%d.%m.%Y").date()
         message.bot.selected_date = entered_date
         message.bot.expecting_date_input = False
-        await message.answer(f"📅 Выбрана дата: {entered_date.strftime('%d.%m.%Y')}")
-        await message.answer("Теперь выбери упражнение:", reply_markup=exercise_menu)
+        await proceed_after_date_selection(message)
     except ValueError:
         await message.answer("⚠️ Неверный формат. Попробуй так: 31.10.2025")
 
@@ -643,8 +683,8 @@ async def my_weight(message: Message):
 
 @dp.message(F.text == "➕ Добавить вес")
 async def add_weight_start(message: Message):
-    message.bot.expecting_weight = True
-    await message.answer("Введи свой вес в килограммах (например: 72.5):")
+    start_date_selection(message.bot, "weight")
+    await message.answer(get_date_prompt("weight"), reply_markup=training_date_menu)
 
 @dp.message(F.text == "🗑 Удалить вес")
 async def delete_weight_start(message: Message):
@@ -680,9 +720,13 @@ async def process_weight_or_number(message: Message):
     # --- если ждём ввод веса ---
     if getattr(message.bot, "expecting_weight", False):
         weight_value = float(message.text.replace(",", "."))  # поддержка 72,5 тоже
-        add_weight(user_id, weight_value)
+        selected_date = getattr(message.bot, "selected_date", date.today())
+        add_weight(user_id, weight_value, selected_date)
         message.bot.expecting_weight = False
-        await message.answer(f"✅ Записал вес: {weight_value} кг", reply_markup=weight_menu)
+        await message.answer(
+            f"✅ Записал вес {weight_value} кг за {selected_date.strftime('%d.%m.%Y')}",
+            reply_markup=weight_menu
+        )
         return
 
     # иначе пусть идёт обычная обработка числа (повторы и т.п.)
@@ -727,12 +771,8 @@ async def my_measurements(message: Message):
 
 @dp.message(F.text == "➕ Добавить замеры")
 async def add_measurements_start(message: Message):
-    message.bot.expecting_measurements = True
-    await message.answer(
-        "Введи замеры в формате:\n\n"
-        "грудь=100, талия=80, руки=35\n\n"
-        "Можно указать только нужные параметры."
-    )
+    start_date_selection(message.bot, "measurements")
+    await message.answer(get_date_prompt("measurements"), reply_markup=training_date_menu)
 
 @dp.message(F.text == "🗑 Удалить замеры")
 async def delete_measurements_start(message: Message):
@@ -818,7 +858,8 @@ async def process_measurements(message: Message):
 
     # сохраняем в базу (функция ниже принимает маппинг полей модели)
     try:
-        add_measurements(user_id, measurements_mapped)
+        selected_date = getattr(message.bot, "selected_date", date.today())
+        add_measurements(user_id, measurements_mapped, selected_date)
     except Exception as e:
         # на случай неожиданной ошибки — лог в консоль и сообщение пользователю
         print("Error saving measurements:", e)
@@ -827,7 +868,13 @@ async def process_measurements(message: Message):
         return
 
     message.bot.expecting_measurements = False
-    await message.answer(f"✅ Замеры сохранены: {measurements_mapped}", reply_markup=measurements_menu)
+    await message.answer(
+        "✅ Замеры сохранены: {data} ({date})".format(
+            data=measurements_mapped,
+            date=getattr(message.bot, "selected_date", date.today()).strftime("%d.%m.%Y")
+        ),
+        reply_markup=measurements_menu
+    )
 
 
 
@@ -846,7 +893,8 @@ async def go_back(message: Message):
         "expecting_history_delete",
         "expecting_weight_delete",
         "expecting_measurement_delete",
-        "expecting_custom_exercise"
+        "expecting_custom_exercise",
+        "expecting_date_input"
     ]:
         if hasattr(message.bot, attr):
             try:
@@ -859,6 +907,13 @@ async def go_back(message: Message):
         if hasattr(message.bot, list_attr):
             try:
                 delattr(message.bot, list_attr)
+            except Exception:
+                pass
+
+    for context_attr in ["date_selection_context", "selected_date"]:
+        if hasattr(message.bot, context_attr):
+            try:
+                delattr(message.bot, context_attr)
             except Exception:
                 pass
 
