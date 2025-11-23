@@ -95,7 +95,6 @@ def start_keepalive_server():
 threading.Thread(target=start_keepalive_server, daemon=True).start()
 
 
-load_dotenv()
 API_TOKEN = os.getenv("API_TOKEN")
 if not API_TOKEN:
     raise RuntimeError("API_TOKEN не найден. Установи переменную окружения или создай .env с API_TOKEN.")
