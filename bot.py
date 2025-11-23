@@ -335,10 +335,13 @@ async def show_training_menu(message: Message):
 
 @dp.message(F.text == "➕ Добавить тренировку")
 async def show_add_training_menu(message: Message):
+    # по умолчанию считаем текущую дату выбранной, чтобы сбросить прошлые выборы
+    message.bot.selected_date = date.today()
     await message.answer("За какой день добавить тренировку?", reply_markup=training_date_menu)
 
 @dp.message(F.text == "📅 Сегодня")
 async def add_training_today(message: Message):
+    message.bot.selected_date = date.today()
     await message.answer("Выбери упражнение:", reply_markup=exercise_menu)
 
 @dp.message(F.text == "📆 Другой день")
@@ -602,11 +605,6 @@ async def process_number(message: Message):
     ) or 0
 
     session.close()
-
-    # сбрасываем выбранную дату, чтобы не сохранялась для следующего раза
-    if hasattr(message.bot, "selected_date"):
-        delattr(message.bot, "selected_date")
-
 
     date_label = (
         "сегодня" if selected_date == date.today() else selected_date.strftime("%d.%m.%Y")
