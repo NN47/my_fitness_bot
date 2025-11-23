@@ -85,10 +85,10 @@ Base.metadata.create_all(engine)
 
 
 def start_keepalive_server():
-    PORT = 10000
+    port = int(os.getenv("PORT", "10000"))
     handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", PORT), handler) as httpd:
-        print(f"✅ Keep-alive сервер запущен на порту {PORT}")
+    with socketserver.TCPServer(("", port), handler) as httpd:
+        print(f"✅ Keep-alive сервер запущен на порту {port}")
         httpd.serve_forever()
 
 # Запуск мини-сервера в отдельном потоке
