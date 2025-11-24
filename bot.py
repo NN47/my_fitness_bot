@@ -24,7 +24,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func
 from datetime import timedelta
 import random
 from datetime import datetime
-
+import requests
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
@@ -96,6 +96,8 @@ threading.Thread(target=start_keepalive_server, daemon=True).start()
 
 
 load_dotenv()
+NUTRITION_API_KEY = os.getenv("NUTRITION_API_KEY")
+
 API_TOKEN = os.getenv("API_TOKEN")
 if not API_TOKEN:
     raise RuntimeError("API_TOKEN не найден. Установи переменную окружения или создай .env с API_TOKEN.")
@@ -106,6 +108,38 @@ dp = Dispatcher()
 
 
 # -------------------- helpers --------------------
+
+
+def get_nutrition_from_api(query: str):
+    """
+    Вызывает api-ninjas /v1/nutrition и возвращает (items, totals).
+    items — список продуктов, totals — суммарные калории и БЖУ.
+    """
+    if not NUTRITION_API_KEY:
+        raise RuntimeError("NUTRITION_API_KEY не задан в переменных окружения")
+
+    url = "https://api.api-ninjas.com/v1/nutrition"
+    headers = {"X-Api-Key": NUTRITION_API_KEY}
+    params = {"query": query}
+
+    resp = requests.get(url, headers=headers, params=params, timeout=10)
+    resp.raise_for_status()
+    items = resp.json()  # список словарей
+
+    totals = {
+        "calories": 0.0,
+        "protein_g": 0.0,
+        "fat_total_g": 0.0,
+        "carbohydrates_total_g": 0.0,
+    }
+
+    for item in items:
+        totals["calories"] += item.get("calories") or 0
+        totals["protein_g"] += item.get("protein_g") or 0
+        totals["fat_total_g"] += item.get("fat_total_g") or 0
+        totals["carbohydrates_total_g"] += item.get("carbohydrates_total_g") or 0
+
+    return items, totals
 
 
 def add_workout(user_id, exercise, variant, count):
@@ -1220,6 +1254,7 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "choosing_supplement_for_edit",
         "expecting_supplement_history_choice",
         "expecting_supplement_history_time",
+        "expecting_food_input",
     ]:
         if hasattr(message.bot, attr):
             try:
@@ -2146,7 +2181,66 @@ def duration_menu() -> ReplyKeyboardMarkup:
 
 @dp.message(F.text == "🍱 КБЖУ")
 async def calories(message: Message):
-    await message.answer("🍱 Раздел КБЖУ в разработке 💭")
+    reset_user_state(message)  # чтобы не конфликтовало с другими режимами
+    message.bot.expecting_food_input = True
+    await message.answer(
+        "🍱 Раздел КБЖУ\n\n"
+        "Напиши, что ты съел(а) одним сообщением.\n\n"
+        "Например:\n"
+        "• 2 eggs, 100g oatmeal, 1 banana\n"
+        "• 150g chicken breast and 200g rice\n\n"
+        "⚠️ Сейчас лучше писать еду по-английски, так API точнее понимает продукты."
+    )
+
+@dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
+async def handle_food_input(message: Message):
+    user_text = message.text.strip()
+    if not user_text:
+        await message.answer("Напиши, пожалуйста, что ты съел(а) 🙏")
+        return
+
+    try:
+        items, totals = get_nutrition_from_api(user_text)
+    except Exception as e:
+        print("Nutrition API error:", e)
+        await message.answer(
+            "⚠️ Не получилось получить КБЖУ из сервиса.\n"
+            "Попробуй ещё раз чуть позже или измени формулировку."
+        )
+        return
+
+    if not items:
+        await message.answer(
+            "Я не нашёл продукты в этом описании 🤔\n"
+            "Попробуй написать чуть по-другому (лучше на английском):\n"
+            "например: `150g chicken breast and 200g rice`"
+        )
+        return
+
+    lines = ["🍱 Твой приём пищи:\n"]
+    for item in items:
+        name = item.get("name", "item").title()
+        cal = item.get("calories", 0)
+        p = item.get("protein_g", 0)
+        f = item.get("fat_total_g", 0)
+        c = item.get("carbohydrates_total_g", 0)
+        lines.append(f"• {name} — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})")
+
+    lines.append("\nИТОГО:")
+    lines.append(
+        f"🔥 {totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals['protein_g']:.1f} г\n"
+        f"🧈 Жиры: {totals['fat_total_g']:.1f} г\n"
+        f"🍞 Углеводы: {totals['carbohydrates_total_g']:.1f} г"
+    )
+
+    message.bot.expecting_food_input = False  # выходим из режима ввода еды
+    await answer_with_menu(
+        message,
+        "\n".join(lines),
+        reply_markup=main_menu,  # можно сделать отдельное меню КБЖУ позже
+    )
+
 
 
 @dp.message(F.text == "📆 Календарь")
