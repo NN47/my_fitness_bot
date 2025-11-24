@@ -135,7 +135,6 @@ def get_nutrition_from_api(query: str):
 
     print(f"Nutrition API status: {resp.status_code}")
 
-    # если код не 200 — логируем тело и валимся
     if resp.status_code != 200:
         print("Ответ от Nutrition API (non-200):", resp.text[:500])
         raise RuntimeError(f"Nutrition API error: HTTP {resp.status_code}")
@@ -146,7 +145,6 @@ def get_nutrition_from_api(query: str):
         print("❌ Не получилось распарсить JSON от Nutrition API:", resp.text[:500])
         raise
 
-    # если пришёл объект с полем error — это не список продуктов, а ошибка
     if isinstance(data, dict) and data.get("error"):
         print("❌ Nutrition API вернул ошибку:", data)
         raise RuntimeError(f"Nutrition API error: {data.get('error')}")
@@ -157,6 +155,14 @@ def get_nutrition_from_api(query: str):
 
     items = data
 
+    def safe_float(v) -> float:
+        try:
+            if v is None:
+                return 0.0
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
     totals = {
         "calories": 0.0,
         "protein_g": 0.0,
@@ -165,12 +171,13 @@ def get_nutrition_from_api(query: str):
     }
 
     for item in items:
-        totals["calories"] += item.get("calories") or 0
-        totals["protein_g"] += item.get("protein_g") or 0
-        totals["fat_total_g"] += item.get("fat_total_g") or 0
-        totals["carbohydrates_total_g"] += item.get("carbohydrates_total_g") or 0
+        totals["calories"] += safe_float(item.get("calories"))
+        totals["protein_g"] += safe_float(item.get("protein_g"))
+        totals["fat_total_g"] += safe_float(item.get("fat_total_g"))
+        totals["carbohydrates_total_g"] += safe_float(item.get("carbohydrates_total_g"))
 
     return items, totals
+
 
 
 
