@@ -1754,18 +1754,13 @@ async def rename_supplement(message: Message):
 @dp.message(F.text == "✏️ Редактировать время")
 async def edit_supplement_time(message: Message):
     sup = get_active_supplement(message)
-    if not sup["times"]:
-        await answer_with_menu(
-            message,
-            f"ℹ️ Добавьте первое время приема для {sup['name']}",
-            reply_markup=time_first_menu(),
-        )
-        return
+    sup["ready"] = False
+    message.bot.expecting_supplement_time = True
 
-    await answer_with_menu(
-        message,
-        f"ℹ️ Добавьте время приема или удалите лишнее для {sup['name']}",
-        reply_markup=time_edit_menu(sup["times"]),
+    current_times = ", ".join(sup["times"]) if sup["times"] else "пока не добавлено"
+    await message.answer(
+        "Введите время приема в формате ЧЧ:ММ (например, 09:00).\n"
+        f"Текущее расписание: {current_times}"
     )
 
 
