@@ -118,7 +118,7 @@ dp = Dispatcher()
 def get_nutrition_from_api(query: str):
     """
     Вызывает api-ninjas /v1/nutrition и возвращает (items, totals).
-    items — список продуктов, totals — суммарные калории и БЖУ.
+    items — список продуктов (list), totals — суммарные калории и БЖУ.
     """
     if not NUTRITION_API_KEY:
         raise RuntimeError("NUTRITION_API_KEY не задан в переменных окружения")
@@ -130,21 +130,32 @@ def get_nutrition_from_api(query: str):
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=10)
     except Exception as e:
-        # сюда попадём, если вообще нет доступа в интернет / проблема сети
         print("❌ Ошибка сети при запросе к Nutrition API:", repr(e))
         raise
 
-    # Лог статуса на всякий случай
     print(f"Nutrition API status: {resp.status_code}")
+
+    # если код не 200 — логируем тело и валимся
     if resp.status_code != 200:
-        print("Ответ от Nutrition API:", resp.text[:500])
-        raise RuntimeError(f"Nutrition API error: {resp.status_code}")
+        print("Ответ от Nutrition API (non-200):", resp.text[:500])
+        raise RuntimeError(f"Nutrition API error: HTTP {resp.status_code}")
 
     try:
-        items = resp.json()
+        data = resp.json()
     except Exception as e:
         print("❌ Не получилось распарсить JSON от Nutrition API:", resp.text[:500])
         raise
+
+    # если пришёл объект с полем error — это не список продуктов, а ошибка
+    if isinstance(data, dict) and data.get("error"):
+        print("❌ Nutrition API вернул ошибку:", data)
+        raise RuntimeError(f"Nutrition API error: {data.get('error')}")
+
+    if not isinstance(data, list):
+        print("❌ Неожиданный формат ответа от Nutrition API:", data)
+        raise RuntimeError("Unexpected response format from Nutrition API")
+
+    items = data
 
     totals = {
         "calories": 0.0,
@@ -160,6 +171,7 @@ def get_nutrition_from_api(query: str):
         totals["carbohydrates_total_g"] += item.get("carbohydrates_total_g") or 0
 
     return items, totals
+
 
 
 
