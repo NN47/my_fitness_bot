@@ -440,7 +440,7 @@ main_menu_button = KeyboardButton(text="🏠 Главное меню")
 training_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить тренировку")],
-        [KeyboardButton(text="🏋️ История тренировок")],
+        [KeyboardButton(text="📆 Календарь тренировок")],
         [KeyboardButton(text="⬅️ Назад")],
         [main_menu_button],
     ],
@@ -2262,40 +2262,10 @@ async def feedback(message: Message):
     await message.answer("💬 Раздел обратной связи в разработке 💭")
 
 
-from sqlalchemy.orm import Session
-
-@dp.message(F.text == "🏋️ История тренировок")
+@dp.message(F.text.in_(["🏋️ История тренировок", "📆 Календарь тренировок"]))
 async def my_workouts(message: Message):
     user_id = str(message.from_user.id)
-    
-    # создаём сессию
-    db = SessionLocal()
-    try:
-        # получаем все тренировки пользователя
-        history = (
-            db.query(Workout)
-            .filter(Workout.user_id == user_id)
-            .order_by(Workout.date.desc())
-            .all()
-        )
-    finally:
-        db.close()
-
-    if not history:
-        await answer_with_menu(message, "У тебя пока нет истории тренировок 📭", reply_markup=my_workouts_menu)
-        return
-
-    # сохраняем историю для удаления (в оперативной памяти)
-    message.bot.history_workouts = history
-    message.bot.expecting_history_delete = False
-
-    # формируем текст для вывода
-    text = "📜 История твоих тренировок:\n\n"
-    for i, w in enumerate(history, 1):
-        variant_text = f" ({w.variant})" if w.variant else ""
-        text += f"{i}. {w.date} — {w.exercise}{variant_text}: {w.count}\n"
-
-    await answer_with_menu(message, text, reply_markup=history_menu)
+    await show_calendar(message, user_id)
 
 
 
