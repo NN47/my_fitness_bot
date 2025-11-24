@@ -370,7 +370,7 @@ async def proceed_after_date_selection(message: Message):
         await message.answer(f"📅 Выбрана дата: {date_text}")
         message.bot.current_category = None
         message.bot.current_exercise = None
-        await message.answer("Теперь выбери категорию упражнения:", reply_markup=exercise_category_menu)
+        await answer_with_menu(message, "Теперь выбери категорию упражнения:", reply_markup=exercise_category_menu)
     elif context == "weight":
         message.bot.expecting_weight = True
         await message.answer(f"📅 Выбрана дата: {date_text}")
@@ -392,10 +392,31 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="📆 Календарь")],
-        [KeyboardButton(text="💬 Обратная связь")]
+        [KeyboardButton(text="💬 Обратная связь")],
+        [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
 )
+
+
+def push_menu_stack(bot, reply_markup):
+    if not isinstance(reply_markup, ReplyKeyboardMarkup):
+        return
+
+    stack = getattr(bot, "menu_stack", [])
+    if not stack:
+        stack = [main_menu]
+
+    if stack and stack[-1] is not reply_markup:
+        stack.append(reply_markup)
+
+    bot.menu_stack = stack
+
+
+async def answer_with_menu(message: Message, text: str, reply_markup=None, **kwargs):
+    if reply_markup is not None:
+        push_menu_stack(message.bot, reply_markup)
+    await message.answer(text, reply_markup=reply_markup, **kwargs)
 
 # Меню выбора даты тренировки
 training_date_menu = ReplyKeyboardMarkup(
@@ -558,7 +579,7 @@ async def start(message: Message):
         f"{text}\n\n"
         "Выбери действие ниже:"
     )
-    await message.answer(welcome, reply_markup=main_menu)
+    await answer_with_menu(message, welcome, reply_markup=main_menu)
 
 
 
@@ -566,18 +587,18 @@ async def start(message: Message):
 @dp.message(F.text == "🏋️ Тренировка")
 async def show_training_menu(message: Message):
     start_date_selection(message.bot, "training")
-    await message.answer(get_date_prompt("training"), reply_markup=training_date_menu)
+    await answer_with_menu(message, get_date_prompt("training"), reply_markup=training_date_menu)
 
 @dp.message(F.text == "Со своим весом")
 async def choose_bodyweight_category(message: Message):
     message.bot.current_category = "bodyweight"
-    await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+    await answer_with_menu(message, "Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
 
 
 @dp.message(F.text == "С утяжелителем")
 async def choose_weighted_category(message: Message):
     message.bot.current_category = "weighted"
-    await message.answer("Выбери упражнение:", reply_markup=weighted_exercise_menu)
+    await answer_with_menu(message, "Выбери упражнение:", reply_markup=weighted_exercise_menu)
 
 @dp.message(F.text == "📅 Сегодня")
 async def add_training_today(message: Message):
@@ -587,7 +608,7 @@ async def add_training_today(message: Message):
 @dp.message(F.text == "📆 Другой день")
 async def add_training_other_day(message: Message):
     context = getattr(message.bot, "date_selection_context", "training")
-    await message.answer(get_other_day_prompt(context), reply_markup=other_day_menu)
+    await answer_with_menu(message, get_other_day_prompt(context), reply_markup=other_day_menu)
 
 @dp.message(F.text == "📅 Вчера")
 async def training_yesterday(message: Message):
@@ -654,7 +675,7 @@ async def choose_exercise(message: Message):
         message.bot.current_variant = "С утяжелителем"
     else:
         message.bot.current_variant = "Со своим весом"
-    await message.answer("Выбери количество повторений:", reply_markup=count_menu)
+    await answer_with_menu(message, "Выбери количество повторений:", reply_markup=count_menu)
 
 @dp.message(F.text == "✏️ Ввести вручную")
 async def enter_manual_count(message: Message):
@@ -677,7 +698,7 @@ async def handle_custom_exercise(message: Message):
 @dp.message(F.text == "Удалить запись")
 async def delete_entry_start(message: Message):
     if not hasattr(message.bot, "todays_workouts") or not message.bot.todays_workouts:
-        await message.answer("Сегодня ещё нет записей для удаления.", reply_markup=my_workouts_menu)
+        await answer_with_menu(message, "Сегодня ещё нет записей для удаления.", reply_markup=my_workouts_menu)
         return
 
     message.bot.expecting_delete = True
@@ -899,20 +920,20 @@ async def my_weight(message: Message):
     session.close()
 
     if not weights:
-        await message.answer("⚖️ У тебя пока нет записей веса.", reply_markup=weight_menu)
+        await answer_with_menu(message, "⚖️ У тебя пока нет записей веса.", reply_markup=weight_menu)
         return
 
     text = "📊 История твоего веса:\n\n"
     for i, w in enumerate(weights, 1):
         text += f"{i}. {w.date.strftime('%d.%m.%Y')} — {w.value} кг\n"
 
-    await message.answer(text, reply_markup=weight_menu)
+    await answer_with_menu(message, text, reply_markup=weight_menu)
 
 
 @dp.message(F.text == "➕ Добавить вес")
 async def add_weight_start(message: Message):
     start_date_selection(message.bot, "weight")
-    await message.answer(get_date_prompt("weight"), reply_markup=training_date_menu)
+    await answer_with_menu(message, get_date_prompt("weight"), reply_markup=training_date_menu)
 
 @dp.message(F.text == "🗑 Удалить вес")
 async def delete_weight_start(message: Message):
@@ -927,7 +948,7 @@ async def delete_weight_start(message: Message):
     session.close()
 
     if not weights:
-        await message.answer("⚖️ У тебя нет записей веса для удаления.", reply_markup=weight_menu)
+        await answer_with_menu(message, "⚖️ У тебя нет записей веса для удаления.", reply_markup=weight_menu)
         return
 
     # сохраняем в оперативную память
@@ -975,7 +996,7 @@ async def my_measurements(message: Message):
     session.close()
 
     if not measurements:
-        await message.answer("📐 У тебя пока нет замеров.", reply_markup=measurements_menu)
+        await answer_with_menu(message, "📐 У тебя пока нет замеров.", reply_markup=measurements_menu)
         return
 
     text = "📊 История замеров:\n\n"
@@ -994,13 +1015,13 @@ async def my_measurements(message: Message):
 
         text += f"{i}. {m.date.strftime('%d.%m.%Y')} — {', '.join(parts)}\n"
 
-    await message.answer(text, reply_markup=measurements_menu)
+    await answer_with_menu(message, text, reply_markup=measurements_menu)
 
 
 @dp.message(F.text == "➕ Добавить замеры")
 async def add_measurements_start(message: Message):
     start_date_selection(message.bot, "measurements")
-    await message.answer(get_date_prompt("measurements"), reply_markup=training_date_menu)
+    await answer_with_menu(message, get_date_prompt("measurements"), reply_markup=training_date_menu)
 
 @dp.message(F.text == "🗑 Удалить замеры")
 async def delete_measurements_start(message: Message):
@@ -1015,7 +1036,7 @@ async def delete_measurements_start(message: Message):
     session.close()
 
     if not measurements:
-        await message.answer("📏 У тебя нет замеров для удаления.", reply_markup=measurements_menu)
+        await answer_with_menu(message, "📏 У тебя нет замеров для удаления.", reply_markup=measurements_menu)
         return
 
     message.bot.expecting_measurement_delete = True
@@ -1096,7 +1117,7 @@ async def process_measurements(message: Message):
         return
 
     message.bot.expecting_measurements = False
-    await message.answer(
+    await answer_with_menu(
         "✅ Замеры сохранены: {data} ({date})".format(
             data=measurements_mapped,
             date=getattr(message.bot, "selected_date", date.today()).strftime("%d.%m.%Y")
@@ -1108,7 +1129,7 @@ async def process_measurements(message: Message):
 
 @dp.message(F.text == "📊 История событий")
 async def my_data(message: Message):
-    await message.answer("Выбери, что посмотреть:", reply_markup=my_data_menu)
+    await answer_with_menu(message, "Выбери, что посмотреть:", reply_markup=my_data_menu)
 
 
 @dp.message(F.text == "⬅️ Назад")
@@ -1170,13 +1191,22 @@ async def go_back(message: Message):
         except Exception:
             pass
 
-    text = get_today_summary_text(user_id)
-    await message.answer(text, reply_markup=main_menu)
+    stack = getattr(message.bot, "menu_stack", [main_menu])
+    if not stack:
+        stack = [main_menu]
+
+    if len(stack) > 1:
+        stack.pop()
+
+    previous_menu = stack[-1] if stack else main_menu
+    message.bot.menu_stack = stack
+
+    await answer_with_menu(message, "⬅️ Возвращаюсь назад", reply_markup=previous_menu)
 
 
 @dp.message(F.text == "⚖️ Вес / 📏 Замеры")
 async def weight_and_measurements(message: Message):
-    await message.answer("Выбери, что хочешь посмотреть:", reply_markup=my_data_menu)
+    await answer_with_menu(message, "Выбери, что хочешь посмотреть:", reply_markup=my_data_menu)
 
 
 def get_user_supplements(message: Message) -> list[dict]:
@@ -1220,9 +1250,9 @@ def supplements_main_menu(has_items: bool = False) -> ReplyKeyboardMarkup:
 async def supplements(message: Message):
     supplements_list = get_user_supplements(message)
     if not supplements_list:
-        await message.answer(
-            "💊 Добавки\n\n"
-            "Привет! Здесь ты можешь записывать свои добавки, получать статистику записей и при желании включить напоминания, чтобы ничего не забыть.",
+        await answer_with_menu(
+            message,
+            "💊 Добавки\n\nПривет! Здесь ты можешь записывать свои добавки, получать статистику записей и при желании включить напоминания, чтобы ничего не забыть.",
             reply_markup=supplements_main_menu(has_items=False),
         )
         return
@@ -1234,7 +1264,7 @@ async def supplements(message: Message):
         lines.append(
             f"\n💊 {item['name']} \n⏰ Время приема: {times}\n📅 Дни приема: {days}\n⏳ Длительность: {item['duration']}"
         )
-    await message.answer("\n".join(lines), reply_markup=supplements_main_menu(has_items=True))
+    await answer_with_menu(message, "\n".join(lines), reply_markup=supplements_main_menu(has_items=True))
 
 
 @dp.message(F.text == "➕ Создать добавку")
@@ -1252,7 +1282,8 @@ async def handle_supplement_name(message: Message):
     sup["name"] = message.text.strip()
     sup["ready"] = False
     message.bot.expecting_supplement_name = False
-    await message.answer(
+    await answer_with_menu(
+        message,
         "Выберите время, дни и длительность приема добавки:",
         reply_markup=supplement_edit_menu(show_save=False),
     )
@@ -1262,13 +1293,15 @@ async def handle_supplement_name(message: Message):
 async def edit_supplement_time(message: Message):
     sup = get_active_supplement(message)
     if not sup["times"]:
-        await message.answer(
+        await answer_with_menu(
+            message,
             f"ℹ️ Добавьте первое время приема для {sup['name']}",
             reply_markup=time_first_menu(),
         )
         return
 
-    await message.answer(
+    await answer_with_menu(
+        message,
         f"ℹ️ Добавьте время приема или удалите лишнее для {sup['name']}",
         reply_markup=time_edit_menu(sup["times"]),
     )
@@ -1321,7 +1354,8 @@ async def delete_time(message: Message):
             reply_markup=time_edit_menu(sup["times"]),
         )
     else:
-        await message.answer(
+        await answer_with_menu(
+            message,
             f"ℹ️ Добавьте первое время приема для {sup['name']}",
             reply_markup=time_first_menu(),
         )
@@ -1336,12 +1370,13 @@ async def save_time_or_supplement(message: Message):
     if getattr(message.bot, "selecting_days", False):
         message.bot.selecting_days = False
         sup["ready"] = True
-        await message.answer(supplement_schedule_prompt(sup), reply_markup=supplement_edit_menu(show_save=True))
+        await answer_with_menu(message, supplement_schedule_prompt(sup), reply_markup=supplement_edit_menu(show_save=True))
         return
 
     if not sup.get("ready"):
         sup["ready"] = True
-        await message.answer(
+        await answer_with_menu(
+            message,
             supplement_schedule_prompt(sup),
             reply_markup=supplement_edit_menu(show_save=True),
         )
@@ -1357,7 +1392,8 @@ async def save_time_or_supplement(message: Message):
 
     reset_supplement_state(message)
 
-    await message.answer(
+    await answer_with_menu(
+        message,
         "Мои добавки\n\n"
         f"💊 {supplements_list[-1]['name']} \n"
         f"⏰ Время приема: {', '.join(supplements_list[-1]['times']) or 'не выбрано'}\n"
@@ -1371,7 +1407,8 @@ async def save_time_or_supplement(message: Message):
 async def edit_days(message: Message):
     sup = get_active_supplement(message)
     message.bot.selecting_days = True
-    await message.answer(
+    await answer_with_menu(
+        message,
         "Выберите дни приема:\nНажмите на день для выбора",
         reply_markup=days_menu(sup["days"]),
     )
@@ -1387,7 +1424,7 @@ async def toggle_day(message: Message):
     else:
         sup["days"].append(day)
 
-    await message.answer("Дни обновлены", reply_markup=days_menu(sup["days"]))
+    await answer_with_menu(message, "Дни обновлены", reply_markup=days_menu(sup["days"]))
 
 
 @dp.message(lambda m: getattr(m.bot, "selecting_days", False) and m.text == "Выбрать все")
@@ -1395,12 +1432,12 @@ async def select_all_days(message: Message):
     sup = get_active_supplement(message)
     sup["ready"] = False
     sup["days"] = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
-    await message.answer("Все дни выбраны", reply_markup=days_menu(sup["days"]))
+    await answer_with_menu(message, "Все дни выбраны", reply_markup=days_menu(sup["days"]))
 
 
 @dp.message(F.text == "⏳ Длительность приема")
 async def choose_duration(message: Message):
-    await message.answer("Выберите длительность приема", reply_markup=duration_menu())
+    await answer_with_menu(message, "Выберите длительность приема", reply_markup=duration_menu())
 
 
 @dp.message(lambda m: m.text in {"Постоянно", "14 дней", "30 дней"})
@@ -1408,7 +1445,8 @@ async def set_duration(message: Message):
     sup = get_active_supplement(message)
     sup["duration"] = message.text.lower()
     sup["ready"] = True
-    await message.answer(
+    await answer_with_menu(
+        message,
         supplement_schedule_prompt(sup),
         reply_markup=supplement_edit_menu(show_save=True),
     )
@@ -1420,7 +1458,8 @@ async def back_from_supplement_steps(message: Message):
         message.bot.selecting_days = False
         sup = get_active_supplement(message)
         sup["ready"] = True
-        await message.answer(
+        await answer_with_menu(
+            message,
             supplement_schedule_prompt(sup),
             reply_markup=supplement_edit_menu(show_save=True),
         )
@@ -1439,16 +1478,20 @@ async def cancel_supplement(message: Message):
 async def edit_supplement_placeholder(message: Message):
     supplements_list = get_user_supplements(message)
     if not supplements_list:
-        await message.answer("Пока нет добавок для редактирования.", reply_markup=supplements_main_menu(False))
+        await answer_with_menu(message, "Пока нет добавок для редактирования.", reply_markup=supplements_main_menu(False))
         return
-    await message.answer("Редактирование добавок скоро появится. Вы можете создать новые записи сейчас.", reply_markup=supplements_main_menu(True))
+    await answer_with_menu(
+        message,
+        "Редактирование добавок скоро появится. Вы можете создать новые записи сейчас.",
+        reply_markup=supplements_main_menu(True),
+    )
 
 
 @dp.message(F.text == "📜 История добавок")
 async def supplements_history(message: Message):
     supplements_list = get_user_supplements(message)
     if not supplements_list:
-        await message.answer("История добавок пуста.", reply_markup=supplements_main_menu(False))
+        await answer_with_menu(message, "История добавок пуста.", reply_markup=supplements_main_menu(False))
         return
     lines = ["Последние добавки"]
     for item in supplements_list:
@@ -1457,7 +1500,7 @@ async def supplements_history(message: Message):
         lines.append(
             f"💊 {item['name']} — {times}; дни: {days}; длительность: {item['duration']}"
         )
-    await message.answer("\n".join(lines), reply_markup=supplements_main_menu(True))
+    await answer_with_menu(message, "\n".join(lines), reply_markup=supplements_main_menu(True))
 
 
 def supplement_schedule_prompt(sup: dict) -> str:
@@ -1648,7 +1691,7 @@ async def my_workouts(message: Message):
         db.close()
 
     if not history:
-        await message.answer("У тебя пока нет истории тренировок 📭", reply_markup=my_workouts_menu)
+        await answer_with_menu(message, "У тебя пока нет истории тренировок 📭", reply_markup=my_workouts_menu)
         return
 
     # сохраняем историю для удаления (в оперативной памяти)
@@ -1661,7 +1704,7 @@ async def my_workouts(message: Message):
         variant_text = f" ({w.variant})" if w.variant else ""
         text += f"{i}. {w.date} — {w.exercise}{variant_text}: {w.count}\n"
 
-    await message.answer(text, reply_markup=history_menu)
+    await answer_with_menu(message, text, reply_markup=history_menu)
 
 
 
@@ -1688,7 +1731,7 @@ async def workouts_today(message: Message):
 
     # если ничего нет — выводим сообщение
     if not todays_workouts:
-        await message.answer("Сегодня ты ещё ничего не записывал 💤", reply_markup=my_workouts_menu)
+        await answer_with_menu(message, "Сегодня ты ещё ничего не записывал 💤", reply_markup=my_workouts_menu)
         return
 
     # сохраняем список для возможности удаления
@@ -1701,7 +1744,7 @@ async def workouts_today(message: Message):
         variant_text = f" ({w.variant})" if w.variant else ""
         text += f"{i}. {w.exercise}{variant_text}: {w.count}\n"
 
-    await message.answer(text, reply_markup=today_menu)
+    await answer_with_menu(message, text, reply_markup=today_menu)
 
 
 
@@ -1724,7 +1767,7 @@ async def workouts_history(message: Message):
 
     # если записей нет
     if not history:
-        await message.answer("У тебя пока нет истории тренировок 📭", reply_markup=my_workouts_menu)
+        await answer_with_menu(message, "У тебя пока нет истории тренировок 📭", reply_markup=my_workouts_menu)
         return
 
     # формируем текст
@@ -1733,7 +1776,7 @@ async def workouts_history(message: Message):
         variant_text = f" ({w.variant})" if w.variant else ""
         text += f"{w.date}: {w.exercise}{variant_text}: {w.count} раз\n"
 
-    await message.answer(text, reply_markup=history_menu)
+    await answer_with_menu(message, text, reply_markup=history_menu)
 
 
 
@@ -1755,7 +1798,7 @@ async def delete_from_history_start(message: Message):
         db.close()
 
     if not history:
-        await message.answer("История пуста 📭", reply_markup=my_workouts_menu)
+        await answer_with_menu(message, "История пуста 📭", reply_markup=my_workouts_menu)
         return
 
     # сохраняем в оперативную память (для следующего шага — удаления)
