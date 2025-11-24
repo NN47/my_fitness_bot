@@ -393,10 +393,11 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="📆 Календарь")],
         [KeyboardButton(text="💬 Обратная связь")],
-        [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
 )
+
+main_menu_button = KeyboardButton(text="🏠 Главное меню")
 
 
 def push_menu_stack(bot, reply_markup):
@@ -431,7 +432,8 @@ other_day_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📅 Вчера"), KeyboardButton(text="📆 Позавчера")],
         [KeyboardButton(text="✏️ Ввести дату вручную")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
     ],
     resize_keyboard=True
 )
@@ -440,7 +442,8 @@ other_day_menu = ReplyKeyboardMarkup(
 activity_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💪Добавить упражнение")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
     ],
     resize_keyboard=True
 )
@@ -448,7 +451,8 @@ activity_menu = ReplyKeyboardMarkup(
 exercise_category_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Со своим весом"), KeyboardButton(text="С утяжелителем")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
     ],
     resize_keyboard=True
 )
@@ -489,12 +493,12 @@ weighted_exercises = [
 ]
 
 bodyweight_exercise_menu = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text=ex)] for ex in bodyweight_exercises] + [[KeyboardButton(text="⬅️ Назад")]],
+    keyboard=[[KeyboardButton(text=ex)] for ex in bodyweight_exercises] + [[KeyboardButton(text="⬅️ Назад")], [main_menu_button]],
     resize_keyboard=True,
 )
 
 weighted_exercise_menu = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text=ex)] for ex in weighted_exercises] + [[KeyboardButton(text="⬅️ Назад")]],
+    keyboard=[[KeyboardButton(text=ex)] for ex in weighted_exercises] + [[KeyboardButton(text="⬅️ Назад")], [main_menu_button]],
     resize_keyboard=True,
 )
 
@@ -506,6 +510,7 @@ count_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text=str(n)) for n in range(16, 21)],
         [KeyboardButton(text=str(n)) for n in [25, 30, 35, 40, 50]],
         [KeyboardButton(text="✏️ Ввести вручную"), KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
     ],
     resize_keyboard=True,
 )
@@ -525,7 +530,8 @@ my_workouts_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Сегодня")],
         [KeyboardButton(text="В другие дни")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -533,7 +539,8 @@ my_workouts_menu = ReplyKeyboardMarkup(
 today_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Удалить запись")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -541,7 +548,8 @@ today_menu = ReplyKeyboardMarkup(
 history_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Удалить запись из истории")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -550,7 +558,8 @@ weight_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить вес")],
         [KeyboardButton(text="🗑 Удалить вес")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -560,7 +569,8 @@ measurements_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить замеры")],
         [KeyboardButton(text="🗑 Удалить замеры")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -1132,10 +1142,9 @@ async def my_data(message: Message):
     await answer_with_menu(message, "Выбери, что посмотреть:", reply_markup=my_data_menu)
 
 
-@dp.message(F.text == "⬅️ Назад")
-async def go_back(message: Message):
+def reset_user_state(message: Message):
     user_id = str(message.from_user.id)
-    # сбрасываем все флаги ожидания, чтобы неожиданные нажатия не шли в парсеры
+
     for attr in [
         "expecting_measurements",
         "expecting_weight",
@@ -1156,7 +1165,6 @@ async def go_back(message: Message):
             except Exception:
                 pass
 
-    # (опционально) удалить временные списки из оперативной памяти
     for list_attr in ["user_weights", "user_measurements", "todays_workouts", "history_workouts"]:
         if hasattr(message.bot, list_attr):
             try:
@@ -1190,6 +1198,18 @@ async def go_back(message: Message):
             message.bot.active_supplement.pop(user_id, None)
         except Exception:
             pass
+
+
+@dp.message(F.text == "🏠 Главное меню")
+async def go_main_menu(message: Message):
+    reset_user_state(message)
+    message.bot.menu_stack = [main_menu]
+    await answer_with_menu(message, "🏠 Возвращаю в главное меню", reply_markup=main_menu)
+
+
+@dp.message(F.text == "⬅️ Назад")
+async def go_back(message: Message):
+    reset_user_state(message)
 
     stack = getattr(message.bot, "menu_stack", [main_menu])
     if not stack:
