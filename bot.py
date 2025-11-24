@@ -171,14 +171,27 @@ def get_nutrition_from_api(query: str):
     }
 
     for item in items:
-        totals["calories"] += safe_float(item.get("calories"))
-        totals["protein_g"] += safe_float(item.get("protein_g"))
-        totals["fat_total_g"] += safe_float(item.get("fat_total_g"))
-        totals["carbohydrates_total_g"] += safe_float(item.get("carbohydrates_total_g"))
+        cal = safe_float(item.get("calories"))
+        p = safe_float(item.get("protein_g"))
+        f = safe_float(item.get("fat_total_g"))
+        c = safe_float(item.get("carbohydrates_total_g"))
+
+        # Сохраняем уже приведённые значения обратно в item,
+        # чтобы ниже в выводе не нарваться на строки
+        item["_calories"] = cal
+        item["_protein_g"] = p
+        item["_fat_total_g"] = f
+        item["_carbohydrates_total_g"] = c
+
+        totals["calories"] += cal
+        totals["protein_g"] += p
+        totals["fat_total_g"] += f
+        totals["carbohydrates_total_g"] += c
 
     return items, totals
 
 
+    
 
 
 
@@ -2253,35 +2266,37 @@ async def handle_food_input(message: Message):
         await message.answer(
             "Я не нашёл продукты в этом описании 🤔\n"
             "Попробуй написать чуть по-другому (лучше на английском):\n"
-            "например: `150g chicken breast and 200g rice`"
+            "например: 150g chicken breast and 200g rice"
         )
         return
 
     lines = ["🍱 Твой приём пищи:\n"]
+
     for item in items:
-        name = item.get("name", "item").title()
-        cal = item.get("calories", 0)
-        p = item.get("protein_g", 0)
-        f = item.get("fat_total_g", 0)
-        c = item.get("carbohydrates_total_g", 0)
+        name = (item.get("name") or "item").title()
+
+        # Берём уже приведённые к float значения, которые проставили в get_nutrition_from_api
+        cal = float(item.get("_calories", 0.0))
+        p = float(item.get("_protein_g", 0.0))
+        f = float(item.get("_fat_total_g", 0.0))
+        c = float(item.get("_carbohydrates_total_g", 0.0))
+
         lines.append(f"• {name} — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})")
 
     lines.append("\nИТОГО:")
     lines.append(
-        f"🔥 {totals['calories']:.0f} ккал\n"
-        f"💪 Белки: {totals['protein_g']:.1f} г\n"
-        f"🧈 Жиры: {totals['fat_total_g']:.1f} г\n"
-        f"🍞 Углеводы: {totals['carbohydrates_total_g']:.1f} г"
+        f"🔥 {float(totals['calories']):.0f} ккал\n"
+        f"💪 Белки: {float(totals['protein_g']):.1f} г\n"
+        f"🧈 Жиры: {float(totals['fat_total_g']):.1f} г\n"
+        f"🍞 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г"
     )
 
-    message.bot.expecting_food_input = False  # выходим из режима ввода еды
+    message.bot.expecting_food_input = False
     await answer_with_menu(
         message,
         "\n".join(lines),
-        reply_markup=main_menu,  # можно сделать отдельное меню КБЖУ позже
+        reply_markup=main_menu,
     )
-
-
 
 @dp.message(F.text == "📆 Календарь")
 async def calendar_view(message: Message):
