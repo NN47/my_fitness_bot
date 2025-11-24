@@ -348,6 +348,7 @@ def get_date_prompt(context: str) -> str:
         "training": "За какой день добавить тренировку?",
         "weight": "За какой день добавить вес?",
         "measurements": "За какой день добавить замеры?",
+        "supplement_log": "Когда был приём добавки?",
     }
     return prompts.get(context, "За какую дату сделать запись?")
 
@@ -357,6 +358,7 @@ def get_other_day_prompt(context: str) -> str:
         "training": "Выбери день тренировки или введи дату вручную:",
         "weight": "Выбери день для записи веса или введи дату вручную:",
         "measurements": "Выбери день для замеров или введи дату вручную:",
+        "supplement_log": "Выбери день приёма или введи дату вручную:",
     }
     return prompts.get(context, "Выбери нужный день или введи дату вручную:")
 
@@ -383,6 +385,33 @@ async def proceed_after_date_selection(message: Message):
             "грудь=100, талия=80, руки=35\n\n"
             "Можно указать только нужные параметры."
         )
+    elif context == "supplement_log":
+        user_id = str(message.from_user.id)
+        if hasattr(message.bot, "supplement_log_choice"):
+            supplement_name = message.bot.supplement_log_choice.get(user_id)
+        else:
+            supplement_name = None
+
+        if not supplement_name:
+            await message.answer("Не выбрана добавка для записи приёма.")
+            return
+
+        supplements_list = get_supplements_for_user(message.bot, user_id)
+        target = next((item for item in supplements_list if item["name"].lower() == supplement_name.lower()), None)
+
+        timestamp = datetime.combine(selected_date, datetime.now().time())
+        if target is not None:
+            target.setdefault("history", []).append(timestamp)
+            await answer_with_menu(
+                message,
+                f"Записал приём {target['name']} на {timestamp.strftime('%d.%m.%Y %H:%M')}.",
+                reply_markup=supplements_main_menu(has_items=True),
+            )
+        else:
+            await message.answer("Не нашёл выбранную добавку для записи приёма.")
+
+        if hasattr(message.bot, "supplement_log_choice"):
+            message.bot.supplement_log_choice.pop(user_id, None)
 
 
 
@@ -1160,6 +1189,8 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "selecting_days",
         "expecting_supplement_log",
         "choosing_supplement_for_edit",
+        "expecting_supplement_history_choice",
+        "expecting_supplement_history_time",
     ]:
         if hasattr(message.bot, attr):
             try:
@@ -1205,6 +1236,16 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
             message.bot.supplement_edit_index.pop(user_id, None)
         except Exception:
             pass
+    if hasattr(message.bot, "supplement_log_choice"):
+        try:
+            message.bot.supplement_log_choice.pop(user_id, None)
+        except Exception:
+            pass
+    if hasattr(message.bot, "supplement_history_action"):
+        try:
+            message.bot.supplement_history_action.pop(user_id, None)
+        except Exception:
+            pass
 
 
 @dp.message(F.text == "🏠 Главное меню")
@@ -1236,13 +1277,17 @@ async def weight_and_measurements(message: Message):
     await answer_with_menu(message, "Выбери, что хочешь посмотреть:", reply_markup=my_data_menu)
 
 
-def get_user_supplements(message: Message) -> list[dict]:
-    if not hasattr(message.bot, "supplements"):
-        message.bot.supplements = {}
-    supplements_list = message.bot.supplements.setdefault(str(message.from_user.id), [])
+def get_supplements_for_user(bot, user_id: str) -> list[dict]:
+    if not hasattr(bot, "supplements"):
+        bot.supplements = {}
+    supplements_list = bot.supplements.setdefault(user_id, [])
     for item in supplements_list:
         item.setdefault("history", [])
     return supplements_list
+
+
+def get_user_supplements(message: Message) -> list[dict]:
+    return get_supplements_for_user(message.bot, str(message.from_user.id))
 
 
 def reset_supplement_state(message: Message):
@@ -1252,6 +1297,8 @@ def reset_supplement_state(message: Message):
         "selecting_days",
         "expecting_supplement_log",
         "choosing_supplement_for_edit",
+        "expecting_supplement_history_choice",
+        "expecting_supplement_history_time",
     ]:
         if hasattr(message.bot, flag):
             setattr(message.bot, flag, False)
@@ -1260,6 +1307,10 @@ def reset_supplement_state(message: Message):
         message.bot.active_supplement.pop(str(message.from_user.id), None)
     if hasattr(message.bot, "supplement_edit_index"):
         message.bot.supplement_edit_index.pop(str(message.from_user.id), None)
+    if hasattr(message.bot, "supplement_log_choice"):
+        message.bot.supplement_log_choice.pop(str(message.from_user.id), None)
+    if hasattr(message.bot, "supplement_history_action"):
+        message.bot.supplement_history_action.pop(str(message.from_user.id), None)
 
 
 def get_active_supplement(message: Message) -> dict:
@@ -1294,7 +1345,7 @@ def supplements_main_menu(has_items: bool = False) -> ReplyKeyboardMarkup:
     if has_items:
         buttons.append([KeyboardButton(text="✏️ Редактировать добавку"), KeyboardButton(text="📜 История добавок")])
         buttons.append([KeyboardButton(text="✅ Отметить приём")])
-    buttons.append([KeyboardButton(text="⬅️ Назад")])
+    buttons.append([main_menu_button])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
@@ -1302,6 +1353,303 @@ def supplements_choice_menu(supplements: list[dict]) -> ReplyKeyboardMarkup:
     rows = [[KeyboardButton(text=item["name"])] for item in supplements]
     rows.append([KeyboardButton(text="⬅️ Назад")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def normalize_history_entry(entry) -> datetime | None:
+    if isinstance(entry, datetime):
+        return entry
+    if isinstance(entry, date):
+        return datetime.combine(entry, datetime.min.time())
+    if isinstance(entry, str):
+        for fmt in ["%d.%m.%Y %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+            try:
+                return datetime.strptime(entry, fmt)
+            except ValueError:
+                continue
+        try:
+            return datetime.fromisoformat(entry)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def get_supplement_history_days(bot, user_id: str, year: int, month: int) -> set[int]:
+    supplements_list = get_supplements_for_user(bot, user_id)
+    days: set[int] = set()
+
+    for sup in supplements_list:
+        for entry in sup.get("history", []):
+            ts = normalize_history_entry(entry)
+            if ts and ts.year == year and ts.month == month:
+                days.add(ts.day)
+
+    return days
+
+
+def get_supplement_entries_for_day(bot, user_id: str, target_date: date) -> list[dict]:
+    supplements_list = get_supplements_for_user(bot, user_id)
+    entries: list[dict] = []
+
+    for sup_idx, sup in enumerate(supplements_list):
+        for entry_idx, raw_entry in enumerate(sup.get("history", [])):
+            ts = normalize_history_entry(raw_entry)
+            if ts and ts.date() == target_date:
+                entries.append(
+                    {
+                        "supplement_name": sup.get("name", "Добавка"),
+                        "supplement_index": sup_idx,
+                        "entry_index": entry_idx,
+                        "timestamp": ts,
+                        "time_text": ts.strftime("%H:%M"),
+                    }
+                )
+
+    return entries
+
+
+def set_supplement_history_action(bot, user_id: str, action: dict | None):
+    if not hasattr(bot, "supplement_history_action"):
+        bot.supplement_history_action = {}
+
+    if action is None:
+        bot.supplement_history_action.pop(user_id, None)
+    else:
+        bot.supplement_history_action[user_id] = action
+
+
+def build_supplement_calendar_keyboard(bot, user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    days_with_history = get_supplement_history_days(bot, user_id, year, month)
+    keyboard: list[list[InlineKeyboardButton]] = []
+
+    header = InlineKeyboardButton(text=f"{MONTH_NAMES[month]} {year}", callback_data="noop")
+    keyboard.append([header])
+
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([InlineKeyboardButton(text=d, callback_data="noop") for d in week_days])
+
+    month_calendar = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
+    for week in month_calendar:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
+            else:
+                marker = "●" if day in days_with_history else ""
+                row.append(
+                    InlineKeyboardButton(
+                        text=f"{day}{marker}",
+                        callback_data=f"supcal_day:{year}-{month:02d}-{day:02d}",
+                    )
+                )
+        keyboard.append(row)
+
+    prev_month = month - 1 or 12
+    prev_year = year - 1 if month == 1 else year
+    next_month = month % 12 + 1
+    next_year = year + 1 if month == 12 else year
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(text="◀️", callback_data=f"supcal_nav:{prev_year}-{prev_month:02d}"),
+            InlineKeyboardButton(text="Закрыть", callback_data="supcal_close"),
+            InlineKeyboardButton(text="▶️", callback_data=f"supcal_nav:{next_year}-{next_month:02d}"),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def build_supplement_day_actions_keyboard(entries: list[dict], target_date: date) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for entry in entries:
+        label = f"{entry['supplement_name']} ({entry['time_text']})"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"✏️ {label}",
+                    callback_data=(
+                        f"supcal_edit:{target_date.isoformat()}:{entry['supplement_index']}:{entry['entry_index']}"
+                    ),
+                ),
+                InlineKeyboardButton(
+                    text=f"🗑 {label}",
+                    callback_data=(
+                        f"supcal_del:{target_date.isoformat()}:{entry['supplement_index']}:{entry['entry_index']}"
+                    ),
+                ),
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(text="➕ Добавить приём", callback_data=f"supcal_add:{target_date.isoformat()}"),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к календарю",
+                callback_data=f"supcal_back:{target_date.year}-{target_date.month:02d}",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def show_supplement_calendar(message: Message, user_id: str, year: int | None = None, month: int | None = None):
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    keyboard = build_supplement_calendar_keyboard(message.bot, user_id, year, month)
+    await message.answer(
+        "📜 История добавок. Выберите день, чтобы посмотреть, добавить или изменить приёмы:",
+        reply_markup=keyboard,
+    )
+
+
+async def show_supplement_day_entries(message: Message, user_id: str, target_date: date):
+    entries = get_supplement_entries_for_day(message.bot, user_id, target_date)
+    if not entries:
+        await message.answer(
+            f"{target_date.strftime('%d.%m.%Y')}: приёмы не найдены.",
+            reply_markup=build_supplement_day_actions_keyboard([], target_date),
+        )
+        return
+
+    lines = [f"📅 {target_date.strftime('%d.%m.%Y')} — приёмы добавок:"]
+    for entry in entries:
+        lines.append(f"• {entry['supplement_name']} в {entry['time_text']}")
+
+    await message.answer(
+        "\n".join(lines), reply_markup=build_supplement_day_actions_keyboard(entries, target_date)
+    )
+
+
+@dp.callback_query(F.data == "supcal_close")
+async def close_supplement_calendar(callback: CallbackQuery):
+    await callback.answer("Календарь закрыт")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data.startswith("supcal_nav:"))
+async def navigate_supplement_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, ym = callback.data.split(":", 1)
+    year, month = map(int, ym.split("-"))
+    user_id = str(callback.from_user.id)
+    await callback.message.edit_reply_markup(
+        reply_markup=build_supplement_calendar_keyboard(callback.bot, user_id, year, month)
+    )
+
+
+@dp.callback_query(F.data.startswith("supcal_back:"))
+async def back_to_supplement_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, ym = callback.data.split(":", 1)
+    year, month = map(int, ym.split("-"))
+    user_id = str(callback.from_user.id)
+    await show_supplement_calendar(callback.message, user_id, year, month)
+
+
+@dp.callback_query(F.data.startswith("supcal_day:"))
+async def open_supplement_day(callback: CallbackQuery):
+    await callback.answer()
+    _, date_str = callback.data.split(":", 1)
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    user_id = str(callback.from_user.id)
+    await show_supplement_day_entries(callback.message, user_id, target_date)
+
+
+@dp.callback_query(F.data.startswith("supcal_add:"))
+async def add_supplement_from_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, date_str = callback.data.split(":", 1)
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    user_id = str(callback.from_user.id)
+
+    set_supplement_history_action(
+        callback.bot,
+        user_id,
+        {"mode": "add", "date": target_date, "original": None, "supplement_name": None},
+    )
+    callback.bot.expecting_supplement_history_choice = True
+
+    supplements_list = get_supplements_for_user(callback.bot, user_id)
+    await answer_with_menu(
+        callback.message,
+        f"Выбери добавку для отметки на {target_date.strftime('%d.%m.%Y')}:",
+        reply_markup=supplements_choice_menu(supplements_list),
+    )
+
+
+@dp.callback_query(F.data.startswith("supcal_del:"))
+async def delete_supplement_entry(callback: CallbackQuery):
+    await callback.answer()
+    _, payload = callback.data.split(":", 1)
+    date_str, sup_idx_str, entry_idx_str = payload.split(":")
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    sup_idx = int(sup_idx_str)
+    entry_idx = int(entry_idx_str)
+    user_id = str(callback.from_user.id)
+
+    supplements_list = get_supplements_for_user(callback.bot, user_id)
+    if sup_idx >= len(supplements_list):
+        await callback.message.answer("Не нашёл запись для удаления.")
+        return
+
+    history = supplements_list[sup_idx].get("history", [])
+    if entry_idx >= len(history):
+        await callback.message.answer("Не нашёл запись для удаления.")
+        return
+
+    del history[entry_idx]
+    await callback.message.answer("🗑 Приём удалён.")
+    await show_supplement_day_entries(callback.message, user_id, target_date)
+
+
+@dp.callback_query(F.data.startswith("supcal_edit:"))
+async def edit_supplement_entry(callback: CallbackQuery):
+    await callback.answer()
+    _, payload = callback.data.split(":", 1)
+    date_str, sup_idx_str, entry_idx_str = payload.split(":")
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    sup_idx = int(sup_idx_str)
+    entry_idx = int(entry_idx_str)
+    user_id = str(callback.from_user.id)
+
+    supplements_list = get_supplements_for_user(callback.bot, user_id)
+    if sup_idx >= len(supplements_list):
+        await callback.message.answer("Не нашёл запись для редактирования.")
+        return
+
+    history = supplements_list[sup_idx].get("history", [])
+    if entry_idx >= len(history):
+        await callback.message.answer("Не нашёл запись для редактирования.")
+        return
+
+    callback.bot.expecting_supplement_history_choice = True
+    set_supplement_history_action(
+        callback.bot,
+        user_id,
+        {
+            "mode": "edit",
+            "date": target_date,
+            "original": {"supplement_index": sup_idx, "entry_index": entry_idx},
+            "supplement_name": None,
+        },
+    )
+
+    supplements_list = get_supplements_for_user(callback.bot, user_id)
+    await answer_with_menu(
+        callback.message,
+        f"Выбери новую добавку или оставь прежнюю для приёма {target_date.strftime('%d.%m.%Y')}:",
+        reply_markup=supplements_choice_menu(supplements_list),
+    )
 
 
 @dp.message(F.text == "💊 Добавки")
@@ -1438,14 +1786,95 @@ async def log_supplement_intake(message: Message):
         return
 
     message.bot.expecting_supplement_log = False
-    timestamp = datetime.now()
+    if not hasattr(message.bot, "supplement_log_choice"):
+        message.bot.supplement_log_choice = {}
+    message.bot.supplement_log_choice[str(message.from_user.id)] = target["name"]
+
+    start_date_selection(message.bot, "supplement_log")
+    await answer_with_menu(message, get_date_prompt("supplement_log"), reply_markup=training_date_menu)
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_supplement_history_choice", False))
+async def choose_supplement_for_history(message: Message):
+    user_id = str(message.from_user.id)
+    action = getattr(message.bot, "supplement_history_action", {}).get(user_id)
+    supplements_list = get_user_supplements(message)
+    target = next(
+        (item for item in supplements_list if item["name"].lower() == message.text.lower()),
+        None,
+    )
+
+    if not action:
+        await message.answer("Не получилось определить запрошенное действие.")
+        return
+
+    if not target:
+        await message.answer("Не нашёл такую добавку. Выбери название из списка.")
+        return
+
+    message.bot.expecting_supplement_history_choice = False
+    message.bot.expecting_supplement_history_time = True
+    action["supplement_name"] = target["name"]
+    set_supplement_history_action(message.bot, user_id, action)
+
+    await message.answer(
+        "Укажи время приёма в формате ЧЧ:ММ. Например: 09:30",
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_supplement_history_time", False))
+async def set_history_entry_time(message: Message):
+    import re
+
+    time_text = message.text.strip()
+    if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", time_text):
+        await message.answer("Пожалуйста, укажи время в формате ЧЧ:ММ (например, 08:15)")
+        return
+
+    user_id = str(message.from_user.id)
+    action = getattr(message.bot, "supplement_history_action", {}).get(user_id)
+    if not action:
+        message.bot.expecting_supplement_history_time = False
+        await message.answer("Не получилось сохранить приём: не найдено действие.")
+        return
+
+    supplement_name = action.get("supplement_name")
+    if not supplement_name:
+        message.bot.expecting_supplement_history_time = False
+        await message.answer("Не выбрана добавка для записи.")
+        return
+
+    supplements_list = get_user_supplements(message)
+    target = next(
+        (item for item in supplements_list if item["name"].lower() == supplement_name.lower()),
+        None,
+    )
+
+    if not target:
+        message.bot.expecting_supplement_history_time = False
+        await message.answer("Не нашёл выбранную добавку для записи.")
+        return
+
+    timestamp = datetime.combine(action["date"], datetime.strptime(time_text, "%H:%M").time())
+
+    if action.get("mode") == "edit" and action.get("original"):
+        original = action["original"]
+        orig_idx = original.get("supplement_index")
+        orig_entry_idx = original.get("entry_index")
+        if orig_idx is not None and orig_entry_idx is not None and orig_idx < len(supplements_list):
+            orig_history = supplements_list[orig_idx].get("history", [])
+            if orig_entry_idx < len(orig_history):
+                orig_history.pop(orig_entry_idx)
+
     target.setdefault("history", []).append(timestamp)
 
-    await answer_with_menu(
-        message,
+    message.bot.expecting_supplement_history_time = False
+    set_supplement_history_action(message.bot, user_id, None)
+
+    await message.answer(
         f"Записал приём {target['name']} на {timestamp.strftime('%d.%m.%Y %H:%M')}.",
-        reply_markup=supplements_main_menu(has_items=True),
     )
+    await show_supplement_day_entries(message, user_id, action["date"])
 
 
 @dp.message(F.text.startswith("❌ "))
@@ -1626,22 +2055,8 @@ async def supplements_history(message: Message):
     if not supplements_list:
         await answer_with_menu(message, "История добавок пуста.", reply_markup=supplements_main_menu(False))
         return
-    lines = ["📜 История добавок"]
-    for item in supplements_list:
-        days = ", ".join(item["days"]) if item["days"] else "не выбрано"
-        times = ", ".join(item["times"]) if item["times"] else "не выбрано"
-        history = item.get("history", [])
-        history_lines = []
-        for ts in history[-5:]:
-            if isinstance(ts, datetime):
-                history_lines.append(ts.strftime("• %d.%m.%Y %H:%M"))
-            else:
-                history_lines.append(f"• {ts}")
-        history_block = "\n".join(history_lines) if history_lines else "нет отметок"
-        lines.append(
-            f"💊 {item['name']} — {times}; дни: {days}; длительность: {item['duration']}\n{history_block}"
-        )
-    await answer_with_menu(message, "\n\n".join(lines), reply_markup=supplements_main_menu(True))
+    user_id = str(message.from_user.id)
+    await show_supplement_calendar(message, user_id)
 
 
 def supplement_schedule_prompt(sup: dict) -> str:
