@@ -96,11 +96,16 @@ threading.Thread(target=start_keepalive_server, daemon=True).start()
 
 
 load_dotenv()
-NUTRITION_API_KEY = os.getenv("NUTRITION_API_KEY")
 
 API_TOKEN = os.getenv("API_TOKEN")
+NUTRITION_API_KEY = os.getenv("NUTRITION_API_KEY")
+
 if not API_TOKEN:
     raise RuntimeError("API_TOKEN не найден. Установи переменную окружения или создай .env с API_TOKEN.")
+
+if not NUTRITION_API_KEY:
+    print("⚠️ ВНИМАНИЕ: NUTRITION_API_KEY не найден. КБЖУ работать не будет.")
+
 
 
 bot = Bot(token=API_TOKEN)
@@ -122,9 +127,24 @@ def get_nutrition_from_api(query: str):
     headers = {"X-Api-Key": NUTRITION_API_KEY}
     params = {"query": query}
 
-    resp = requests.get(url, headers=headers, params=params, timeout=10)
-    resp.raise_for_status()
-    items = resp.json()  # список словарей
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=10)
+    except Exception as e:
+        # сюда попадём, если вообще нет доступа в интернет / проблема сети
+        print("❌ Ошибка сети при запросе к Nutrition API:", repr(e))
+        raise
+
+    # Лог статуса на всякий случай
+    print(f"Nutrition API status: {resp.status_code}")
+    if resp.status_code != 200:
+        print("Ответ от Nutrition API:", resp.text[:500])
+        raise RuntimeError(f"Nutrition API error: {resp.status_code}")
+
+    try:
+        items = resp.json()
+    except Exception as e:
+        print("❌ Не получилось распарсить JSON от Nutrition API:", resp.text[:500])
+        raise
 
     totals = {
         "calories": 0.0,
@@ -140,6 +160,7 @@ def get_nutrition_from_api(query: str):
         totals["carbohydrates_total_g"] += item.get("carbohydrates_total_g") or 0
 
     return items, totals
+
 
 
 def add_workout(user_id, exercise, variant, count):
