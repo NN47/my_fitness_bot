@@ -437,6 +437,16 @@ main_menu = ReplyKeyboardMarkup(
 
 main_menu_button = KeyboardButton(text="🏠 Главное меню")
 
+training_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="➕ Добавить тренировку")],
+        [KeyboardButton(text="🏋️ История тренировок")],
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 
 def push_menu_stack(bot, reply_markup):
     if not isinstance(reply_markup, ReplyKeyboardMarkup):
@@ -634,6 +644,16 @@ async def start(message: Message):
 
 @dp.message(F.text == "🏋️ Тренировка")
 async def show_training_menu(message: Message):
+    reset_user_state(message, keep_supplements=True)
+    await answer_with_menu(
+        message,
+        "Что делаем?",
+        reply_markup=training_menu,
+    )
+
+
+@dp.message(F.text == "➕ Добавить тренировку")
+async def add_training_entry(message: Message):
     start_date_selection(message.bot, "training")
     await answer_with_menu(message, get_date_prompt("training"), reply_markup=training_date_menu)
 
