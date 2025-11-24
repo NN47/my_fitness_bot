@@ -249,7 +249,7 @@ def build_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboa
             if day == 0:
                 row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
             else:
-                marker = "●" if day in workout_days else ""
+                marker = "💪" if day in workout_days else ""
                 row.append(
                     InlineKeyboardButton(
                         text=f"{day}{marker}",
@@ -293,6 +293,15 @@ def build_day_actions_keyboard(workouts: list[Workout], target_date: date) -> In
                 ),
             ]
         )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить тренировку",
+                callback_data=f"wrk_add:{target_date.isoformat()}",
+            )
+        ]
+    )
 
     rows.append(
         [
@@ -2172,6 +2181,17 @@ async def select_calendar_day(callback: CallbackQuery):
     target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     callback.bot.edit_calendar_month = date(target_date.year, target_date.month, 1)
     await show_day_workouts(callback.message, str(callback.from_user.id), target_date)
+
+
+@dp.callback_query(F.data.startswith("wrk_add:"))
+async def add_workout_from_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, date_str = callback.data.split(":", 1)
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    start_date_selection(callback.bot, "training")
+    callback.bot.selected_date = target_date
+    await proceed_after_date_selection(callback.message)
 
 
 @dp.callback_query(F.data.startswith("wrk_del:"))
