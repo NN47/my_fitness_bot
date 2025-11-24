@@ -368,7 +368,9 @@ async def proceed_after_date_selection(message: Message):
 
     if context == "training":
         await message.answer(f"📅 Выбрана дата: {date_text}")
-        await message.answer("Теперь выбери упражнение:", reply_markup=exercise_menu)
+        message.bot.current_category = None
+        message.bot.current_exercise = None
+        await message.answer("Теперь выбери категорию упражнения:", reply_markup=exercise_category_menu)
     elif context == "weight":
         message.bot.expecting_weight = True
         await message.answer(f"📅 Выбрана дата: {date_text}")
@@ -391,16 +393,6 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="📆 Календарь")],
         [KeyboardButton(text="💬 Обратная связь")]
-    ],
-    resize_keyboard=True
-)
-
-# Подменю "Тренировка"
-training_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="➕ Добавить тренировку")],
-        [KeyboardButton(text="🏋️ История тренировок")],
-        [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
 )
@@ -432,35 +424,69 @@ activity_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-exercise_menu = ReplyKeyboardMarkup(
+exercise_category_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Подтягивания")],
-        [KeyboardButton(text="Отжимания")],
-        [KeyboardButton(text="Приседания")],
-        [KeyboardButton(text="Пресс")],
-        [KeyboardButton(text="Берпи")],
-        [KeyboardButton(text="Шаги")],
-        [KeyboardButton(text="Пробежка")],   
-        [KeyboardButton(text="Скакалка")],   
-        [KeyboardButton(text="Другое")],
+        [KeyboardButton(text="Со своим весом"), KeyboardButton(text="С утяжелителем")],
         [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
 )
 
+bodyweight_exercises = [
+    "Подтягивания",
+    "Отжимания",
+    "Приседания",
+    "Пресс",
+    "Берпи",
+    "Шаги",
+    "Пробежка",
+    "Скакалка",
+    "Становая тяга без утяжелителя",
+    "Румынская тяга без утяжелителя",
+    "Йога",
+    "Другое",
+]
+
+weighted_exercises = [
+    "Приседания со штангой",
+    "Жим штанги лёжа",
+    "Становая тяга с утяжелителем",
+    "Румынская тяга с утяжелителем",
+    "Тяга штанги в наклоне",
+    "Жим гантелей лёжа",
+    "Жим гантелей сидя",
+    "Подъёмы гантелей на бицепс",
+    "Тяга верхнего блока",
+    "Тяга нижнего блока",
+    "Жим ногами",
+    "Разведения гантелей",
+    "Тяга горизонтального блока",
+    "Сгибание ног в тренажёре",
+    "Разгибание ног в тренажёре",
+    "Гиперэкстензия с утяжелителем",
+    "Другое",
+]
+
+bodyweight_exercise_menu = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text=ex)] for ex in bodyweight_exercises] + [[KeyboardButton(text="⬅️ Назад")]],
+    resize_keyboard=True,
+)
+
+weighted_exercise_menu = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text=ex)] for ex in weighted_exercises] + [[KeyboardButton(text="⬅️ Назад")]],
+    resize_keyboard=True,
+)
+
 count_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [
-            KeyboardButton(text="5"), KeyboardButton(text="8"), KeyboardButton(text="10")
-        ],
-        [
-            KeyboardButton(text="12"), KeyboardButton(text="15"), KeyboardButton(text="20")
-        ],
-        [
-            KeyboardButton(text="✏️ Ввести вручную"), KeyboardButton(text="⬅️ Назад")
-        ]
+        [KeyboardButton(text=str(n)) for n in range(1, 6)],
+        [KeyboardButton(text=str(n)) for n in range(6, 11)],
+        [KeyboardButton(text=str(n)) for n in range(11, 16)],
+        [KeyboardButton(text=str(n)) for n in range(16, 21)],
+        [KeyboardButton(text=str(n)) for n in [25, 30, 35, 40, 50]],
+        [KeyboardButton(text="✏️ Ввести вручную"), KeyboardButton(text="⬅️ Назад")],
     ],
-    resize_keyboard=True
+    resize_keyboard=True,
 )
 
 
@@ -539,12 +565,19 @@ async def start(message: Message):
 
 @dp.message(F.text == "🏋️ Тренировка")
 async def show_training_menu(message: Message):
-    await message.answer("Выбери действие:", reply_markup=training_menu)
-
-@dp.message(F.text == "➕ Добавить тренировку")
-async def show_add_training_menu(message: Message):
     start_date_selection(message.bot, "training")
     await message.answer(get_date_prompt("training"), reply_markup=training_date_menu)
+
+@dp.message(F.text == "Со своим весом")
+async def choose_bodyweight_category(message: Message):
+    message.bot.current_category = "bodyweight"
+    await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+
+
+@dp.message(F.text == "С утяжелителем")
+async def choose_weighted_category(message: Message):
+    message.bot.current_category = "weighted"
+    await message.answer("Выбери упражнение:", reply_markup=weighted_exercise_menu)
 
 @dp.message(F.text == "📅 Сегодня")
 async def add_training_today(message: Message):
@@ -584,19 +617,26 @@ async def handle_custom_date(message: Message):
         await message.answer("⚠️ Неверный формат. Попробуй так: 31.10.2025")
 
 
-@dp.message(F.text.in_(["Подтягивания", "Отжимания", "Приседания", "Пресс", "Берпи", "Шаги", "Пробежка", "Скакалка", "Другое"]))
+@dp.message(lambda m: m.text in bodyweight_exercises + weighted_exercises)
 async def choose_exercise(message: Message):
+    category = getattr(message.bot, "current_category", None)
+    if message.text in bodyweight_exercises:
+        category = "bodyweight"
+    elif message.text in weighted_exercises:
+        category = "weighted"
+
+    message.bot.current_category = category
     message.bot.current_exercise = message.text
 
     # обрабатываем "Другое"
     if message.text == "Другое":
-        message.bot.current_variant = "Без варианта"
+        message.bot.current_variant = "С утяжелителем" if category == "weighted" else "Со своим весом"
         await message.answer("Введи название упражнения:")
         message.bot.expecting_custom_exercise = True
         return
 
     # особые случаи (оставляем как есть)
-    elif message.text == "Шаги":
+    if message.text == "Шаги":
         message.bot.current_variant = "Количество шагов"
         await message.answer("Сколько шагов сделал? Введи число:")
         return
@@ -610,7 +650,10 @@ async def choose_exercise(message: Message):
         return
 
     # обычные упражнения
-    message.bot.current_variant = "Без варианта"
+    if category == "weighted":
+        message.bot.current_variant = "С утяжелителем"
+    else:
+        message.bot.current_variant = "Со своим весом"
     await message.answer("Выбери количество повторений:", reply_markup=count_menu)
 
 @dp.message(F.text == "✏️ Ввести вручную")
@@ -622,7 +665,8 @@ async def enter_manual_count(message: Message):
 @dp.message(F.text, lambda m: getattr(m.bot, "expecting_custom_exercise", False))
 async def handle_custom_exercise(message: Message):
     message.bot.current_exercise = message.text
-    message.bot.current_variant = "Без варианта"
+    category = getattr(message.bot, "current_category", None)
+    message.bot.current_variant = "С утяжелителем" if category == "weighted" else "Со своим весом"
     message.bot.expecting_custom_exercise = False
     await message.answer("Отлично! Теперь введи количество раз:")
 
@@ -1103,6 +1147,13 @@ async def go_back(message: Message):
         if hasattr(message.bot, context_attr):
             try:
                 delattr(message.bot, context_attr)
+            except Exception:
+                pass
+
+    for exercise_attr in ["current_category", "current_exercise", "current_variant"]:
+        if hasattr(message.bot, exercise_attr):
+            try:
+                delattr(message.bot, exercise_attr)
             except Exception:
                 pass
 
