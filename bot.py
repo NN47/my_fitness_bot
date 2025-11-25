@@ -98,14 +98,14 @@ threading.Thread(target=start_keepalive_server, daemon=True).start()
 load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN")
-SPOONACULAR_API_KEY = os.getenv("SPOONACULAR_API_KEY")
-
+NUTRITION_API_KEY = os.getenv("NUTRITION_API_KEY")  # 🔸 новый ключ CalorieNinjas
 
 if not API_TOKEN:
     raise RuntimeError("API_TOKEN не найден. Установи переменную окружения или создай .env с API_TOKEN.")
 
-if not SPOONACULAR_API_KEY:
-    print("⚠️ ВНИМАНИЕ: SPOONACULAR_API_KEY не найден. КБЖУ через Spoonacular работать не будет.")
+if not NUTRITION_API_KEY:
+    print("⚠️ ВНИМАНИЕ: NUTRITION_API_KEY не найден. КБЖУ через CalorieNinjas работать не будет.")
+
 
 
 
@@ -119,82 +119,76 @@ dp = Dispatcher()
 
 def get_nutrition_from_api(query: str):
     """
-    Вызывает Spoonacular и возвращает (items, totals).
-    items — список продуктов (list),
-    totals — суммарные калории и БЖУ.
+    Вызывает CalorieNinjas /v1/nutrition и возвращает (items, totals).
+    items — список продуктов (list), totals — суммарные калории и БЖУ.
     """
-    if not SPOONACULAR_API_KEY:
-        raise RuntimeError("SPOONACULAR_API_KEY не задан в переменных окружения")
+    if not NUTRITION_API_KEY:
+        raise RuntimeError("NUTRITION_API_KEY не задан в переменных окружения")
 
-    # Эндпоинт: "guessNutrition" по тексту
-    # Документация: https://spoonacular.com/food-api/docs#Guess-Nutrition-by-Description
-    url = "https://api.spoonacular.com/recipes/guessNutrition"
-    params = {
-        "apiKey": SPOONACULAR_API_KEY,
-        "title": query,   # Spoonacular ждёт описание блюда одной строкой
-    }
+    url = "https://api.calorieninjas.com/v1/nutrition"
+    headers = {"X-Api-Key": NUTRITION_API_KEY}
+    params = {"query": query}
 
     try:
-        resp = requests.get(url, params=params, timeout=10)
+        resp = requests.get(url, headers=headers, params=params, timeout=10)
     except Exception as e:
-        print("❌ Ошибка сети при запросе к Spoonacular:", repr(e))
+        print("❌ Ошибка сети при запросе к CalorieNinjas:", repr(e))
         raise
 
-    print(f"Spoonacular API status: {resp.status_code}")
+    print(f"CalorieNinjas status: {resp.status_code}")
+    print("CalorieNinjas raw response:", resp.text[:500])
 
     if resp.status_code != 200:
-        print("Ответ от Spoonacular (non-200):", resp.text[:500])
-        raise RuntimeError(f"Spoonacular API error: HTTP {resp.status_code}")
+        print("Ответ от CalorieNinjas (non-200):", resp.text[:500])
+        raise RuntimeError(f"CalorieNinjas error: HTTP {resp.status_code}")
 
     try:
         data = resp.json()
     except Exception as e:
-        print("❌ Не получилось распарсить JSON от Spoonacular:", resp.text[:500])
+        print("❌ Не получилось распарсить JSON от CalorieNinjas:", resp.text[:500])
         raise
 
-    # В guessNutrition структура примерно такая:
-    # {
-    #   "calories": {"value": 520.0, "unit": "kcal", ...},
-    #   "protein": {"value": 30.0, "unit": "g", ...},
-    #   "fat": {"value": 20.0, "unit": "g", ...},
-    #   "carbs": {"value": 50.0, "unit": "g", ...}
-    # }
+    # формат: {"items": [ {...}, {...}, ... ]}
+    if not isinstance(data, dict) or "items" not in data:
+        print("❌ Неожиданный формат ответа от CalorieNinjas:", data)
+        raise RuntimeError("Unexpected response format from CalorieNinjas")
 
-    def safe_get_number(block: dict | None, key: str = "value") -> float:
+    items = data.get("items") or []
+
+    def safe_float(v) -> float:
         try:
-            if not block:
+            if v is None:
                 return 0.0
-            v = block.get(key, 0)
             return float(v)
         except (TypeError, ValueError):
             return 0.0
 
-    calories = safe_get_number(data.get("calories"))
-    protein = safe_get_number(data.get("protein"))
-    fat = safe_get_number(data.get("fat"))
-    carbs = safe_get_number(data.get("carbs"))
-
-    # Для совместимости с твоим остальным кодом вернём "список items" и totals.
-    # Здесь Spoonacular даёт только общую оценку по всему блюду,
-    # поэтому сделаем один item с названием исходного текста.
-    items = [
-        {
-            "name": query,
-            "_calories": calories,
-            "_protein_g": protein,
-            "_fat_total_g": fat,
-            "_carbohydrates_total_g": carbs,
-        }
-    ]
-
     totals = {
-        "calories": calories,
-        "protein_g": protein,
-        "fat_total_g": fat,
-        "carbohydrates_total_g": carbs,
+        "calories": 0.0,
+        "protein_g": 0.0,
+        "fat_total_g": 0.0,
+        "carbohydrates_total_g": 0.0,
     }
 
+    for item in items:
+        cal = safe_float(item.get("calories"))
+        p = safe_float(item.get("protein_g"))
+        f = safe_float(item.get("fat_total_g"))
+        c = safe_float(item.get("carbohydrates_total_g"))
+
+        # кладём приведённые значения обратно, чтобы handle_food_input удобно их читал
+        item["_calories"] = cal
+        item["_protein_g"] = p
+        item["_fat_total_g"] = f
+        item["_carbohydrates_total_g"] = c
+
+        totals["calories"] += cal
+        totals["protein_g"] += p
+        totals["fat_total_g"] += f
+        totals["carbohydrates_total_g"] += c
+
     return items, totals
+
 
     
 
