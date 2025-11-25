@@ -26,6 +26,31 @@ import random
 from datetime import datetime
 import requests
 
+
+def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") -> str:
+    """Переводит текст через публичное API MyMemory.
+
+    При ошибках возвращает исходный текст, чтобы логика не падала.
+    """
+    if not text:
+        return text
+
+    url = "https://api.mymemory.translated.net/get"
+    params = {"q": text, "langpair": f"{source_lang}|{target_lang}"}
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        translated = (
+            data.get("responseData", {}).get("translatedText")
+            or data.get("matches", [{}])[0].get("translation")
+        )
+        return translated or text
+    except Exception as e:
+        print("⚠️ Ошибка перевода через MyMemory:", repr(e))
+        return text
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 Base = declarative_base()
@@ -2241,7 +2266,7 @@ async def calories(message: Message):
         "Например:\n"
         "• 2 eggs, 100g oatmeal, 1 banana\n"
         "• 150g chicken breast and 200g rice\n\n"
-        "⚠️ Сейчас лучше писать еду по-английски, так API точнее понимает продукты."
+        "Можешь писать на русском — я переведу запрос и отвечу на русском."
     )
 
 @dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
@@ -2251,8 +2276,11 @@ async def handle_food_input(message: Message):
         await message.answer("Напиши, пожалуйста, что ты съел(а) 🙏")
         return
 
+    translated_query = translate_text(user_text, source_lang="ru", target_lang="en")
+    print(f"🍱 Перевод запроса для API: {translated_query}")
+
     try:
-        items, totals = get_nutrition_from_api(user_text)
+        items, totals = get_nutrition_from_api(translated_query)
     except Exception as e:
         print("Nutrition API error:", e)
         await message.answer(
@@ -2264,8 +2292,7 @@ async def handle_food_input(message: Message):
     if not items:
         await message.answer(
             "Я не нашёл продукты в этом описании 🤔\n"
-            "Попробуй написать чуть по-другому (лучше на английском):\n"
-            "например: 150g chicken breast and 200g rice"
+            "Попробуй написать чуть по-другому: добавь количество или уточни продукт."
         )
         return
 
@@ -2273,7 +2300,8 @@ async def handle_food_input(message: Message):
 
 
     for item in items:
-        name = (item.get("name") or "item").title()
+        name_en = (item.get("name") or "item").title()
+        name = translate_text(name_en, source_lang="en", target_lang="ru")
 
         # Берём уже приведённые к float значения, которые проставили в get_nutrition_from_api
         cal = float(item.get("_calories", 0.0))
