@@ -106,6 +106,19 @@ class Measurement(Base):
     date = Column(Date, default=date.today)
 
 
+class Meal(Base):
+    __tablename__ = "meals"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    calories = Column(Float, default=0)
+    protein = Column(Float, default=0)
+    fat = Column(Float, default=0)
+    carbs = Column(Float, default=0)
+    date = Column(Date, default=date.today)
+
+
 Base.metadata.create_all(engine)
 
 
@@ -213,6 +226,48 @@ def get_nutrition_from_api(query: str):
         totals["carbohydrates_total_g"] += c
 
     return items, totals
+
+
+
+def save_meal_entry(user_id: str, description: str, totals: dict, entry_date: date):
+    session = SessionLocal()
+    try:
+        meal = Meal(
+            user_id=str(user_id),
+            description=description,
+            calories=float(totals.get("calories", 0.0)),
+            protein=float(totals.get("protein_g", 0.0)),
+            fat=float(totals.get("fat_total_g", 0.0)),
+            carbs=float(totals.get("carbohydrates_total_g", 0.0)),
+            date=entry_date,
+        )
+        session.add(meal)
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_daily_meal_totals(user_id: str, entry_date: date):
+    session = SessionLocal()
+    try:
+        sums = (
+            session.query(
+                func.coalesce(func.sum(Meal.calories), 0),
+                func.coalesce(func.sum(Meal.protein), 0),
+                func.coalesce(func.sum(Meal.fat), 0),
+                func.coalesce(func.sum(Meal.carbs), 0),
+            )
+            .filter(Meal.user_id == str(user_id), Meal.date == entry_date)
+            .one()
+        )
+        return {
+            "calories": float(sums[0] or 0),
+            "protein_g": float(sums[1] or 0),
+            "fat_total_g": float(sums[2] or 0),
+            "carbohydrates_total_g": float(sums[3] or 0),
+        }
+    finally:
+        session.close()
 
 
     
@@ -2276,6 +2331,9 @@ async def handle_food_input(message: Message):
         await message.answer("Напиши, пожалуйста, что ты съел(а) 🙏")
         return
 
+    user_id = str(message.from_user.id)
+    entry_date = date.today()
+
     translated_query = translate_text(user_text, source_lang="ru", target_lang="en")
     print(f"🍱 Перевод запроса для API: {translated_query}")
 
@@ -2317,6 +2375,17 @@ async def handle_food_input(message: Message):
         f"💪 Белки: {float(totals['protein_g']):.1f} г\n"
         f"🧈 Жиры: {float(totals['fat_total_g']):.1f} г\n"
         f"🍞 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г"
+    )
+
+    save_meal_entry(user_id, user_text, totals, entry_date)
+    daily_totals = get_daily_meal_totals(user_id, entry_date)
+
+    lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    lines.append(
+        f"🔥 {daily_totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
+        f"🧈 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
+        f"🍞 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
     )
 
     message.bot.expecting_food_input = False
