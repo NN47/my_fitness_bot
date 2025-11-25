@@ -270,6 +270,39 @@ def get_daily_meal_totals(user_id: str, entry_date: date):
         session.close()
 
 
+def get_meal_history_days(user_id: str, year: int, month: int) -> set[int]:
+    session = SessionLocal()
+    try:
+        start = date(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        end = date(year, month, last_day)
+        rows = (
+            session.query(Meal.date)
+            .filter(
+                Meal.user_id == str(user_id),
+                Meal.date >= start,
+                Meal.date <= end,
+            )
+            .all()
+        )
+        return {row[0].day for row in rows if row[0]}
+    finally:
+        session.close()
+
+
+def get_meals_for_day(user_id: str, target_date: date) -> list[Meal]:
+    session = SessionLocal()
+    try:
+        return (
+            session.query(Meal)
+            .filter_by(user_id=str(user_id), date=target_date)
+            .order_by(Meal.id.asc())
+            .all()
+        )
+    finally:
+        session.close()
+
+
     
 
 
@@ -511,6 +544,99 @@ async def show_day_workouts(message: Message, user_id: str, target_date: date):
     )
 
 
+def build_meal_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    days_with_meals = get_meal_history_days(user_id, year, month)
+    keyboard: list[list[InlineKeyboardButton]] = []
+
+    header = InlineKeyboardButton(text=f"{MONTH_NAMES[month]} {year}", callback_data="noop")
+    keyboard.append([header])
+
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([InlineKeyboardButton(text=d, callback_data="noop") for d in week_days])
+
+    month_calendar = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
+    for week in month_calendar:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
+            else:
+                marker = "●" if day in days_with_meals else ""
+                row.append(
+                    InlineKeyboardButton(
+                        text=f"{day}{marker}",
+                        callback_data=f"mealcal_day:{year}-{month:02d}-{day:02d}",
+                    )
+                )
+        keyboard.append(row)
+
+    prev_month = month - 1 or 12
+    prev_year = year - 1 if month == 1 else year
+    next_month = month % 12 + 1
+    next_year = year + 1 if month == 12 else year
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(text="◀️", callback_data=f"mealcal_nav:{prev_year}-{prev_month:02d}"),
+            InlineKeyboardButton(text="Закрыть", callback_data="mealcal_close"),
+            InlineKeyboardButton(text="▶️", callback_data=f"mealcal_nav:{next_year}-{next_month:02d}"),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def build_meal_day_actions_keyboard(target_date: date) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад к календарю",
+                    callback_data=f"mealcal_back:{target_date.year}-{target_date.month:02d}",
+                )
+            ]
+        ]
+    )
+
+
+async def show_meal_calendar(message: Message, user_id: str, year: int | None = None, month: int | None = None):
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    keyboard = build_meal_calendar_keyboard(user_id, year, month)
+    await message.answer(
+        "📜 История КБЖУ. Выберите день, чтобы посмотреть приёмы пищи:",
+        reply_markup=keyboard,
+    )
+
+
+async def show_meal_day_entries(message: Message, user_id: str, target_date: date):
+    meals = get_meals_for_day(user_id, target_date)
+    if not meals:
+        await message.answer(
+            f"{target_date.strftime('%d.%m.%Y')}: приёмы пищи не найдены.",
+            reply_markup=build_meal_day_actions_keyboard(target_date),
+        )
+        return
+
+    totals = get_daily_meal_totals(user_id, target_date)
+    lines = [f"📅 {target_date.strftime('%d.%m.%Y')} — приёмы пищи:"]
+    for meal in meals:
+        lines.append(
+            f"• {meal.description}: {meal.calories:.0f} ккал (Б {meal.protein:.1f} / Ж {meal.fat:.1f} / У {meal.carbs:.1f})"
+        )
+
+    lines.append("\nИТОГО за день:")
+    lines.append(
+        f"🔥 {totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals['protein_g']:.1f} г\n"
+        f"🧈 Жиры: {totals['fat_total_g']:.1f} г\n"
+        f"🍞 Углеводы: {totals['carbohydrates_total_g']:.1f} г"
+    )
+
+    await message.answer("\n".join(lines), reply_markup=build_meal_day_actions_keyboard(target_date))
+
+
 def start_date_selection(bot, context: str):
     """Сохраняет контекст выбора даты (тренировка/вес/замеры)."""
     bot.date_selection_context = context
@@ -602,6 +728,15 @@ main_menu = ReplyKeyboardMarkup(
 )
 
 main_menu_button = KeyboardButton(text="🏠 Главное меню")
+
+nutrition_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📜 История КБЖУ")],
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
 
 training_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -2315,18 +2450,31 @@ def duration_menu() -> ReplyKeyboardMarkup:
 async def calories(message: Message):
     reset_user_state(message)  # чтобы не конфликтовало с другими режимами
     message.bot.expecting_food_input = True
-    await message.answer(
+    await answer_with_menu(
         "🍱 Раздел КБЖУ\n\n"
         "Напиши, что ты съел(а) одним сообщением.\n\n"
         "Например:\n"
         "• 2 eggs, 100g oatmeal, 1 banana\n"
         "• 150g chicken breast and 200g rice\n\n"
-        "Можешь писать на русском — я переведу запрос и отвечу на русском."
+        "Можешь писать на русском — я переведу запрос и отвечу на русском.",
+        reply_markup=nutrition_menu,
     )
+
+
+@dp.message(F.text == "📜 История КБЖУ")
+async def meal_history(message: Message):
+    reset_user_state(message)
+    user_id = str(message.from_user.id)
+    await show_meal_calendar(message, user_id)
+
 
 @dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
 async def handle_food_input(message: Message):
     user_text = message.text.strip()
+    if user_text == "📜 История КБЖУ":
+        message.bot.expecting_food_input = False
+        await meal_history(message)
+        return
     if not user_text:
         await message.answer("Напиши, пожалуйста, что ты съел(а) 🙏")
         return
@@ -2442,6 +2590,44 @@ async def select_calendar_day(callback: CallbackQuery):
     target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     callback.bot.edit_calendar_month = date(target_date.year, target_date.month, 1)
     await show_day_workouts(callback.message, str(callback.from_user.id), target_date)
+
+
+@dp.callback_query(F.data == "mealcal_close")
+async def close_meal_calendar(callback: CallbackQuery):
+    await callback.answer("Календарь закрыт")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data.startswith("mealcal_nav:"))
+async def navigate_meal_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, ym = callback.data.split(":", 1)
+    year, month = map(int, ym.split("-"))
+    user_id = str(callback.from_user.id)
+    await callback.message.edit_reply_markup(
+        reply_markup=build_meal_calendar_keyboard(user_id, year, month)
+    )
+
+
+@dp.callback_query(F.data.startswith("mealcal_back:"))
+async def back_to_meal_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, ym = callback.data.split(":", 1)
+    year, month = map(int, ym.split("-"))
+    user_id = str(callback.from_user.id)
+    await show_meal_calendar(callback.message, user_id, year, month)
+
+
+@dp.callback_query(F.data.startswith("mealcal_day:"))
+async def open_meal_day(callback: CallbackQuery):
+    await callback.answer()
+    _, date_str = callback.data.split(":", 1)
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    user_id = str(callback.from_user.id)
+    await show_meal_day_entries(callback.message, user_id, target_date)
 
 
 @dp.callback_query(F.data.startswith("wrk_add:"))
