@@ -27,10 +27,11 @@ from datetime import datetime
 import requests
 
 
-def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") -> str:
+def translate_text(text: str, source_lang: str = "auto", target_lang: str = "en") -> str:
     """Переводит текст через публичное API MyMemory.
 
     При ошибках возвращает исходный текст, чтобы логика не падала.
+    Используем auto-определение языка, чтобы без проблем принимать русский ввод.
     """
     if not text:
         return text
@@ -266,6 +267,37 @@ def get_daily_meal_totals(user_id: str, entry_date: date):
             "fat_total_g": float(sums[2] or 0),
             "carbohydrates_total_g": float(sums[3] or 0),
         }
+    finally:
+        session.close()
+
+
+def get_meals_for_day(user_id: str, entry_date: date):
+    session = SessionLocal()
+    try:
+        return (
+            session.query(Meal)
+            .filter(Meal.user_id == str(user_id), Meal.date == entry_date)
+            .order_by(Meal.id)
+            .all()
+        )
+    finally:
+        session.close()
+
+
+def delete_meal_entry(user_id: str, meal_id: int) -> bool:
+    session = SessionLocal()
+    try:
+        meal = (
+            session.query(Meal)
+            .filter(Meal.id == meal_id, Meal.user_id == str(user_id))
+            .one_or_none()
+        )
+        if not meal:
+            return False
+
+        session.delete(meal)
+        session.commit()
+        return True
     finally:
         session.close()
 
@@ -2332,6 +2364,64 @@ async def calories(message: Message):
     )
 
 
+def build_meal_delete_keyboard(meals):
+    rows = []
+    for meal in meals:
+        title = meal.description or f"Приём #{meal.id}"
+        if len(title) > 24:
+            title = title[:21] + "..."
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🗑 {title}", callback_data=f"meal_del:{meal.id}"
+                )
+            ]
+        )
+
+    rows.append([InlineKeyboardButton(text="❌ Закрыть", callback_data="meal_del_close")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def format_meal_line(meal, index: int) -> str:
+    description = meal.description or "Без описания"
+    return (
+        f"{index}. {description} — "
+        f"🔥 {meal.calories:.0f} ккал (Б {meal.protein:.1f} / Ж {meal.fat:.1f} / У {meal.carbs:.1f})"
+    )
+
+
+async def send_kbju_daily_summary(message: Message, user_id: str, target_date: date):
+    meals_today = get_meals_for_day(user_id, target_date)
+    totals = get_daily_meal_totals(user_id, target_date)
+
+    if not meals_today:
+        await answer_with_menu(
+            message,
+            "🍱 Сегодня ещё нет записей КБЖУ.",
+            reply_markup=kbju_menu,
+        )
+        return
+
+    text_lines = ["🍱 Итоги по КБЖУ за сегодня:", "\nЗаписанные приёмы:"]
+    for idx, meal in enumerate(meals_today, 1):
+        text_lines.append(format_meal_line(meal, idx))
+
+    text_lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    text_lines.append(
+        f"🔥 {totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals['protein_g']:.1f} г\n"
+        f"🧈 Жиры: {totals['fat_total_g']:.1f} г\n"
+        f"🍞 Углеводы: {totals['carbohydrates_total_g']:.1f} г"
+    )
+
+    await answer_with_menu(message, "\n".join(text_lines), reply_markup=kbju_menu)
+    await message.answer(
+        "Если нужно, выбери приём пищи для удаления:",
+        reply_markup=build_meal_delete_keyboard(meals_today),
+    )
+
+
 @dp.message(F.text == "➕ Добавить приём пищи")
 async def kbju_add_meal(message: Message):
     reset_user_state(message)  # очищаем возможные ожидания других режимов
@@ -2353,36 +2443,7 @@ async def kbju_daily_totals(message: Message):
     reset_user_state(message)
     user_id = str(message.from_user.id)
     today = date.today()
-
-    session = SessionLocal()
-    try:
-        meals_today = (
-            session.query(Meal)
-            .filter(Meal.user_id == user_id, Meal.date == today)
-            .order_by(Meal.id)
-            .all()
-        )
-        totals = get_daily_meal_totals(user_id, today)
-    finally:
-        session.close()
-
-    if not meals_today:
-        await answer_with_menu(
-            message,
-            "🍱 Сегодня ещё нет записей КБЖУ.",
-            reply_markup=kbju_menu,
-        )
-        return
-
-    text_lines = ["🍱 Итоги по КБЖУ за сегодня:"]
-    text_lines.append(
-        f"🔥 {totals['calories']:.0f} ккал\n"
-        f"💪 Белки: {totals['protein_g']:.1f} г\n"
-        f"🧈 Жиры: {totals['fat_total_g']:.1f} г\n"
-        f"🍞 Углеводы: {totals['carbohydrates_total_g']:.1f} г"
-    )
-
-    await answer_with_menu(message, "\n".join(text_lines), reply_markup=kbju_menu)
+    await send_kbju_daily_summary(message, user_id, today)
 
 @dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
 async def handle_food_input(message: Message):
@@ -2394,7 +2455,7 @@ async def handle_food_input(message: Message):
     user_id = str(message.from_user.id)
     entry_date = date.today()
 
-    translated_query = translate_text(user_text, source_lang="ru", target_lang="en")
+    translated_query = translate_text(user_text, target_lang="en")
     print(f"🍱 Перевод запроса для API: {translated_query}")
 
     try:
@@ -2454,6 +2515,40 @@ async def handle_food_input(message: Message):
         "\n".join(lines),
         reply_markup=kbju_menu,
     )
+
+
+@dp.callback_query(F.data.startswith("meal_del:"))
+async def kbju_delete_meal(callback: CallbackQuery):
+    await callback.answer()
+    _, meal_id_str = callback.data.split(":", 1)
+    user_id = str(callback.from_user.id)
+
+    if not meal_id_str.isdigit():
+        await callback.message.answer("Не смог распознать номер приёма пищи 🤔")
+        return
+
+    deleted = delete_meal_entry(user_id, int(meal_id_str))
+    if deleted:
+        status_text = "Приём пищи удалён."
+    else:
+        status_text = "Запись не найдена или уже удалена."
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    await callback.message.answer(status_text)
+    await send_kbju_daily_summary(callback.message, user_id, date.today())
+
+
+@dp.callback_query(F.data == "meal_del_close")
+async def kbju_close_delete_menu(callback: CallbackQuery):
+    await callback.answer("Скрываю список приёмов")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
 @dp.message(F.text == "📆 Календарь")
 async def calendar_view(message: Message):
