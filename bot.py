@@ -2430,9 +2430,53 @@ async def send_kbju_daily_summary(message: Message, user_id: str, target_date: d
         )
         return
 
+    def format_items(items: list[dict]) -> list[str]:
+        lines: list[str] = []
+        for item in items:
+            name_en = (item.get("name") or "item").title()
+            name = translate_text(name_en, source_lang="en", target_lang="ru")
+
+            cal = float(item.get("_calories", 0.0))
+            p = float(item.get("_protein_g", 0.0))
+            f = float(item.get("_fat_total_g", 0.0))
+            c = float(item.get("_carbohydrates_total_g", 0.0))
+
+            lines.append(
+                f"• {name} — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+            )
+        return lines
+
     text_lines = ["🍱 Итоги по КБЖУ за сегодня:", "\nЗаписанные приёмы:"]
     for idx, meal in enumerate(meals_today, 1):
-        text_lines.append(format_meal_line(meal, idx))
+        description = meal.description or f"Приём #{meal.id}"
+        text_lines.append(f"\n{idx}. {description}")
+
+        try:
+            meal_query = translate_text(description, target_lang="en")
+            items, meal_totals = get_nutrition_from_api(meal_query)
+        except Exception as e:
+            print("⚠️ Не получилось получить детали приёма:", e)
+            items, meal_totals = [], {
+                "calories": meal.calories,
+                "protein_g": meal.protein,
+                "fat_total_g": meal.fat,
+                "carbohydrates_total_g": meal.carbs,
+            }
+
+        if items:
+            text_lines.extend(format_items(items))
+        else:
+            text_lines.append(
+                "Не удалось распознать продукты для этого приёма, показываю сохранённые суммы."
+            )
+
+        text_lines.append("\nИТОГО:")
+        text_lines.append(
+            f"🔥 {float(meal_totals['calories']):.0f} ккал\n"
+            f"💪 Белки: {float(meal_totals['protein_g']):.1f} г\n"
+            f"🧈 Жиры: {float(meal_totals['fat_total_g']):.1f} г\n"
+            f"🍞 Углеводы: {float(meal_totals['carbohydrates_total_g']):.1f} г"
+        )
 
     text_lines.append("\nСУММА ЗА СЕГОДНЯ:")
     text_lines.append(
@@ -2444,7 +2488,7 @@ async def send_kbju_daily_summary(message: Message, user_id: str, target_date: d
 
     await answer_with_menu(message, "\n".join(text_lines), reply_markup=kbju_menu)
     await message.answer(
-        "Если нужно, выбери приём пищи для редактирования или удаления:",
+        "Если нужен, выбери приём пищи для редактирования или удаления:",
         reply_markup=build_meal_actions_keyboard(meals_today),
     )
 
@@ -2485,20 +2529,11 @@ async def handle_food_input(message: Message):
     translated_query = translate_text(user_text, target_lang="en")
     print(f"🍱 Перевод запроса для API: {translated_query}")
 
-    items = []
-    totals = {}
-    queries = [("translated", translated_query)]
-    if translated_query.strip().lower() != user_text.strip().lower():
-        queries.append(("original", user_text))
-
-    for label, query in queries:
-        try:
-            items, totals = get_nutrition_from_api(query)
-        except Exception as e:
-            print(f"Nutrition API error on {label} query:", e)
-            continue
-        if items:
-            break
+    try:
+        items, totals = get_nutrition_from_api(translated_query)
+    except Exception as e:
+        print("Nutrition API error on translated query:", e)
+        items, totals = [], {}
 
     if not items:
         await message.answer(
