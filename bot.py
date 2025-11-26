@@ -247,6 +247,42 @@ def save_meal_entry(user_id: str, description: str, totals: dict, entry_date: da
         session.close()
 
 
+def update_meal_entry(
+    meal_id: int, user_id: str, description: str, totals: dict
+) -> bool:
+    session = SessionLocal()
+    try:
+        meal = session.query(Meal).filter_by(id=meal_id, user_id=str(user_id)).first()
+        if not meal:
+            return False
+
+        meal.description = description
+        meal.calories = float(totals.get("calories", 0.0))
+        meal.protein = float(totals.get("protein_g", 0.0))
+        meal.fat = float(totals.get("fat_total_g", 0.0))
+        meal.carbs = float(totals.get("carbohydrates_total_g", 0.0))
+        session.commit()
+        return True
+    finally:
+        session.close()
+
+
+def delete_meal_entry(meal_id: int, user_id: str):
+    session = SessionLocal()
+    try:
+        meal = session.query(Meal).filter_by(id=meal_id, user_id=str(user_id)).first()
+        if not meal:
+            return None
+
+        entry_date = meal.date
+        description = meal.description
+        session.delete(meal)
+        session.commit()
+        return entry_date, description
+    finally:
+        session.close()
+
+
 def get_daily_meal_totals(user_id: str, entry_date: date):
     session = SessionLocal()
     try:
@@ -1425,6 +1461,12 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
             except Exception:
                 pass
 
+    if hasattr(message.bot, "meal_edit_context"):
+        try:
+            message.bot.meal_edit_context.pop(user_id, None)
+        except Exception:
+            pass
+
     for context_attr in ["date_selection_context", "selected_date"]:
         if hasattr(message.bot, context_attr):
             try:
@@ -2335,6 +2377,64 @@ def duration_menu() -> ReplyKeyboardMarkup:
     )
 
 
+def build_meals_actions_keyboard(meals: list[Meal]) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for idx, meal in enumerate(meals, start=1):
+        rows.append(
+            [
+                InlineKeyboardButton(text=f"✏️ {idx}", callback_data=f"meal_edit:{meal.id}"),
+                InlineKeyboardButton(text=f"🗑 {idx}", callback_data=f"meal_del:{meal.id}"),
+            ]
+        )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def format_today_meals(meals: list[Meal], daily_totals: dict, day_str: str) -> str:
+    lines: list[str] = [f"📊 Итоги за сегодня ({day_str}):\n"]
+
+    for idx, meal in enumerate(meals, start=1):
+        lines.append(
+            "\n".join(
+                [
+                    f"{idx}. {meal.description}",
+                    f"   🔥 {meal.calories:.0f} ккал — Б {meal.protein:.1f} / Ж {meal.fat:.1f} / У {meal.carbs:.1f}",
+                ]
+            )
+        )
+
+    lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    lines.append(
+        f"🔥 {daily_totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
+        f"🧈 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
+        f"🍞 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
+    )
+
+    lines.append("\n✏️ — редактировать, 🗑 — удалить конкретный продукт.")
+    return "\n".join(lines)
+
+
+async def send_today_results(message: Message, user_id: str):
+    today = date.today()
+    meals = get_meals_for_date(user_id, today)
+
+    if not meals:
+        await answer_with_menu(
+            message,
+            "Пока нет записей за сегодня. Добавь приём пищи, и я посчитаю КБЖУ!",
+            reply_markup=kbju_menu,
+        )
+        return
+
+    daily_totals = get_daily_meal_totals(user_id, today)
+    day_str = today.strftime("%d.%m.%Y")
+    text = format_today_meals(meals, daily_totals, day_str)
+    keyboard = build_meals_actions_keyboard(meals)
+
+    await message.answer(text, reply_markup=keyboard)
+
+
 @dp.message(F.text == "🍱 КБЖУ")
 async def calories(message: Message):
     reset_user_state(message)  # чтобы не конфликтовало с другими режимами
@@ -2367,46 +2467,7 @@ async def calories_add(message: Message):
 async def calories_today_results(message: Message):
     reset_user_state(message)
     message.bot.kbju_menu_open = True
-    user_id = str(message.from_user.id)
-    today = date.today()
-    meals = get_meals_for_date(user_id, today)
-
-    if not meals:
-        await answer_with_menu(
-            message,
-            "Пока нет записей за сегодня. Добавь приём пищи, и я посчитаю КБЖУ!",
-            reply_markup=kbju_menu,
-        )
-        return
-
-    daily_totals = get_daily_meal_totals(user_id, today)
-    day_str = today.strftime("%d.%m.%Y")
-
-    lines: list[str] = [f"📊 Итоги за сегодня ({day_str}):\n"]
-
-    for idx, meal in enumerate(meals, start=1):
-        lines.append(
-            "\n".join(
-                [
-                    f"{idx}. {meal.description}",
-                    f"   🔥 {meal.calories:.0f} ккал — Б {meal.protein:.1f} / Ж {meal.fat:.1f} / У {meal.carbs:.1f}",
-                ]
-            )
-        )
-
-    lines.append("\nСУММА ЗА СЕГОДНЯ:")
-    lines.append(
-        f"🔥 {daily_totals['calories']:.0f} ккал\n"
-        f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
-        f"🧈 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
-        f"🍞 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
-    )
-
-    await answer_with_menu(
-        message,
-        "\n".join(lines),
-        reply_markup=kbju_menu,
-    )
+    await send_today_results(message, str(message.from_user.id))
 
 @dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
 async def handle_food_input(message: Message):
@@ -2478,6 +2539,100 @@ async def handle_food_input(message: Message):
         "\n".join(lines),
         reply_markup=main_menu,
     )
+
+
+@dp.callback_query(F.data.startswith("meal_del:"))
+async def delete_meal(callback: CallbackQuery):
+    await callback.answer()
+    meal_id = int(callback.data.split(":", 1)[1])
+    user_id = str(callback.from_user.id)
+
+    result = delete_meal_entry(meal_id, user_id)
+    if not result:
+        await callback.message.answer("Не нашёл такой продукт для удаления.")
+        return
+
+    entry_date, description = result
+    await callback.message.answer(
+        f"🗑 Удалил запись за {entry_date.strftime('%d.%m.%Y')}: {description}"
+    )
+    await send_today_results(callback.message, user_id)
+
+
+@dp.callback_query(F.data.startswith("meal_edit:"))
+async def start_meal_edit(callback: CallbackQuery):
+    await callback.answer()
+    meal_id = int(callback.data.split(":", 1)[1])
+    user_id = str(callback.from_user.id)
+
+    meals_today = get_meals_for_date(user_id, date.today())
+    meal = next((m for m in meals_today if m.id == meal_id), None)
+    if not meal:
+        await callback.message.answer("Не нашёл запись для изменения.")
+        return
+
+    ctx = getattr(callback.bot, "meal_edit_context", {})
+    ctx[user_id] = meal_id
+    callback.bot.meal_edit_context = ctx
+    callback.bot.expecting_food_input = False
+
+    position = next((idx for idx, m in enumerate(meals_today, start=1) if m.id == meal_id), meal_id)
+    await callback.message.answer(
+        "\n".join(
+            [
+                f"✏️ Введи новый состав для позиции №{position}:",
+                f"Сейчас записано: {meal.description}",
+                "Я пересчитаю КБЖУ автоматически.",
+            ]
+        )
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "meal_edit_context", {}).get(str(m.from_user.id)))
+async def handle_meal_edit_input(message: Message):
+    user_id = str(message.from_user.id)
+    meal_id = message.bot.meal_edit_context.get(user_id)
+    new_text = message.text.strip()
+
+    if not new_text:
+        await message.answer("Напиши новое описание продуктов, пожалуйста 🙏")
+        return
+
+    translated_query = translate_text(new_text, source_lang="ru", target_lang="en")
+
+    try:
+        items, totals = get_nutrition_from_api(translated_query)
+    except Exception as e:
+        print("Nutrition API error during edit:", e)
+        await message.answer("⚠️ Не получилось пересчитать КБЖУ. Попробуй ещё раз чуть позже.")
+        return
+
+    if not items:
+        await message.answer(
+            "Не нашёл продукты в этом описании. Попробуй уточнить количество или состав."
+        )
+        return
+
+    success = update_meal_entry(meal_id, user_id, new_text, totals)
+    if not success:
+        message.bot.meal_edit_context.pop(user_id, None)
+        await message.answer("Не нашёл запись для обновления.")
+        return
+
+    message.bot.meal_edit_context.pop(user_id, None)
+
+    lines = ["✅ Обновил запись по КБЖУ:\n"]
+    lines.extend(
+        [
+            f"🔥 {float(totals['calories']):.0f} ккал",
+            f"💪 Белки: {float(totals['protein_g']):.1f} г",
+            f"🧈 Жиры: {float(totals['fat_total_g']):.1f} г",
+            f"🍞 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г",
+        ]
+    )
+
+    await message.answer("\n".join(lines))
+    await send_today_results(message, user_id)
 
 @dp.message(F.text == "📆 Календарь")
 async def calendar_view(message: Message):
