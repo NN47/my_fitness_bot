@@ -270,6 +270,20 @@ def get_daily_meal_totals(user_id: str, entry_date: date):
         session.close()
 
 
+
+def get_meals_for_date(user_id: str, entry_date: date) -> list[Meal]:
+    session = SessionLocal()
+    try:
+        return (
+            session.query(Meal)
+            .filter(Meal.user_id == str(user_id), Meal.date == entry_date)
+            .order_by(Meal.id.asc())
+            .all()
+        )
+    finally:
+        session.close()
+
+
     
 
 
@@ -2353,9 +2367,44 @@ async def calories_add(message: Message):
 async def calories_today_results(message: Message):
     reset_user_state(message)
     message.bot.kbju_menu_open = True
+    user_id = str(message.from_user.id)
+    today = date.today()
+    meals = get_meals_for_date(user_id, today)
+
+    if not meals:
+        await answer_with_menu(
+            message,
+            "Пока нет записей за сегодня. Добавь приём пищи, и я посчитаю КБЖУ!",
+            reply_markup=kbju_menu,
+        )
+        return
+
+    daily_totals = get_daily_meal_totals(user_id, today)
+    day_str = today.strftime("%d.%m.%Y")
+
+    lines: list[str] = [f"📊 Итоги за сегодня ({day_str}):\n"]
+
+    for idx, meal in enumerate(meals, start=1):
+        lines.append(
+            "\n".join(
+                [
+                    f"{idx}. {meal.description}",
+                    f"   🔥 {meal.calories:.0f} ккал — Б {meal.protein:.1f} / Ж {meal.fat:.1f} / У {meal.carbs:.1f}",
+                ]
+            )
+        )
+
+    lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    lines.append(
+        f"🔥 {daily_totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
+        f"🧈 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
+        f"🍞 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
+    )
+
     await answer_with_menu(
         message,
-        "📊 Раздел в разработке. Скоро покажу результаты за сегодня!",
+        "\n".join(lines),
         reply_markup=kbju_menu,
     )
 
