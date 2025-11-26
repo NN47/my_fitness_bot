@@ -448,6 +448,27 @@ def get_month_workout_days(user_id: str, year: int, month: int):
         session.close()
 
 
+def get_month_meal_days(user_id: str, year: int, month: int):
+    first_day = date(year, month, 1)
+    _, days_in_month = calendar.monthrange(year, month)
+    last_day = date(year, month, days_in_month)
+
+    session = SessionLocal()
+    try:
+        meals = (
+            session.query(Meal.date)
+            .filter(
+                Meal.user_id == str(user_id),
+                Meal.date >= first_day,
+                Meal.date <= last_day,
+            )
+            .all()
+        )
+        return {m.date.day for m in meals}
+    finally:
+        session.close()
+
+
 def build_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
     workout_days = get_month_workout_days(user_id, year, month)
     keyboard: list[list[InlineKeyboardButton]] = []
@@ -487,6 +508,52 @@ def build_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboa
             InlineKeyboardButton(text="Закрыть", callback_data="cal_close"),
             InlineKeyboardButton(
                 text="▶️", callback_data=f"cal_nav:{next_year}-{next_month:02d}"
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def build_kbju_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    meal_days = get_month_meal_days(user_id, year, month)
+    keyboard: list[list[InlineKeyboardButton]] = []
+
+    header = InlineKeyboardButton(text=f"{MONTH_NAMES[month]} {year}", callback_data="noop")
+    keyboard.append([header])
+
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([InlineKeyboardButton(text=d, callback_data="noop") for d in week_days])
+
+    month_calendar = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
+    for week in month_calendar:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
+            else:
+                marker = "🍱" if day in meal_days else ""
+                row.append(
+                    InlineKeyboardButton(
+                        text=f"{day}{marker}",
+                        callback_data=f"meal_cal_day:{year}-{month:02d}-{day:02d}",
+                    )
+                )
+        keyboard.append(row)
+
+    prev_month = month - 1 or 12
+    prev_year = year - 1 if month == 1 else year
+    next_month = month % 12 + 1
+    next_year = year + 1 if month == 12 else year
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="◀️", callback_data=f"meal_cal_nav:{prev_year}-{prev_month:02d}"
+            ),
+            InlineKeyboardButton(text="Закрыть", callback_data="cal_close"),
+            InlineKeyboardButton(
+                text="▶️", callback_data=f"meal_cal_nav:{next_year}-{next_month:02d}"
             ),
         ]
     )
@@ -559,6 +626,48 @@ async def show_day_workouts(message: Message, user_id: str, target_date: date):
     await message.answer(
         "\n".join(text), reply_markup=build_day_actions_keyboard(workouts, target_date)
     )
+
+
+async def show_kbju_calendar(
+    message: Message, user_id: str, year: int | None = None, month: int | None = None
+):
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    keyboard = build_kbju_calendar_keyboard(user_id, year, month)
+    await message.answer(
+        "📆 Выбери день, чтобы посмотреть результаты по КБЖУ:",
+        reply_markup=keyboard,
+    )
+
+
+def build_kbju_day_actions_keyboard(target_date: date) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад к календарю",
+                    callback_data=f"meal_cal_back:{target_date.year}-{target_date.month:02d}",
+                )
+            ]
+        ]
+    )
+
+
+async def show_day_meals(message: Message, user_id: str, target_date: date):
+    meals = get_meals_for_date(user_id, target_date)
+    if not meals:
+        await message.answer(
+            f"{target_date.strftime('%d.%m.%Y')}: нет записей по КБЖУ.",
+            reply_markup=build_kbju_day_actions_keyboard(target_date),
+        )
+        return
+
+    daily_totals = get_daily_meal_totals(user_id, target_date)
+    day_str = target_date.strftime("%d.%m.%Y")
+    text = format_today_meals(meals, daily_totals, day_str)
+
+    await message.answer(text, reply_markup=build_kbju_day_actions_keyboard(target_date))
 
 
 def start_date_selection(bot, context: str):
@@ -657,6 +766,7 @@ kbju_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить")],
         [KeyboardButton(text="📊 Результаты за сегодня")],
+        [KeyboardButton(text="📆 Календарь КБЖУ")],
         [main_menu_button],
     ],
     resize_keyboard=True,
@@ -2469,6 +2579,13 @@ async def calories_today_results(message: Message):
     message.bot.kbju_menu_open = True
     await send_today_results(message, str(message.from_user.id))
 
+
+@dp.message(lambda m: m.text == "📆 Календарь КБЖУ" and getattr(m.bot, "kbju_menu_open", False))
+async def calories_calendar(message: Message):
+    reset_user_state(message)
+    message.bot.kbju_menu_open = True
+    await show_kbju_calendar(message, str(message.from_user.id))
+
 @dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
 async def handle_food_input(message: Message):
     user_text = message.text.strip()
@@ -2681,6 +2798,34 @@ async def select_calendar_day(callback: CallbackQuery):
     target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     callback.bot.edit_calendar_month = date(target_date.year, target_date.month, 1)
     await show_day_workouts(callback.message, str(callback.from_user.id), target_date)
+
+
+@dp.callback_query(F.data.startswith("meal_cal_nav:"))
+async def navigate_kbju_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, ym = callback.data.split(":", 1)
+    year, month = map(int, ym.split("-"))
+    user_id = str(callback.from_user.id)
+    await callback.message.edit_reply_markup(
+        reply_markup=build_kbju_calendar_keyboard(user_id, year, month)
+    )
+
+
+@dp.callback_query(F.data.startswith("meal_cal_back:"))
+async def back_to_kbju_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, ym = callback.data.split(":", 1)
+    year, month = map(int, ym.split("-"))
+    user_id = str(callback.from_user.id)
+    await show_kbju_calendar(callback.message, user_id, year, month)
+
+
+@dp.callback_query(F.data.startswith("meal_cal_day:"))
+async def select_kbju_calendar_day(callback: CallbackQuery):
+    await callback.answer()
+    _, date_str = callback.data.split(":", 1)
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    await show_day_meals(callback.message, str(callback.from_user.id), target_date)
 
 
 @dp.callback_query(F.data.startswith("wrk_add:"))
