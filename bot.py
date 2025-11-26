@@ -603,6 +603,15 @@ main_menu = ReplyKeyboardMarkup(
 
 main_menu_button = KeyboardButton(text="🏠 Главное меню")
 
+kbju_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="➕ Добавить")],
+        [KeyboardButton(text="📊 Результаты за сегодня")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 training_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить тренировку")],
@@ -1387,6 +1396,7 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "expecting_supplement_history_choice",
         "expecting_supplement_history_time",
         "expecting_food_input",
+        "kbju_menu_open",
     ]:
         if hasattr(message.bot, attr):
             try:
@@ -1931,7 +1941,7 @@ async def edit_supplement_time(message: Message):
     )
 
 
-@dp.message(F.text == "➕ Добавить")
+@dp.message(lambda m: m.text == "➕ Добавить" and not getattr(m.bot, "kbju_menu_open", False))
 async def ask_time_value(message: Message):
     if getattr(message.bot, "selecting_days", False):
         return
@@ -2314,14 +2324,39 @@ def duration_menu() -> ReplyKeyboardMarkup:
 @dp.message(F.text == "🍱 КБЖУ")
 async def calories(message: Message):
     reset_user_state(message)  # чтобы не конфликтовало с другими режимами
+    message.bot.kbju_menu_open = True
+    await answer_with_menu(
+        message,
+        "🍱 Раздел КБЖУ\n\n" "Выбери действие:",
+        reply_markup=kbju_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "➕ Добавить" and getattr(m.bot, "kbju_menu_open", False))
+async def calories_add(message: Message):
+    reset_user_state(message)
+    message.bot.kbju_menu_open = True
     message.bot.expecting_food_input = True
-    await message.answer(
+    await answer_with_menu(
+        message,
         "🍱 Раздел КБЖУ\n\n"
         "Напиши, что ты съел(а) одним сообщением.\n\n"
         "Например:\n"
         "• 2 eggs, 100g oatmeal, 1 banana\n"
         "• 150g chicken breast and 200g rice\n\n"
-        "Можешь писать на русском — я переведу запрос и отвечу на русском."
+        "Можешь писать на русском — я переведу запрос и отвечу на русском.",
+        reply_markup=kbju_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "📊 Результаты за сегодня" and getattr(m.bot, "kbju_menu_open", False))
+async def calories_today_results(message: Message):
+    reset_user_state(message)
+    message.bot.kbju_menu_open = True
+    await answer_with_menu(
+        message,
+        "📊 Раздел в разработке. Скоро покажу результаты за сегодня!",
+        reply_markup=kbju_menu,
     )
 
 @dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
