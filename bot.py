@@ -790,6 +790,17 @@ measurements_menu = ReplyKeyboardMarkup(
 )
 
 
+kbju_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="➕ Добавить приём пищи")],
+        [KeyboardButton(text="📊 Итоги за сегодня")],
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button]
+    ],
+    resize_keyboard=True
+)
+
+
 
 # -------------------- handlers --------------------
 @dp.message(Command("start"))
@@ -2314,15 +2325,64 @@ def duration_menu() -> ReplyKeyboardMarkup:
 @dp.message(F.text == "🍱 КБЖУ")
 async def calories(message: Message):
     reset_user_state(message)  # чтобы не конфликтовало с другими режимами
+    await answer_with_menu(
+        message,
+        "🍱 Раздел КБЖУ. Выбери действие:",
+        reply_markup=kbju_menu,
+    )
+
+
+@dp.message(F.text == "➕ Добавить приём пищи")
+async def kbju_add_meal(message: Message):
+    reset_user_state(message)  # очищаем возможные ожидания других режимов
     message.bot.expecting_food_input = True
-    await message.answer(
+    await answer_with_menu(
+        message,
         "🍱 Раздел КБЖУ\n\n"
         "Напиши, что ты съел(а) одним сообщением.\n\n"
         "Например:\n"
         "• 2 eggs, 100g oatmeal, 1 banana\n"
         "• 150g chicken breast and 200g rice\n\n"
-        "Можешь писать на русском — я переведу запрос и отвечу на русском."
+        "Можешь писать на русском — я переведу запрос и отвечу на русском.",
+        reply_markup=kbju_menu,
     )
+
+
+@dp.message(F.text == "📊 Итоги за сегодня")
+async def kbju_daily_totals(message: Message):
+    reset_user_state(message)
+    user_id = str(message.from_user.id)
+    today = date.today()
+
+    session = SessionLocal()
+    try:
+        meals_today = (
+            session.query(Meal)
+            .filter(Meal.user_id == user_id, Meal.date == today)
+            .order_by(Meal.id)
+            .all()
+        )
+        totals = get_daily_meal_totals(user_id, today)
+    finally:
+        session.close()
+
+    if not meals_today:
+        await answer_with_menu(
+            message,
+            "🍱 Сегодня ещё нет записей КБЖУ.",
+            reply_markup=kbju_menu,
+        )
+        return
+
+    text_lines = ["🍱 Итоги по КБЖУ за сегодня:"]
+    text_lines.append(
+        f"🔥 {totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals['protein_g']:.1f} г\n"
+        f"🧈 Жиры: {totals['fat_total_g']:.1f} г\n"
+        f"🍞 Углеводы: {totals['carbohydrates_total_g']:.1f} г"
+    )
+
+    await answer_with_menu(message, "\n".join(text_lines), reply_markup=kbju_menu)
 
 @dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
 async def handle_food_input(message: Message):
@@ -2392,7 +2452,7 @@ async def handle_food_input(message: Message):
     await answer_with_menu(
         message,
         "\n".join(lines),
-        reply_markup=main_menu,
+        reply_markup=kbju_menu,
     )
 
 @dp.message(F.text == "📆 Календарь")
