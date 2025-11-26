@@ -613,14 +613,6 @@ training_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-kbju_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="➕ Добавить"), KeyboardButton(text="📊 Итоги за сегодня")],
-        [main_menu_button],
-    ],
-    resize_keyboard=True,
-)
-
 
 def push_menu_stack(bot, reply_markup):
     if not isinstance(reply_markup, ReplyKeyboardMarkup):
@@ -2322,56 +2314,14 @@ def duration_menu() -> ReplyKeyboardMarkup:
 @dp.message(F.text == "🍱 КБЖУ")
 async def calories(message: Message):
     reset_user_state(message)  # чтобы не конфликтовало с другими режимами
-    await answer_with_menu(
-        message,
-        "🍱 Раздел КБЖУ. Выбери действие:",
-        reply_markup=kbju_menu,
-    )
-
-
-@dp.message(F.text == "➕ Добавить")
-async def calories_add(message: Message):
-    reset_user_state(message)
     message.bot.expecting_food_input = True
-    await answer_with_menu(
-        message,
+    await message.answer(
         "🍱 Раздел КБЖУ\n\n"
         "Напиши, что ты съел(а) одним сообщением.\n\n"
         "Например:\n"
         "• 2 eggs, 100g oatmeal, 1 banana\n"
         "• 150g chicken breast and 200g rice\n\n"
-        "Можешь писать на русском — я переведу запрос и отвечу на русском.",
-        reply_markup=kbju_menu,
-    )
-
-
-@dp.message(F.text == "📊 Итоги за сегодня")
-async def calories_daily_summary(message: Message):
-    reset_user_state(message)
-    user_id = str(message.from_user.id)
-    totals = get_daily_meal_totals(user_id, date.today())
-
-    if all(value == 0 for value in totals.values()):
-        await answer_with_menu(
-            message,
-            "🍱 Итоги дня:\n\nПока нет записанных приёмов пищи на сегодня.",
-            reply_markup=kbju_menu,
-        )
-        return
-
-    summary_lines = [
-        "🍱 Итоги дня:\n",
-        "СУММА ЗА СЕГОДНЯ:",
-        f"🔥 {totals['calories']:.0f} ккал\n",
-        f"💪 Белки: {totals['protein_g']:.1f} г\n",
-        f"🧈 Жиры: {totals['fat_total_g']:.1f} г\n",
-        f"🍞 Углеводы: {totals['carbohydrates_total_g']:.1f} г",
-    ]
-
-    await answer_with_menu(
-        message,
-        "\n".join(summary_lines),
-        reply_markup=kbju_menu,
+        "Можешь писать на русском — я переведу запрос и отвечу на русском."
     )
 
 @dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
@@ -2442,7 +2392,7 @@ async def handle_food_input(message: Message):
     await answer_with_menu(
         message,
         "\n".join(lines),
-        reply_markup=kbju_menu,
+        reply_markup=main_menu,
     )
 
 @dp.message(F.text == "📆 Календарь")
