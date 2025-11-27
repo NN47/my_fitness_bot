@@ -20,7 +20,7 @@ import http.server
 import socketserver
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func
+from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func, DateTime, Text
 from datetime import timedelta
 import random
 from datetime import datetime
@@ -117,6 +117,26 @@ class Meal(Base):
     fat = Column(Float, default=0)
     carbs = Column(Float, default=0)
     date = Column(Date, default=date.today)
+
+
+class Supplement(Base):
+    __tablename__ = "supplements"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    times_json = Column(Text, default="[]")
+    days_json = Column(Text, default="[]")
+    duration = Column(String, default="постоянно")
+
+
+class SupplementEntry(Base):
+    __tablename__ = "supplement_entries"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    supplement_id = Column(Integer, nullable=False)
+    timestamp = Column(DateTime, nullable=False)
 
 
 Base.metadata.create_all(engine)
@@ -1652,7 +1672,10 @@ async def weight_and_measurements(message: Message):
 def get_supplements_for_user(bot, user_id: str) -> list[dict]:
     if not hasattr(bot, "supplements"):
         bot.supplements = {}
-    supplements_list = bot.supplements.setdefault(user_id, [])
+    if user_id not in bot.supplements:
+        bot.supplements[user_id] = load_supplements_from_db(user_id)
+
+    supplements_list = bot.supplements[user_id]
     for item in supplements_list:
         item.setdefault("history", [])
     return supplements_list
@@ -1660,6 +1683,76 @@ def get_supplements_for_user(bot, user_id: str) -> list[dict]:
 
 def get_user_supplements(message: Message) -> list[dict]:
     return get_supplements_for_user(message.bot, str(message.from_user.id))
+
+
+def load_supplements_from_db(user_id: str) -> list[dict]:
+    session = SessionLocal()
+    try:
+        supplements = session.query(Supplement).filter_by(user_id=user_id).all()
+        ids = [sup.id for sup in supplements]
+        entries_map: dict[int, list[dict]] = {sup_id: [] for sup_id in ids}
+
+        if ids:
+            all_entries = (
+                session.query(SupplementEntry)
+                .filter(
+                    SupplementEntry.user_id == user_id,
+                    SupplementEntry.supplement_id.in_(ids),
+                )
+                .order_by(SupplementEntry.timestamp.asc())
+                .all()
+            )
+            for entry in all_entries:
+                entries_map.setdefault(entry.supplement_id, []).append(
+                    {"id": entry.id, "timestamp": entry.timestamp}
+                )
+
+        result: list[dict] = []
+        for sup in supplements:
+            result.append(
+                {
+                    "id": sup.id,
+                    "name": sup.name,
+                    "times": json.loads(sup.times_json or "[]"),
+                    "days": json.loads(sup.days_json or "[]"),
+                    "duration": sup.duration or "постоянно",
+                    "history": entries_map.get(sup.id, []).copy(),
+                    "ready": True,
+                }
+            )
+
+        return result
+    finally:
+        session.close()
+
+
+def refresh_supplements_cache(bot, user_id: str):
+    if not hasattr(bot, "supplements"):
+        bot.supplements = {}
+    bot.supplements[user_id] = load_supplements_from_db(user_id)
+
+
+def persist_supplement_record(user_id: str, payload: dict, supplement_id: int | None) -> int | None:
+    session = SessionLocal()
+    try:
+        if supplement_id:
+            sup = session.query(Supplement).filter_by(id=supplement_id, user_id=user_id).first()
+            if not sup:
+                return None
+        else:
+            sup = Supplement(user_id=user_id)
+
+        sup.name = payload.get("name", sup.name)
+        sup.times_json = json.dumps(payload.get("times", []), ensure_ascii=False)
+        sup.days_json = json.dumps(payload.get("days", []), ensure_ascii=False)
+        sup.duration = payload.get("duration", sup.duration or "постоянно")
+
+        session.add(sup)
+        session.commit()
+        session.refresh(sup)
+        return sup.id
+    finally:
+        session.close()
 
 
 def reset_supplement_state(message: Message):
@@ -1691,7 +1784,15 @@ def get_active_supplement(message: Message) -> dict:
         message.bot.active_supplement = {}
     return message.bot.active_supplement.setdefault(
         user_id,
-        {"name": "", "times": [], "days": [], "duration": "постоянно", "history": [], "ready": False},
+        {
+            "id": None,
+            "name": "",
+            "times": [],
+            "days": [],
+            "duration": "постоянно",
+            "history": [],
+            "ready": False,
+        },
     )
 
 
@@ -1728,6 +1829,8 @@ def supplements_choice_menu(supplements: list[dict]) -> ReplyKeyboardMarkup:
 
 
 def normalize_history_entry(entry) -> datetime | None:
+    if isinstance(entry, dict):
+        return normalize_history_entry(entry.get("timestamp"))
     if isinstance(entry, datetime):
         return entry
     if isinstance(entry, date):
@@ -1979,7 +2082,15 @@ async def delete_supplement_entry(callback: CallbackQuery):
         await callback.message.answer("Не нашёл запись для удаления.")
         return
 
-    del history[entry_idx]
+    removed = history.pop(entry_idx)
+    entry_id = removed.get("id") if isinstance(removed, dict) else None
+    if entry_id:
+        session = SessionLocal()
+        try:
+            session.query(SupplementEntry).filter_by(id=entry_id, user_id=user_id).delete()
+            session.commit()
+        finally:
+            session.close()
     await callback.message.answer("🗑 Приём удалён.")
     await show_supplement_day_entries(callback.message, user_id, target_date)
 
@@ -2066,7 +2177,9 @@ async def start_create_supplement(message: Message):
     message.bot.expecting_supplement_name = True
     set_supplement_edit_index(message, None)
     sup = get_active_supplement(message)
-    sup.update({"name": "", "times": [], "days": [], "duration": "постоянно", "ready": False})
+    sup.update(
+        {"id": None, "name": "", "times": [], "days": [], "duration": "постоянно", "ready": False}
+    )
     await message.answer("Введите название добавки.")
 
 
@@ -2231,9 +2344,33 @@ async def set_history_entry_time(message: Message):
         if orig_idx is not None and orig_entry_idx is not None and orig_idx < len(supplements_list):
             orig_history = supplements_list[orig_idx].get("history", [])
             if orig_entry_idx < len(orig_history):
-                orig_history.pop(orig_entry_idx)
+                to_remove = orig_history.pop(orig_entry_idx)
+                entry_id = to_remove.get("id") if isinstance(to_remove, dict) else None
+                if entry_id:
+                    session = SessionLocal()
+                    try:
+                        session.query(SupplementEntry).filter_by(
+                            id=entry_id, user_id=user_id
+                        ).delete()
+                        session.commit()
+                    finally:
+                        session.close()
 
-    target.setdefault("history", []).append(timestamp)
+    new_entry_id: int | None = None
+    if target.get("id") is not None:
+        session = SessionLocal()
+        try:
+            new_entry = SupplementEntry(
+                user_id=user_id, supplement_id=target["id"], timestamp=timestamp
+            )
+            session.add(new_entry)
+            session.commit()
+            session.refresh(new_entry)
+            new_entry_id = new_entry.id
+        finally:
+            session.close()
+
+    target.setdefault("history", []).append({"id": new_entry_id, "timestamp": timestamp})
 
     message.bot.expecting_supplement_history_time = False
     set_supplement_history_action(message.bot, user_id, None)
@@ -2289,6 +2426,7 @@ async def save_time_or_supplement(message: Message):
     supplements_list = get_user_supplements(message)
     edit_index = get_supplement_edit_index(message)
     supplement_payload = {
+        "id": sup.get("id"),
         "name": sup["name"],
         "times": sup["times"].copy(),
         "days": sup["days"].copy(),
@@ -2296,10 +2434,21 @@ async def save_time_or_supplement(message: Message):
         "history": sup.get("history", []).copy(),
     }
 
+    user_id = str(message.from_user.id)
+    existing_id = None
+    if edit_index is not None and 0 <= edit_index < len(supplements_list):
+        existing_id = supplements_list[edit_index].get("id")
+
+    saved_id = persist_supplement_record(user_id, supplement_payload, existing_id)
+    if saved_id is not None:
+        supplement_payload["id"] = saved_id
+
     if edit_index is not None and 0 <= edit_index < len(supplements_list):
         supplements_list[edit_index] = supplement_payload
     else:
         supplements_list.append(supplement_payload)
+
+    refresh_supplements_cache(message.bot, user_id)
 
     reset_supplement_state(message)
 
@@ -2401,11 +2550,12 @@ async def choose_supplement_to_edit(message: Message):
     selected = supplements_list[target_index]
     sup = get_active_supplement(message)
     sup.update({
+        "id": selected.get("id"),
         "name": selected.get("name", ""),
         "times": selected.get("times", []).copy(),
         "days": selected.get("days", []).copy(),
         "duration": selected.get("duration", "постоянно"),
-        "history": selected.get("history", []).copy(),
+        "history": [dict(entry) for entry in selected.get("history", [])],
         "ready": True,
     })
 
