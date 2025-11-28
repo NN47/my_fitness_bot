@@ -144,11 +144,13 @@ class Meal(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(String, nullable=False)
     description = Column(String, nullable=True)
+    raw_query = Column(String)
     calories = Column(Float, default=0)
     protein = Column(Float, default=0)
     fat = Column(Float, default=0)
     carbs = Column(Float, default=0)
     date = Column(Date, default=date.today)
+
 
 class KbjuSettings(Base):
     __tablename__ = "kbju_settings"
@@ -296,18 +298,21 @@ def get_nutrition_from_api(query: str):
 
 
 
-def save_meal_entry(user_id: str, description: str, totals: dict, entry_date: date):
+def save_meal_entry(user_id: str, raw_query: str, description: str, totals: dict, entry_date: date):
+
     session = SessionLocal()
     try:
         meal = Meal(
             user_id=str(user_id),
-            description=description,
+            raw_query=raw_query,
+            description=description,  # результат API
             calories=float(totals.get("calories", 0.0)),
             protein=float(totals.get("protein_g", 0.0)),
             fat=float(totals.get("fat_total_g", 0.0)),
             carbs=float(totals.get("carbohydrates_total_g", 0.0)),
             date=entry_date,
         )
+
         session.add(meal)
         session.commit()
     finally:
@@ -2895,29 +2900,32 @@ def build_meals_actions_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def format_today_meals(meals: list[Meal], daily_totals: dict, day_str: str) -> str:
-    lines: list[str] = [f"📊 Итоги за {day_str}:\n"]
+def format_today_meals(meals, totals, day_str):
+    text = f"🍱 Приём пищи за <b>{day_str}</b>:\n\n"
 
-    for idx, meal in enumerate(meals, start=1):
-        lines.append(
-            "\n".join(
-                [
-                    f"{idx}. {meal.description}",
-                    f"   🔥 {meal.calories:.0f} ккал — Б {meal.protein:.1f} / Ж {meal.fat:.1f} / У {meal.carbs:.1f}",
-                ]
-            )
+    for meal in meals:
+        user_query = meal.raw_query or "—"
+        api_desc = meal.description or "нет описания"
+
+        text += (
+            f"📝 <b>Ты ввёл:</b> {user_query}\n"
+            f"🔍 <b>API распознало как:</b> {api_desc}\n"
+            f"🔥 {meal.calories:.0f} ккал | "
+            f"💪 Б:{meal.protein:.0f}г | "
+            f"🧈 Ж:{meal.fat:.0f}г | "
+            f"🍞 У:{meal.carbs:.0f}г\n"
+            "— — — — —\n"
         )
 
-    lines.append("\nСУММА ЗА СЕГОДНЯ:")
-    lines.append(
-        f"🔥 {daily_totals['calories']:.0f} ккал\n"
-        f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
-        f"🧈 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
-        f"🍞 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
+    text += (
+        "\n<b>Итого за день:</b>\n"
+        f"🔥 Калории: <b>{totals['calories']:.0f}</b>\n"
+        f"💪 Белки: <b>{totals['protein_g']:.0f} г</b>\n"
+        f"🧈 Жиры: <b>{totals['fat_total_g']:.0f} г</b>\n"
+        f"🍞 Углеводы: <b>{totals['carbohydrates_total_g']:.0f} г</b>\n"
     )
 
-    lines.append("\n✏️ — редактировать, 🗑 — удалить конкретный продукт.")
-    return "\n".join(lines)
+    return text
 
 
 async def send_today_results(message: Message, user_id: str):
@@ -3237,7 +3245,14 @@ async def handle_food_input(message: Message):
         f"🍞 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г"
     )
 
-    save_meal_entry(user_id, user_text, totals, entry_date)
+    save_meal_entry(
+        user_id,
+        raw_query=user_text,
+        description=totals.get("name", user_text),   # название из API
+        totals=totals,
+        entry_date=entry_date,
+    )
+
     daily_totals = get_daily_meal_totals(user_id, entry_date)
 
     lines.append("\nСУММА ЗА СЕГОДНЯ:")
