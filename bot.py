@@ -1323,8 +1323,15 @@ async def delete_entry_start(message: Message):
     await message.answer("Введи номер записи, которую хочешь удалить:")
 
 
-@dp.message(F.text.regexp(r"^\d+$"), lambda m: not getattr(m.bot, "expecting_weight", False))
+@dp.message(
+    F.text.regexp(r"^\d+$"),
+    # не срабатываем, если ждём ввод веса
+    lambda m: not getattr(m.bot, "expecting_weight", False),
+    # не срабатываем, если идёт тест КБЖУ
+    lambda m: getattr(m.bot, "kbju_test_step", None) is None,
+)
 async def process_number(message: Message):
+
     user_id = str(message.from_user.id)
     number = int(message.text)
 
