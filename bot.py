@@ -25,6 +25,7 @@ from datetime import timedelta
 import random
 from datetime import datetime
 import requests
+import re
 
 
 def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") -> str:
@@ -142,6 +143,21 @@ class Meal(Base):
     fat = Column(Float, default=0)
     carbs = Column(Float, default=0)
     date = Column(Date, default=date.today)
+
+class KbjuSettings(Base):
+    __tablename__ = "kbju_settings"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, unique=True, index=True)
+
+    calories = Column(Float, nullable=False)
+    protein = Column(Float, nullable=False)
+    fat = Column(Float, nullable=False)
+    carbs = Column(Float, nullable=False)
+
+    goal = Column(String, nullable=True)      # "loss" / "maintain" / "gain"
+    activity = Column(String, nullable=True)  # "low" / "medium" / "high"
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Supplement(Base):
@@ -365,7 +381,115 @@ def get_meals_for_date(user_id: str, entry_date: date) -> list[Meal]:
         session.close()
 
 
-    
+ # ---------- КБЖУ: норма / цели ----------
+
+def get_kbju_settings(user_id: str) -> KbjuSettings | None:
+    session = SessionLocal()
+    try:
+        return session.query(KbjuSettings).filter_by(user_id=str(user_id)).first()
+    finally:
+        session.close()
+
+
+def save_kbju_settings(
+    user_id: str,
+    calories: float,
+    protein: float,
+    fat: float,
+    carbs: float,
+    goal: str | None = None,
+    activity: str | None = None,
+) -> None:
+    session = SessionLocal()
+    try:
+        settings = session.query(KbjuSettings).filter_by(user_id=str(user_id)).first()
+        if not settings:
+            settings = KbjuSettings(user_id=str(user_id))
+
+        settings.calories = float(calories)
+        settings.protein = float(protein)
+        settings.fat = float(fat)
+        settings.carbs = float(carbs)
+        settings.goal = goal
+        settings.activity = activity
+        settings.updated_at = datetime.utcnow()
+
+        session.add(settings)
+        session.commit()
+    finally:
+        session.close()
+
+
+def format_kbju_goal_text(calories: float, protein: float, fat: float, carbs: float, goal_label: str) -> str:
+    return (
+        "🎯 Я настроил твою дневную норму КБЖУ!\n\n"
+        f"🔥 Калории: <b>{calories:.0f} ккал</b>\n"
+        f"💪 Белки: <b>{protein:.0f} г</b>\n"
+        f"🧈 Жиры: <b>{fat:.0f} г</b>\n"
+        f"🍞 Углеводы: <b>{carbs:.0f} г</b>\n\n"
+        f"Цель: <b>{goal_label}</b>\n\n"
+        "Теперь в разделе КБЖУ я буду сравнивать твой рацион с этой целью.\n"
+        "В любой момент можно изменить параметры через кнопку «🎯 Цель / Норма КБЖУ»."
+    )
+
+
+def get_kbju_test_session(bot, user_id: str) -> dict:
+    if not hasattr(bot, "kbju_test_sessions"):
+        bot.kbju_test_sessions = {}
+    return bot.kbju_test_sessions.setdefault(user_id, {})
+
+
+def clear_kbju_test_session(bot, user_id: str):
+    if hasattr(bot, "kbju_test_sessions"):
+        bot.kbju_test_sessions.pop(user_id, None)
+    if hasattr(bot, "kbju_test_step"):
+        bot.kbju_test_step = None
+
+
+def calculate_kbju_from_test(data: dict) -> tuple[float, float, float, float, str]:
+    """
+    data: gender ('male'/'female'), age, height, weight, activity('low'/'medium'/'high'), goal('loss'/'maintain'/'gain')
+    Возвращает: (calories, protein, fat, carbs, goal_label)
+    """
+    gender = data.get("gender")
+    age = float(data.get("age", 30))
+    height = float(data.get("height", 170))
+    weight = float(data.get("weight", 70))
+    activity = data.get("activity", "medium")
+    goal = data.get("goal", "maintain")
+
+    # BMR по Mifflin-St Jeor
+    if gender == "female":
+        bmr = 10 * weight + 6.25 * height - 5 * age - 161
+    else:
+        bmr = 10 * weight + 6.25 * height - 5 * age + 5
+
+    activity_factor = {
+        "low": 1.2,
+        "medium": 1.4,
+        "high": 1.6,
+    }.get(activity, 1.4)
+
+    tdee = bmr * activity_factor
+
+    if goal == "loss":
+        calories = tdee * 0.8   # -20%
+        goal_label = "Похудение"
+    elif goal == "gain":
+        calories = tdee * 1.1   # +10%
+        goal_label = "Набор массы"
+    else:
+        calories = tdee
+        goal_label = "Поддержание веса"
+
+    # Макросы
+    protein = weight * 1.8
+    fat = weight * 0.9
+    used_kcal = protein * 4 + fat * 9
+    carbs = max((calories - used_kcal) / 4, 0)
+
+    return calories, protein, fat, carbs, goal_label
+   
 
 
 
@@ -812,10 +936,50 @@ kbju_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="➕ Добавить")],
         [KeyboardButton(text="📊 Результаты за сегодня")],
         [KeyboardButton(text="📆 Календарь КБЖУ")],
+        [KeyboardButton(text="🎯 Цель / Норма КБЖУ")],
         [main_menu_button],
     ],
     resize_keyboard=True,
 )
+
+kbju_intro_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="✅ Пройти быстрый тест КБЖУ")],
+        [KeyboardButton(text="✏️ Ввести свою норму")],
+        [KeyboardButton(text="➡️ Пока без цели")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+kbju_gender_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🙋‍♂️ Мужчина"), KeyboardButton(text="🙋‍♀️ Женщина")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+kbju_activity_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🪑 Мало движения")],
+        [KeyboardButton(text="🚶 Умеренная активность")],
+        [KeyboardButton(text="🏋️ Тренировки 3–5 раз/нед")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+kbju_goal_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📉 Похудение")],
+        [KeyboardButton(text="⚖️ Поддержание")],
+        [KeyboardButton(text="💪 Набор массы")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 
 training_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -1413,6 +1577,11 @@ async def delete_weight_start(message: Message):
 @dp.message(F.text.regexp(r"^\d+([.,]\d+)?$"))
 async def process_weight_or_number(message: Message):
     user_id = str(message.from_user.id)
+        # --- если сейчас идёт тест КБЖУ ---
+    step = getattr(message.bot, "kbju_test_step", None)
+    if step in {"age", "height", "weight"}:
+        await handle_kbju_test_number(message, step)
+        return
 
     # --- если ждём ввод веса ---
     if getattr(message.bot, "expecting_weight", False):
@@ -1602,6 +1771,9 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "expecting_supplement_history_time",
         "expecting_food_input",
         "kbju_menu_open",
+        "awaiting_kbju_choice",
+        "expecting_kbju_manual_norm",
+
     ]:
         if hasattr(message.bot, attr):
             try:
@@ -1615,7 +1787,19 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
                 delattr(message.bot, list_attr)
             except Exception:
                 pass
-
+        # КБЖУ-тест: очищаем сессию для пользователя
+    user_id = str(message.from_user.id)
+    if hasattr(message.bot, "kbju_test_sessions"):
+        try:
+            message.bot.kbju_test_sessions.pop(user_id, None)
+        except Exception:
+            pass
+    if hasattr(message.bot, "kbju_test_step"):
+        try:
+            message.bot.kbju_test_step = None
+        except Exception:
+            pass
+    
     if hasattr(message.bot, "meal_edit_context"):
         try:
             message.bot.meal_edit_context.pop(user_id, None)
@@ -2255,6 +2439,7 @@ async def ask_time_value(message: Message):
     await message.answer("Введите время приема в формате ЧЧ:ММ\nНапример: 09:00")
 
 
+
 @dp.message(lambda m: getattr(m.bot, "expecting_supplement_time", False))
 async def handle_time_value(message: Message):
     text = message.text.strip()
@@ -2740,13 +2925,90 @@ async def send_today_results(message: Message, user_id: str):
 
 @dp.message(F.text == "🍱 КБЖУ")
 async def calories(message: Message):
-    reset_user_state(message)  # чтобы не конфликтовало с другими режимами
+    reset_user_state(message, keep_supplements=True)
+    user_id = str(message.from_user.id)
+
+    settings = get_kbju_settings(user_id)
+
+    # если норма ещё не настроена — предлагаем тест / ручной ввод / пропустить
+    if not settings:
+        message.bot.awaiting_kbju_choice = True
+        await answer_with_menu(
+            message,
+            "🍱 Раздел КБЖУ\n\n"
+            "Давай один раз настроим твою дневную норму КБЖУ — так я смогу не просто считать калории, "
+            "а сравнивать их с твоей целью.\n\n"
+            "Выбери вариант:",
+            reply_markup=kbju_intro_menu,
+        )
+        return
+
+    # если норма уже есть — просто открываем меню КБЖУ
     message.bot.kbju_menu_open = True
     await answer_with_menu(
         message,
-        "🍱 Раздел КБЖУ\n\n" "Выбери действие:",
+        "🍱 Раздел КБЖУ\n\nВыбери действие:",
         reply_markup=kbju_menu,
     )
+
+@dp.message(lambda m: getattr(m.bot, "awaiting_kbju_choice", False))
+async def kbju_intro_choice(message: Message):
+    user_id = str(message.from_user.id)
+    choice = message.text.strip()
+
+    if choice == "✅ Пройти быстрый тест КБЖУ":
+        message.bot.awaiting_kbju_choice = False
+        clear_kbju_test_session(message.bot, user_id)
+        session = get_kbju_test_session(message.bot, user_id)
+        message.bot.kbju_test_step = "gender"
+
+        await answer_with_menu(
+            message,
+            "Окей, пройдём небольшой тест 💪\n\n"
+            "Для начала — укажи пол:",
+            reply_markup=kbju_gender_menu,
+        )
+        return
+
+    if choice == "✏️ Ввести свою норму":
+        message.bot.awaiting_kbju_choice = False
+        message.bot.expecting_kbju_manual_norm = True
+        await answer_with_menu(
+            message,
+            "Напиши свою дневную норму в формате, например:\n\n"
+            "<code>2000 ккал, Б 140, Ж 70, У 220</code>\n\n"
+            "Я просто возьму первые четыре числа: калории, белки, жиры, углеводы.",
+            reply_markup=kbju_menu,
+        )
+        return
+
+    if choice == "➡️ Пока без цели":
+        message.bot.awaiting_kbju_choice = False
+        message.bot.kbju_menu_open = True
+        await answer_with_menu(
+            message,
+            "Ок, буду просто считать КБЖУ без цели 🎯\n\nВыбери действие:",
+            reply_markup=kbju_menu,
+        )
+        return
+
+    await message.answer("Пожалуйста, выбери вариант из кнопок ниже 😊")
+
+
+@dp.message(lambda m: m.text == "🎯 Цель / Норма КБЖУ" and getattr(m.bot, "kbju_menu_open", False))
+async def kbju_goal_menu_entry(message: Message):
+    reset_user_state(message, keep_supplements=True)
+    message.bot.kbju_menu_open = True
+    message.bot.awaiting_kbju_choice = True
+
+    await answer_with_menu(
+        message,
+        "🎯 Настройка цели по КБЖУ\n\n"
+        "Можно пересчитать норму через тест или задать свои числа вручную.\n\n"
+        "Что выбираешь?",
+        reply_markup=kbju_intro_menu,
+    )
+
 
 
 @dp.message(lambda m: m.text == "➕ Добавить" and getattr(m.bot, "kbju_menu_open", False))
@@ -2778,6 +3040,132 @@ async def calories_calendar(message: Message):
     reset_user_state(message)
     message.bot.kbju_menu_open = True
     await show_kbju_calendar(message, str(message.from_user.id))
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_kbju_manual_norm", False))
+async def kbju_manual_norm_input(message: Message):
+    user_id = str(message.from_user.id)
+    text = message.text
+
+    numbers = re.findall(r"\d+(?:[.,]\d+)?", text)
+    if len(numbers) < 4:
+        await message.answer(
+            "Мне нужно хотя бы четыре числа: калории, белки, жиры, углеводы.\n\n"
+            "Пример: <code>2000 ккал, Б 140, Ж 70, У 220</code>"
+        )
+        return
+
+    calories, protein, fat, carbs = [float(n.replace(",", ".")) for n in numbers[:4]]
+
+    save_kbju_settings(user_id, calories, protein, fat, carbs, goal=None, activity=None)
+    message.bot.expecting_kbju_manual_norm = False
+
+    text = format_kbju_goal_text(calories, protein, fat, carbs, goal_label="Своя норма")
+    message.bot.kbju_menu_open = True
+    await message.answer(text, parse_mode="HTML")
+    await message.answer("Теперь можешь пользоваться разделом КБЖУ 👇", reply_markup=kbju_menu)
+
+@dp.message(lambda m: getattr(m.bot, "kbju_test_step", None) == "gender")
+async def kbju_test_gender(message: Message):
+    user_id = str(message.from_user.id)
+    session = get_kbju_test_session(message.bot, user_id)
+    txt = message.text.strip()
+
+    if txt == "🙋‍♂️ Мужчина":
+        session["gender"] = "male"
+    elif txt == "🙋‍♀️ Женщина":
+        session["gender"] = "female"
+    else:
+        await message.answer("Пожалуйста, выбери вариант с кнопки 🙂")
+        return
+
+    message.bot.kbju_test_step = "age"
+    await message.answer("Сколько тебе лет? (например: 28)")
+
+
+async def handle_kbju_test_number(message: Message, step: str):
+    user_id = str(message.from_user.id)
+    session = get_kbju_test_session(message.bot, user_id)
+
+    try:
+        value = float(message.text.replace(",", "."))
+    except ValueError:
+        await message.answer("Нужно ввести число, попробуй ещё раз 🙂")
+        return
+
+    if step == "age":
+        session["age"] = value
+        message.bot.kbju_test_step = "height"
+        await message.answer("Какой у тебя рост в сантиметрах? (например: 171)")
+        return
+
+    if step == "height":
+        session["height"] = value
+        message.bot.kbju_test_step = "weight"
+        await message.answer("Сколько ты весишь сейчас? В кг (например: 86.5)")
+        return
+
+    if step == "weight":
+        session["weight"] = value
+        message.bot.kbju_test_step = "activity"
+        await answer_with_menu(
+            message,
+            "Опиши свой обычный уровень активности:",
+            reply_markup=kbju_activity_menu,
+        )
+        return
+
+
+@dp.message(lambda m: getattr(m.bot, "kbju_test_step", None) == "activity")
+async def kbju_test_activity(message: Message):
+    user_id = str(message.from_user.id)
+    session = get_kbju_test_session(message.bot, user_id)
+    txt = message.text.strip()
+
+    if txt == "🪑 Мало движения":
+        session["activity"] = "low"
+    elif txt == "🚶 Умеренная активность":
+        session["activity"] = "medium"
+    elif txt == "🏋️ Тренировки 3–5 раз/нед":
+        session["activity"] = "high"
+    else:
+        await message.answer("Выбери вариант с кнопки, пожалуйста 🙂")
+        return
+
+    message.bot.kbju_test_step = "goal"
+    await answer_with_menu(
+        message,
+        "Какая у тебя сейчас цель?",
+        reply_markup=kbju_goal_menu,
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "kbju_test_step", None) == "goal")
+async def kbju_test_goal(message: Message):
+    user_id = str(message.from_user.id)
+    session = get_kbju_test_session(message.bot, user_id)
+    txt = message.text.strip()
+
+    if txt == "📉 Похудение":
+        session["goal"] = "loss"
+    elif txt == "⚖️ Поддержание":
+        session["goal"] = "maintain"
+    elif txt == "💪 Набор массы":
+        session["goal"] = "gain"
+    else:
+        await message.answer("Выбери вариант с кнопки, пожалуйста 🙂")
+        return
+
+    # считаем норму
+    calories, protein, fat, carbs, goal_label = calculate_kbju_from_test(session)
+    save_kbju_settings(user_id, calories, protein, fat, carbs, goal=session["goal"], activity=session.get("activity"))
+    clear_kbju_test_session(message.bot, user_id)
+
+    text = format_kbju_goal_text(calories, protein, fat, carbs, goal_label)
+    message.bot.kbju_menu_open = True
+    await message.answer(text, parse_mode="HTML")
+    await message.answer("Теперь можешь пользоваться разделом КБЖУ 👇", reply_markup=kbju_menu)
+
 
 @dp.message(lambda m: getattr(m.bot, "expecting_food_input", False))
 async def handle_food_input(message: Message):
