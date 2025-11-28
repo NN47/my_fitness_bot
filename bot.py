@@ -35,6 +35,9 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
     if not text:
         return text
 
+    def contains_cyrillic(value: str) -> bool:
+        return any("а" <= ch.lower() <= "я" or ch.lower() == "ё" for ch in value)
+
     url = "https://api.mymemory.translated.net/get"
     params = {"q": text, "langpair": f"{source_lang}|{target_lang}"}
 
@@ -46,10 +49,32 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
             data.get("responseData", {}).get("translatedText")
             or data.get("matches", [{}])[0].get("translation")
         )
-        return translated or text
     except Exception as e:
         print("⚠️ Ошибка перевода через MyMemory:", repr(e))
-        return text
+        translated = None
+
+    # CalorieNinjas не понимает кириллицу, поэтому если MyMemory не справился,
+    # пробуем резервный вариант через translate.googleapis.com, который обычно
+    # устойчивее.
+    if (not translated or contains_cyrillic(translated)) and contains_cyrillic(text):
+        try:
+            g_url = "https://translate.googleapis.com/translate_a/single"
+            g_params = {
+                "client": "gtx",
+                "sl": source_lang,
+                "tl": target_lang,
+                "dt": "t",
+                "q": text,
+            }
+            g_resp = requests.get(g_url, params=g_params, timeout=10)
+            g_resp.raise_for_status()
+            g_data = g_resp.json()
+            # формат: [[['перевод', 'оригинал', null, null, ...]], ...]
+            translated = g_data[0][0][0] if g_data and g_data[0] else translated
+        except Exception as e:
+            print("⚠️ Ошибка резервного перевода через Google:", repr(e))
+
+    return translated or text
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
