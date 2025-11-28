@@ -1583,26 +1583,30 @@ async def delete_weight_start(message: Message):
 @dp.message(F.text.regexp(r"^\d+([.,]\d+)?$"))
 async def process_weight_or_number(message: Message):
     user_id = str(message.from_user.id)
-        # --- если сейчас идёт тест КБЖУ ---
+
+    # 1️⃣ Сначала проверяем, не идёт ли сейчас тест КБЖУ
     step = getattr(message.bot, "kbju_test_step", None)
     if step in {"age", "height", "weight"}:
+        # эта функция мы добавляли для обработки шагов теста
         await handle_kbju_test_number(message, step)
         return
 
-    # --- если ждём ввод веса ---
+    # 2️⃣ Если ждём ввод веса
     if getattr(message.bot, "expecting_weight", False):
-        weight_value = float(message.text.replace(",", "."))  # поддержка 72,5 тоже
+        weight_value = float(message.text.replace(",", "."))
         selected_date = getattr(message.bot, "selected_date", date.today())
         add_weight(user_id, weight_value, selected_date)
         message.bot.expecting_weight = False
         await message.answer(
             f"✅ Записал вес {weight_value} кг за {selected_date.strftime('%d.%m.%Y')}",
-            reply_markup=weight_menu
+            reply_markup=weight_menu,
         )
         return
 
-    # иначе пусть идёт обычная обработка числа (повторы и т.п.)
+    # 3️⃣ И только если это не тест КБЖУ и не ввод веса —
+    # отправляем число в обычную логику повторений/подходов
     await process_number(message)
+
 
 
 @dp.message(F.text == "📏 Замеры")
