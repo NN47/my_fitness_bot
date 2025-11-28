@@ -78,7 +78,13 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
     return translated or text
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,   # перед запросом проверяет соединение и перевтыкается при обрыве
+    pool_recycle=1800,    # переоткрывать коннект раз в ~30 минут
+)
+
 Base = declarative_base()
 SessionLocal = sessionmaker(bind=engine)
 
