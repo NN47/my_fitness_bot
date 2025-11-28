@@ -1586,14 +1586,14 @@ async def process_weight_or_number(message: Message):
 
     # 1️⃣ Сначала проверяем, не идёт ли сейчас тест КБЖУ
     step = getattr(message.bot, "kbju_test_step", None)
+    # В тесте через числа мы обрабатываем шаги: возраст, рост и вес
     if step in {"age", "height", "weight"}:
-        # эта функция мы добавляли для обработки шагов теста
         await handle_kbju_test_number(message, step)
         return
 
-    # 2️⃣ Если ждём ввод веса
+    # 2️⃣ Если сейчас ждём ввод веса
     if getattr(message.bot, "expecting_weight", False):
-        weight_value = float(message.text.replace(",", "."))
+        weight_value = float(message.text.replace(",", "."))  # поддержка 72,5
         selected_date = getattr(message.bot, "selected_date", date.today())
         add_weight(user_id, weight_value, selected_date)
         message.bot.expecting_weight = False
@@ -1603,9 +1603,9 @@ async def process_weight_or_number(message: Message):
         )
         return
 
-    # 3️⃣ И только если это не тест КБЖУ и не ввод веса —
-    # отправляем число в обычную логику повторений/подходов
+    # 3️⃣ Во всех остальных случаях — обычная логика чисел (подходы/повторы и т.п.)
     await process_number(message)
+
 
 
 
