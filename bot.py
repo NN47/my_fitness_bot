@@ -35,6 +35,9 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
     if not text:
         return text
 
+    def contains_cyrillic(value: str) -> bool:
+        return any("а" <= ch.lower() <= "я" or ch.lower() == "ё" for ch in value)
+
     url = "https://api.mymemory.translated.net/get"
     params = {"q": text, "langpair": f"{source_lang}|{target_lang}"}
 
@@ -46,10 +49,32 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
             data.get("responseData", {}).get("translatedText")
             or data.get("matches", [{}])[0].get("translation")
         )
-        return translated or text
     except Exception as e:
         print("⚠️ Ошибка перевода через MyMemory:", repr(e))
-        return text
+        translated = None
+
+    # CalorieNinjas не понимает кириллицу, поэтому если MyMemory не справился,
+    # пробуем резервный вариант через translate.googleapis.com, который обычно
+    # устойчивее.
+    if (not translated or contains_cyrillic(translated)) and contains_cyrillic(text):
+        try:
+            g_url = "https://translate.googleapis.com/translate_a/single"
+            g_params = {
+                "client": "gtx",
+                "sl": source_lang,
+                "tl": target_lang,
+                "dt": "t",
+                "q": text,
+            }
+            g_resp = requests.get(g_url, params=g_params, timeout=10)
+            g_resp.raise_for_status()
+            g_data = g_resp.json()
+            # формат: [[['перевод', 'оригинал', null, null, ...]], ...]
+            translated = g_data[0][0][0] if g_data and g_data[0] else translated
+        except Exception as e:
+            print("⚠️ Ошибка резервного перевода через Google:", repr(e))
+
+    return translated or text
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
@@ -686,8 +711,8 @@ async def show_day_meals(message: Message, user_id: str, target_date: date):
     daily_totals = get_daily_meal_totals(user_id, target_date)
     day_str = target_date.strftime("%d.%m.%Y")
     text = format_today_meals(meals, daily_totals, day_str)
-
-    await message.answer(text, reply_markup=build_kbju_day_actions_keyboard(target_date))
+    keyboard = build_meals_actions_keyboard(meals, target_date, include_back=True)
+    await message.answer(text, reply_markup=keyboard)
 
 
 def start_date_selection(bot, context: str):
@@ -2637,13 +2662,31 @@ def duration_menu() -> ReplyKeyboardMarkup:
     )
 
 
-def build_meals_actions_keyboard(meals: list[Meal]) -> InlineKeyboardMarkup:
+def build_meals_actions_keyboard(
+    meals: list[Meal], target_date: date, *, include_back: bool = False
+) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     for idx, meal in enumerate(meals, start=1):
         rows.append(
             [
-                InlineKeyboardButton(text=f"✏️ {idx}", callback_data=f"meal_edit:{meal.id}"),
-                InlineKeyboardButton(text=f"🗑 {idx}", callback_data=f"meal_del:{meal.id}"),
+                InlineKeyboardButton(
+                    text=f"✏️ {idx}",
+                    callback_data=f"meal_edit:{meal.id}:{target_date.isoformat()}",
+                ),
+                InlineKeyboardButton(
+                    text=f"🗑 {idx}",
+                    callback_data=f"meal_del:{meal.id}:{target_date.isoformat()}",
+                ),
+            ]
+        )
+
+    if include_back:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад к календарю",
+                    callback_data=f"meal_cal_back:{target_date.year}-{target_date.month:02d}",
+                )
             ]
         )
 
@@ -2651,7 +2694,7 @@ def build_meals_actions_keyboard(meals: list[Meal]) -> InlineKeyboardMarkup:
 
 
 def format_today_meals(meals: list[Meal], daily_totals: dict, day_str: str) -> str:
-    lines: list[str] = [f"📊 Итоги за сегодня ({day_str}):\n"]
+    lines: list[str] = [f"📊 Итоги за {day_str}:\n"]
 
     for idx, meal in enumerate(meals, start=1):
         lines.append(
@@ -2690,7 +2733,7 @@ async def send_today_results(message: Message, user_id: str):
     daily_totals = get_daily_meal_totals(user_id, today)
     day_str = today.strftime("%d.%m.%Y")
     text = format_today_meals(meals, daily_totals, day_str)
-    keyboard = build_meals_actions_keyboard(meals)
+    keyboard = build_meals_actions_keyboard(meals, today)
 
     await message.answer(text, reply_markup=keyboard)
 
@@ -2811,7 +2854,9 @@ async def handle_food_input(message: Message):
 @dp.callback_query(F.data.startswith("meal_del:"))
 async def delete_meal(callback: CallbackQuery):
     await callback.answer()
-    meal_id = int(callback.data.split(":", 1)[1])
+    parts = callback.data.split(":")
+    meal_id = int(parts[1])
+    target_date = date.fromisoformat(parts[2]) if len(parts) > 2 else date.today()
     user_id = str(callback.from_user.id)
 
     result = delete_meal_entry(meal_id, user_id)
@@ -2823,27 +2868,32 @@ async def delete_meal(callback: CallbackQuery):
     await callback.message.answer(
         f"🗑 Удалил запись за {entry_date.strftime('%d.%m.%Y')}: {description}"
     )
-    await send_today_results(callback.message, user_id)
+    await show_day_meals(callback.message, user_id, entry_date)
 
 
 @dp.callback_query(F.data.startswith("meal_edit:"))
 async def start_meal_edit(callback: CallbackQuery):
     await callback.answer()
-    meal_id = int(callback.data.split(":", 1)[1])
+    parts = callback.data.split(":")
+    meal_id = int(parts[1])
+    target_date = date.fromisoformat(parts[2]) if len(parts) > 2 else date.today()
     user_id = str(callback.from_user.id)
 
-    meals_today = get_meals_for_date(user_id, date.today())
-    meal = next((m for m in meals_today if m.id == meal_id), None)
+    meals_for_day = get_meals_for_date(user_id, target_date)
+    meal = next((m for m in meals_for_day if m.id == meal_id), None)
     if not meal:
         await callback.message.answer("Не нашёл запись для изменения.")
         return
 
     ctx = getattr(callback.bot, "meal_edit_context", {})
-    ctx[user_id] = meal_id
+    ctx[user_id] = {"meal_id": meal_id, "date": target_date}
     callback.bot.meal_edit_context = ctx
     callback.bot.expecting_food_input = False
 
-    position = next((idx for idx, m in enumerate(meals_today, start=1) if m.id == meal_id), meal_id)
+    position = next(
+        (idx for idx, m in enumerate(meals_for_day, start=1) if m.id == meal_id),
+        meal_id,
+    )
     await callback.message.answer(
         "\n".join(
             [
@@ -2858,8 +2908,15 @@ async def start_meal_edit(callback: CallbackQuery):
 @dp.message(lambda m: getattr(m.bot, "meal_edit_context", {}).get(str(m.from_user.id)))
 async def handle_meal_edit_input(message: Message):
     user_id = str(message.from_user.id)
-    meal_id = message.bot.meal_edit_context.get(user_id)
+    context = message.bot.meal_edit_context.get(user_id) or {}
+    meal_id = context.get("meal_id")
+    target_date = context.get("date", date.today())
     new_text = message.text.strip()
+
+    if not meal_id:
+        message.bot.meal_edit_context.pop(user_id, None)
+        await message.answer("Не получилось определить запись для обновления.")
+        return
 
     if not new_text:
         await message.answer("Напиши новое описание продуктов, пожалуйста 🙏")
@@ -2899,7 +2956,7 @@ async def handle_meal_edit_input(message: Message):
     )
 
     await message.answer("\n".join(lines))
-    await send_today_results(message, user_id)
+    await show_day_meals(message, user_id, target_date)
 
 @dp.message(F.text == "📆 Календарь")
 async def calendar_view(message: Message):
