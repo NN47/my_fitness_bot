@@ -2923,12 +2923,12 @@ def format_today_meals(meals, daily_totals, day_str: str) -> str:
         # что вводил пользователь
         user_text = getattr(meal, "raw_query", None) or meal.description or "Без описания"
 
-        lines.append(f"{idx}) 📝 Ты ввёл: {user_text}")
+        lines.append(f"{idx}) 📝 Ты ввёл(а): {user_text}")
 
         api_details = getattr(meal, "api_details", None)
 
         if api_details:
-            lines.append("🔍 API распознало как:")
+            lines.append("🔍 Результат:")
             lines.append(api_details)
         else:
             # что мы показывали раньше как распознанный текст
@@ -2944,7 +2944,7 @@ def format_today_meals(meals, daily_totals, day_str: str) -> str:
                     print("⚠️ Не смог распарсить products_json:", repr(e))
 
             if products:
-                lines.append("🔍 API распознало как:")
+                lines.append("🔍 Результат:")
                 for p in products:
                     name = p.get("name_ru") or p.get("name") or "продукт"
                     cal = p.get("calories") or p.get("_calories") or 0
@@ -2958,7 +2958,7 @@ def format_today_meals(meals, daily_totals, day_str: str) -> str:
                     )
             else:
                 # На всякий случай — старый вариант, если нет данных о продуктах
-                lines.append(f"🔍 API распознало как: {api_text_fallback}")
+                lines.append(f"🔍 Результат: {api_text_fallback}")
 
         # Итого по этому приёму
         lines.append(f"🔥 Калории: {meal.calories:.0f} ккал")
