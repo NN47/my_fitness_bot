@@ -145,11 +145,13 @@ class Meal(Base):
     user_id = Column(String, nullable=False)
     description = Column(String, nullable=True)
     raw_query = Column(String)
+    products_json = Column(Text, default="[]")   # 👈 сюда будем класть продукты из API
     calories = Column(Float, default=0)
     protein = Column(Float, default=0)
     fat = Column(Float, default=0)
     carbs = Column(Float, default=0)
     date = Column(Date, default=date.today)
+
 
 
 class KbjuSettings(Base):
@@ -298,19 +300,19 @@ def get_nutrition_from_api(query: str):
 
 
 
-def save_meal_entry(user_id: str, raw_query: str, description: str, totals: dict, entry_date: date):
-
+def save_meal_entry(user_id: str, raw_query: str, totals: dict, entry_date: date):
     session = SessionLocal()
     try:
         meal = Meal(
             user_id=str(user_id),
+            description=raw_query,  # старое поле пока оставляем
             raw_query=raw_query,
-            description=description,  # результат API
             calories=float(totals.get("calories", 0.0)),
             protein=float(totals.get("protein_g", 0.0)),
             fat=float(totals.get("fat_total_g", 0.0)),
             carbs=float(totals.get("carbohydrates_total_g", 0.0)),
             date=entry_date,
+            products_json=json.dumps(totals.get("products", [])),   # <<< САМОЕ ВАЖНОЕ
         )
 
         session.add(meal)
@@ -2900,36 +2902,56 @@ def build_meals_actions_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def format_today_meals(meals: list[Meal], daily_totals: dict, day_str: str) -> str:
-    lines: list[str] = [f"🍱 Приём пищи за <b>{day_str}</b>:\n"]
+def format_today_meals(meals, daily_totals, day_str: str) -> str:
+    lines: list[str] = []
+    lines.append(f"🍱 Приём пищи за <b>{day_str}</b>:\n")
 
     for idx, meal in enumerate(meals, start=1):
-        # что пользователь ввёл (если есть raw_query — берём его)
-        user_text = getattr(meal, "raw_query", None) or meal.description or "—"
-        # описание по версии API (то, что мы сохранили в description)
-        api_text = meal.description or "нет описания"
+        # что вводил пользователь
+        user_text = getattr(meal, "raw_query", None) or meal.description or "Без описания"
 
+        # что мы показывали раньше как распознанный текст
+        api_text_fallback = meal.description or "нет описания"
+
+        # пробуем достать продукты из JSON
+        products = []
+        raw_products = getattr(meal, "products_json", None)
+        if raw_products:
+            try:
+                products = json.loads(raw_products)
+            except Exception as e:
+                print("⚠️ Не смог распарсить products_json:", repr(e))
+
+        lines.append(f"{idx}) 📝 <b>Ты ввёл:</b> {user_text}")
+
+        if products:
+            # Новый, красивый вывод как на втором скрине
+            lines.append("🔍 <b>API распознало как:</b>")
+            for p in products:
+                name = p.get("name_ru") or p.get("name") or "продукт"
+                cal = p.get("calories") or p.get("_calories") or 0
+                prot = p.get("protein_g") or p.get("_protein_g") or 0
+                fat = p.get("fat_total_g") or p.get("_fat_total_g") or 0
+                carb = p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 0
+
+                lines.append(
+                    f"• {name} — {cal:.0f} ккал "
+                    f"(Б {prot:.1f} / Ж {fat:.1f} / У {carb:.1f})"
+                )
+        else:
+            # На всякий случай — старый вариант, если нет данных о продуктах
+            lines.append(f"🔍 <b>API распознало как:</b> {api_text_fallback}")
+
+        # Итого по этому приёму
         lines.append(
-            "\n".join(
-                [
-                    f"{idx}) 📝 <b>Ты ввёл:</b> {user_text}",
-                    f"   🔍 <b>API распознало как:</b> {api_text}",
-                    (
-                        "   🔥 {cal:.0f} ккал | "
-                        "💪 Б:{p:.1f} г | "
-                        "🧈 Ж:{f:.1f} г | "
-                        "🍞 У:{c:.1f} г"
-                    ).format(
-                        cal=meal.calories or 0,
-                        p=meal.protein or 0,
-                        f=meal.fat or 0,
-                        c=meal.carbs or 0,
-                    ),
-                    "— — — — —",
-                ]
-            )
+            f"🔥 {meal.calories:.0f} ккал | "
+            f"💪 Б:{meal.protein:.1f} г | "
+            f"🧈 Ж:{meal.fat:.1f} г | "
+            f"🍞 У:{meal.carbs:.1f} г"
         )
+        lines.append("— — — — —")
 
+    # Итоги за день
     lines.append("\n<b>Итого за день:</b>")
     lines.append(f"🔥 Калории: <b>{daily_totals['calories']:.0f} ккал</b>")
     lines.append(f"💪 Белки: <b>{daily_totals['protein_g']:.1f} г</b>")
@@ -2937,6 +2959,8 @@ def format_today_meals(meals: list[Meal], daily_totals: dict, day_str: str) -> s
     lines.append(f"🍞 Углеводы: <b>{daily_totals['carbohydrates_total_g']:.1f} г</b>")
 
     return "\n".join(lines)
+
+
 
 
 
