@@ -196,10 +196,14 @@ class SupplementEntry(Base):
 Base.metadata.create_all(engine)
 
 
+class ReusableTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
+
 def start_keepalive_server():
     PORT = 10000
     handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", PORT), handler) as httpd:
+    with ReusableTCPServer(("", PORT), handler) as httpd:
         print(f"✅ Keep-alive сервер запущен на порту {PORT}")
         httpd.serve_forever()
 
