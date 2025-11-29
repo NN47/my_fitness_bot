@@ -146,6 +146,7 @@ class Meal(Base):
     description = Column(String, nullable=True)
     raw_query = Column(String)
     products_json = Column(Text, default="[]")   # 👈 сюда будем класть продукты из API
+    api_details = Column(Text, nullable=True)      # текстовая раскладка продуктов
     calories = Column(Float, default=0)
     protein = Column(Float, default=0)
     fat = Column(Float, default=0)
@@ -300,7 +301,9 @@ def get_nutrition_from_api(query: str):
 
 
 
-def save_meal_entry(user_id: str, raw_query: str, totals: dict, entry_date: date):
+def save_meal_entry(
+    user_id: str, raw_query: str, totals: dict, entry_date: date, api_details: str | None = None
+):
     session = SessionLocal()
     try:
         meal = Meal(
@@ -315,6 +318,7 @@ def save_meal_entry(user_id: str, raw_query: str, totals: dict, entry_date: date
             fat=float(totals.get("fat_total_g", 0.0)),
             carbs=float(totals.get("carbohydrates_total_g", 0.0)),
             date=entry_date,
+            api_details=api_details,
             # сюда позже будем класть подробный список продуктов (если уже сделали products_json)
             products_json=json.dumps(totals.get("products", [])) if "products" in totals else "[]",
         )
@@ -326,7 +330,11 @@ def save_meal_entry(user_id: str, raw_query: str, totals: dict, entry_date: date
 
 
 def update_meal_entry(
-    meal_id: int, user_id: str, description: str, totals: dict
+    meal_id: int,
+    user_id: str,
+    description: str,
+    totals: dict,
+    api_details: str | None = None,
 ) -> bool:
     session = SessionLocal()
     try:
@@ -339,6 +347,7 @@ def update_meal_entry(
         meal.protein = float(totals.get("protein_g", 0.0))
         meal.fat = float(totals.get("fat_total_g", 0.0))
         meal.carbs = float(totals.get("carbohydrates_total_g", 0.0))
+        meal.api_details = api_details
         session.commit()
         return True
     finally:
@@ -2914,37 +2923,42 @@ def format_today_meals(meals, daily_totals, day_str: str) -> str:
         # что вводил пользователь
         user_text = getattr(meal, "raw_query", None) or meal.description or "Без описания"
 
-        # что мы показывали раньше как распознанный текст
-        api_text_fallback = meal.description or "нет описания"
-
-        # пробуем достать продукты из JSON
-        products = []
-        raw_products = getattr(meal, "products_json", None)
-        if raw_products:
-            try:
-                products = json.loads(raw_products)
-            except Exception as e:
-                print("⚠️ Не смог распарсить products_json:", repr(e))
-
         lines.append(f"{idx}) 📝 <b>Ты ввёл:</b> {user_text}")
 
-        if products:
-            # Новый, красивый вывод как на втором скрине
-            lines.append("🔍 <b>API распознало как:</b>")
-            for p in products:
-                name = p.get("name_ru") or p.get("name") or "продукт"
-                cal = p.get("calories") or p.get("_calories") or 0
-                prot = p.get("protein_g") or p.get("_protein_g") or 0
-                fat = p.get("fat_total_g") or p.get("_fat_total_g") or 0
-                carb = p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 0
+        api_details = getattr(meal, "api_details", None)
 
-                lines.append(
-                    f"• {name} — {cal:.0f} ккал "
-                    f"(Б {prot:.1f} / Ж {fat:.1f} / У {carb:.1f})"
-                )
+        if api_details:
+            lines.append("🔍 <b>API распознало как:</b>")
+            lines.append(api_details)
         else:
-            # На всякий случай — старый вариант, если нет данных о продуктах
-            lines.append(f"🔍 <b>API распознало как:</b> {api_text_fallback}")
+            # что мы показывали раньше как распознанный текст
+            api_text_fallback = meal.description or "нет описания"
+
+            # пробуем достать продукты из JSON (на случай старых записей)
+            products = []
+            raw_products = getattr(meal, "products_json", None)
+            if raw_products:
+                try:
+                    products = json.loads(raw_products)
+                except Exception as e:
+                    print("⚠️ Не смог распарсить products_json:", repr(e))
+
+            if products:
+                lines.append("🔍 <b>API распознало как:</b>")
+                for p in products:
+                    name = p.get("name_ru") or p.get("name") or "продукт"
+                    cal = p.get("calories") or p.get("_calories") or 0
+                    prot = p.get("protein_g") or p.get("_protein_g") or 0
+                    fat = p.get("fat_total_g") or p.get("_fat_total_g") or 0
+                    carb = p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 0
+
+                    lines.append(
+                        f"• {name} — {cal:.0f} ккал "
+                        f"(Б {prot:.1f} / Ж {fat:.1f} / У {carb:.1f})"
+                    )
+            else:
+                # На всякий случай — старый вариант, если нет данных о продуктах
+                lines.append(f"🔍 <b>API распознало как:</b> {api_text_fallback}")
 
         # Итого по этому приёму
         lines.append(
@@ -3264,6 +3278,7 @@ async def handle_food_input(message: Message):
 
     lines = ["🍱 Оценка по КБЖУ для этого приёма пищи:\n"]
 
+    api_details_lines: list[str] = []
 
     for item in items:
         name_en = (item.get("name") or "item").title()
@@ -3275,7 +3290,9 @@ async def handle_food_input(message: Message):
         f = float(item.get("_fat_total_g", 0.0))
         c = float(item.get("_carbohydrates_total_g", 0.0))
 
-        lines.append(f"• {name} — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})")
+        line = f"• {name} — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+        lines.append(line)
+        api_details_lines.append(line)
 
     lines.append("\nИТОГО:")
     lines.append(
@@ -3285,11 +3302,14 @@ async def handle_food_input(message: Message):
         f"🍞 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г"
     )
 
+    api_details = "\n".join(api_details_lines)
+
     save_meal_entry(
         user_id=user_id,
         raw_query=user_text,
         totals=totals,
         entry_date=entry_date,
+        api_details=api_details,
     )
 
 
@@ -3397,7 +3417,23 @@ async def handle_meal_edit_input(message: Message):
         )
         return
 
-    success = update_meal_entry(meal_id, user_id, new_text, totals)
+    api_details_lines: list[str] = []
+    for item in items:
+        name_en = (item.get("name") or "item").title()
+        name = translate_text(name_en, source_lang="en", target_lang="ru")
+
+        cal = float(item.get("_calories", 0.0))
+        p = float(item.get("_protein_g", 0.0))
+        f = float(item.get("_fat_total_g", 0.0))
+        c = float(item.get("_carbohydrates_total_g", 0.0))
+
+        api_details_lines.append(
+            f"• {name} — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+        )
+
+    api_details = "\n".join(api_details_lines)
+
+    success = update_meal_entry(meal_id, user_id, new_text, totals, api_details=api_details)
     if not success:
         message.bot.meal_edit_context.pop(user_id, None)
         await message.answer("Не нашёл запись для обновления.")
