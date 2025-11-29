@@ -1,7 +1,6 @@
 import asyncio
 import nest_asyncio
 from aiogram import Bot, Dispatcher, F
-from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 import calendar
 from aiogram.types import (
@@ -227,7 +226,7 @@ if not NUTRITION_API_KEY:
 
 
 
-bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
 
@@ -2929,15 +2928,14 @@ def format_today_meals(meals, daily_totals, day_str: str) -> str:
     for idx, meal in enumerate(meals, start=1):
         # что вводил пользователь
         user_text = getattr(meal, "raw_query", None) or meal.description or "Без описания"
-        user_text_html = html.escape(user_text)
 
-        lines.append(f"{idx}) 📝 <b>Ты ввёл(а):</b> {user_text_html}")
+        lines.append(f"{idx}) 📝 **Ты ввёл(а):** {user_text}")
 
         api_details = getattr(meal, "api_details", None)
 
         if api_details:
-            lines.append("🔍 <b>Результат:</b>")
-            lines.append(html.escape(api_details))
+            lines.append("🔍 **Результат:**")
+            lines.append(api_details)
         else:
             # что мы показывали раньше как распознанный текст
             api_text_fallback = meal.description or "нет описания"
@@ -2952,7 +2950,7 @@ def format_today_meals(meals, daily_totals, day_str: str) -> str:
                     print("⚠️ Не смог распарсить products_json:", repr(e))
 
             if products:
-                lines.append("🔍 <b>Результат:</b>")
+                lines.append("🔍 **Результат:**")
                 for p in products:
                     name = p.get("name_ru") or p.get("name") or "продукт"
                     cal = p.get("calories") or p.get("_calories") or 0
@@ -2966,7 +2964,7 @@ def format_today_meals(meals, daily_totals, day_str: str) -> str:
                     )
             else:
                 # На всякий случай — старый вариант, если нет данных о продуктах
-                lines.append(f"🔍 <b>Результат:</b> {html.escape(api_text_fallback)}")
+                lines.append(f"🔍 **Результат:** {api_text_fallback}")
 
         # Итого по этому приёму
         lines.append(f"🔥 Калории: {meal.calories:.0f} ккал")
@@ -2976,7 +2974,7 @@ def format_today_meals(meals, daily_totals, day_str: str) -> str:
         lines.append("— — — — —")
 
     # Итоги за день
-    lines.append("\n<b>Итого за день:</b>")
+    lines.append("\n**Итого за день:**")
     lines.append(f"🔥 Калории: {daily_totals['calories']:.0f} ккал")
     lines.append(f"💪 Белки: {daily_totals['protein_g']:.1f} г")
     lines.append(f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г")
