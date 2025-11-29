@@ -2900,32 +2900,44 @@ def build_meals_actions_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def format_today_meals(meals, totals, day_str):
-    text = f"🍱 Приём пищи за <b>{day_str}</b>:\n\n"
+def format_today_meals(meals: list[Meal], daily_totals: dict, day_str: str) -> str:
+    lines: list[str] = [f"🍱 Приём пищи за <b>{day_str}</b>:\n"]
 
-    for meal in meals:
-        user_query = meal.raw_query or "—"
-        api_desc = meal.description or "нет описания"
+    for idx, meal in enumerate(meals, start=1):
+        # что пользователь ввёл (если есть raw_query — берём его)
+        user_text = getattr(meal, "raw_query", None) or meal.description or "—"
+        # описание по версии API (то, что мы сохранили в description)
+        api_text = meal.description or "нет описания"
 
-        text += (
-            f"📝 <b>Ты ввёл:</b> {user_query}\n"
-            f"🔍 <b>API распознало как:</b> {api_desc}\n"
-            f"🔥 {meal.calories:.0f} ккал | "
-            f"💪 Б:{meal.protein:.0f}г | "
-            f"🧈 Ж:{meal.fat:.0f}г | "
-            f"🍞 У:{meal.carbs:.0f}г\n"
-            "— — — — —\n"
+        lines.append(
+            "\n".join(
+                [
+                    f"{idx}) 📝 <b>Ты ввёл:</b> {user_text}",
+                    f"   🔍 <b>API распознало как:</b> {api_text}",
+                    (
+                        "   🔥 {cal:.0f} ккал | "
+                        "💪 Б:{p:.1f} г | "
+                        "🧈 Ж:{f:.1f} г | "
+                        "🍞 У:{c:.1f} г"
+                    ).format(
+                        cal=meal.calories or 0,
+                        p=meal.protein or 0,
+                        f=meal.fat or 0,
+                        c=meal.carbs or 0,
+                    ),
+                    "— — — — —",
+                ]
+            )
         )
 
-    text += (
-        "\n<b>Итого за день:</b>\n"
-        f"🔥 Калории: <b>{totals['calories']:.0f}</b>\n"
-        f"💪 Белки: <b>{totals['protein_g']:.0f} г</b>\n"
-        f"🧈 Жиры: <b>{totals['fat_total_g']:.0f} г</b>\n"
-        f"🍞 Углеводы: <b>{totals['carbohydrates_total_g']:.0f} г</b>\n"
-    )
+    lines.append("\n<b>Итого за день:</b>")
+    lines.append(f"🔥 Калории: <b>{daily_totals['calories']:.0f} ккал</b>")
+    lines.append(f"💪 Белки: <b>{daily_totals['protein_g']:.1f} г</b>")
+    lines.append(f"🧈 Жиры: <b>{daily_totals['fat_total_g']:.1f} г</b>")
+    lines.append(f"🍞 Углеводы: <b>{daily_totals['carbohydrates_total_g']:.1f} г</b>")
 
-    return text
+    return "\n".join(lines)
+
 
 
 async def send_today_results(message: Message, user_id: str):
@@ -2945,7 +2957,7 @@ async def send_today_results(message: Message, user_id: str):
     text = format_today_meals(meals, daily_totals, day_str)
     keyboard = build_meals_actions_keyboard(meals, today)
 
-    await message.answer(text, reply_markup=keyboard)
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 @dp.message(F.text == "🍱 КБЖУ")
