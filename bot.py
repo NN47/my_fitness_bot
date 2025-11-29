@@ -2,6 +2,7 @@ import asyncio
 import nest_asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
+from aiogram.client.bot import DefaultBotProperties
 import calendar
 from aiogram.types import (
     Message,
@@ -20,8 +21,7 @@ from dotenv import load_dotenv
 import threading
 import http.server
 import socketserver
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func, DateTime, Text
 from datetime import timedelta
 import random
@@ -226,7 +226,7 @@ if not NUTRITION_API_KEY:
 
 
 
-bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
+bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 
