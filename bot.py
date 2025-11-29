@@ -862,7 +862,7 @@ async def show_day_meals(message: Message, user_id: str, target_date: date):
     day_str = target_date.strftime("%d.%m.%Y")
     text = format_today_meals(meals, daily_totals, day_str)
     keyboard = build_meals_actions_keyboard(meals, target_date, include_back=True)
-    await message.answer(text, reply_markup=keyboard)
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 def start_date_selection(bot, context: str):
