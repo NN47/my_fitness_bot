@@ -1,6 +1,7 @@
 import asyncio
 import nest_asyncio
 from aiogram import Bot, Dispatcher, F
+from aiogram.enums import ParseMode
 import calendar
 from aiogram.types import (
     Message,
@@ -221,7 +222,7 @@ if not NUTRITION_API_KEY:
 
 
 
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
 
