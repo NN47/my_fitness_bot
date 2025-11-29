@@ -305,20 +305,24 @@ def save_meal_entry(user_id: str, raw_query: str, totals: dict, entry_date: date
     try:
         meal = Meal(
             user_id=str(user_id),
-            description=raw_query,  # старое поле пока оставляем
+            # что вводил пользователь
             raw_query=raw_query,
+            # можно пока дублировать сюда
+            description=raw_query,
+            # суммарные КБЖУ по приёму пищи
             calories=float(totals.get("calories", 0.0)),
             protein=float(totals.get("protein_g", 0.0)),
             fat=float(totals.get("fat_total_g", 0.0)),
             carbs=float(totals.get("carbohydrates_total_g", 0.0)),
             date=entry_date,
-            products_json=json.dumps(totals.get("products", [])),   # <<< САМОЕ ВАЖНОЕ
+            # сюда позже будем класть подробный список продуктов (если уже сделали products_json)
+            products_json=json.dumps(totals.get("products", [])) if "products" in totals else "[]",
         )
-
         session.add(meal)
         session.commit()
     finally:
         session.close()
+
 
 
 def update_meal_entry(
@@ -3282,12 +3286,12 @@ async def handle_food_input(message: Message):
     )
 
     save_meal_entry(
-        user_id,
+        user_id=user_id,
         raw_query=user_text,
-        description=totals.get("name", user_text),   # название из API
         totals=totals,
         entry_date=entry_date,
     )
+
 
     daily_totals = get_daily_meal_totals(user_id, entry_date)
 
