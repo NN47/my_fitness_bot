@@ -13,6 +13,7 @@ from aiogram.types import (
 from aiogram.filters import Command
 import os
 import json
+import html
 from datetime import date
 from dotenv import load_dotenv
 import threading
@@ -2953,7 +2954,7 @@ def format_today_meals(meals, daily_totals, day_str: str) -> str:
                     carb = p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 0
 
                     lines.append(
-                        f"• {name} — {cal:.0f} ккал "
+                        f"• {html.escape(name)} — {cal:.0f} ккал "
                         f"(Б {prot:.1f} / Ж {fat:.1f} / У {carb:.1f})"
                     )
             else:
