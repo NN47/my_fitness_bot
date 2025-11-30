@@ -1013,6 +1013,21 @@ kbju_goal_menu = ReplyKeyboardMarkup(
 )
 
 
+kbju_after_meal_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text="➕ Внести ещё приём"),
+            KeyboardButton(text="✏️ Редактировать"),
+        ],
+        [
+            KeyboardButton(text="⬅️ Назад"),
+            main_menu_button,
+        ],
+    ],
+    resize_keyboard=True,
+)
+
+
 training_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить тренировку")],
@@ -3304,12 +3319,13 @@ async def handle_food_input(message: Message):
         lines.append(line)
         api_details_lines.append(line)
 
+    # --- ИТОГО по этому приёму ---
     lines.append("\nИТОГО:")
     lines.append(
-        f"🔥 {float(totals['calories']):.0f} ккал\n"
+        f"🔥 Калории: {float(totals['calories']):.0f} ккал\n"
         f"💪 Белки: {float(totals['protein_g']):.1f} г\n"
-        f"🧈 Жиры: {float(totals['fat_total_g']):.1f} г\n"
-        f"🍞 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г"
+        f"🥑 Жиры: {float(totals['fat_total_g']):.1f} г\n"
+        f"🍩 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г"
     )
 
     api_details = "\n".join(api_details_lines)
@@ -3323,22 +3339,40 @@ async def handle_food_input(message: Message):
     )
 
 
+    # --- СУММА ЗА СЕГОДНЯ ---
     daily_totals = get_daily_meal_totals(user_id, entry_date)
 
     lines.append("\nСУММА ЗА СЕГОДНЯ:")
     lines.append(
-        f"🔥 {daily_totals['calories']:.0f} ккал\n"
+        f"🔥 Калории: {daily_totals['calories']:.0f} ккал\n"
         f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
-        f"🧈 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
-        f"🍞 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
+        f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
+        f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
     )
 
+    # Закрываем режим ввода еды
     message.bot.expecting_food_input = False
+
+    text = "\n".join(lines)
     await answer_with_menu(
         message,
-        "\n".join(lines),
-        reply_markup=main_menu,
+        text,
+        reply_markup=kbju_after_meal_menu,
     )
+
+
+@dp.message(F.text == "➕ Внести ещё приём")
+async def kbju_add_more_meal(message: Message):
+    # снова ждём текст про еду
+    message.bot.expecting_food_input = True
+    await message.answer("Опиши, что ты съел(а):")
+
+
+@dp.message(F.text == "✏️ Редактировать")
+async def kbju_edit_meals(message: Message):
+    user_id = str(message.from_user.id)
+    # показываем результаты за сегодня с инлайн-кнопками редактирования
+    await send_today_results(message, user_id)
 
 
 @dp.callback_query(F.data.startswith("meal_del:"))
