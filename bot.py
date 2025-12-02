@@ -22,7 +22,7 @@ import threading
 import http.server
 import socketserver
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func, DateTime, Text, inspect, text
 from datetime import timedelta
 import random
 from datetime import datetime
@@ -191,9 +191,18 @@ class SupplementEntry(Base):
     user_id = Column(String, nullable=False, index=True)
     supplement_id = Column(Integer, nullable=False)
     timestamp = Column(DateTime, nullable=False)
+    amount = Column(Float, nullable=True)
 
 
 Base.metadata.create_all(engine)
+
+# Простая миграция для добавления столбца amount в supplement_entries, если его ещё нет.
+with engine.connect() as conn:
+    inspector = inspect(conn)
+    columns = {col["name"] for col in inspector.get_columns("supplement_entries")}
+    if "amount" not in columns:
+        conn.execute(text("ALTER TABLE supplement_entries ADD COLUMN amount FLOAT"))
+        conn.commit()
 
 
 class ReusableTCPServer(socketserver.TCPServer):
@@ -931,22 +940,14 @@ async def proceed_after_date_selection(message: Message):
             await message.answer("Не выбрана добавка для записи приёма.")
             return
 
-        supplements_list = get_supplements_for_user(message.bot, user_id)
-        target = next((item for item in supplements_list if item["name"].lower() == supplement_name.lower()), None)
+        if not hasattr(message.bot, "supplement_log_date"):
+            message.bot.supplement_log_date = {}
+        message.bot.supplement_log_date[user_id] = selected_date
+        message.bot.expecting_supplement_amount = True
 
-        timestamp = datetime.combine(selected_date, datetime.now().time())
-        if target is not None:
-            target.setdefault("history", []).append(timestamp)
-            await answer_with_menu(
-                message,
-                f"Записал приём {target['name']} на {timestamp.strftime('%d.%m.%Y %H:%M')}.",
-                reply_markup=supplements_main_menu(has_items=True),
-            )
-        else:
-            await message.answer("Не нашёл выбранную добавку для записи приёма.")
-
-        if hasattr(message.bot, "supplement_log_choice"):
-            message.bot.supplement_log_choice.pop(user_id, None)
+        await message.answer(
+            "Укажи количество для приёма (например, 1 или 2 капсулы).",
+        )
 
 
 
@@ -1960,6 +1961,14 @@ def get_user_supplements(message: Message) -> list[dict]:
     return get_supplements_for_user(message.bot, str(message.from_user.id))
 
 
+def parse_supplement_amount(text: str) -> float | None:
+    normalized = text.replace(",", ".").strip()
+    try:
+        return float(normalized)
+    except ValueError:
+        return None
+
+
 def load_supplements_from_db(user_id: str) -> list[dict]:
     session = SessionLocal()
     try:
@@ -1979,7 +1988,7 @@ def load_supplements_from_db(user_id: str) -> list[dict]:
             )
             for entry in all_entries:
                 entries_map.setdefault(entry.supplement_id, []).append(
-                    {"id": entry.id, "timestamp": entry.timestamp}
+                    {"id": entry.id, "timestamp": entry.timestamp, "amount": entry.amount}
                 )
 
         result: list[dict] = []
@@ -2039,6 +2048,8 @@ def reset_supplement_state(message: Message):
         "choosing_supplement_for_edit",
         "expecting_supplement_history_choice",
         "expecting_supplement_history_time",
+        "expecting_supplement_history_amount",
+        "expecting_supplement_amount",
     ]:
         if hasattr(message.bot, flag):
             setattr(message.bot, flag, False)
@@ -2049,6 +2060,8 @@ def reset_supplement_state(message: Message):
         message.bot.supplement_edit_index.pop(str(message.from_user.id), None)
     if hasattr(message.bot, "supplement_log_choice"):
         message.bot.supplement_log_choice.pop(str(message.from_user.id), None)
+    if hasattr(message.bot, "supplement_log_date"):
+        message.bot.supplement_log_date.pop(str(message.from_user.id), None)
     if hasattr(message.bot, "supplement_history_action"):
         message.bot.supplement_history_action.pop(str(message.from_user.id), None)
 
@@ -2151,6 +2164,7 @@ def get_supplement_entries_for_day(bot, user_id: str, target_date: date) -> list
                         "entry_index": entry_idx,
                         "timestamp": ts,
                         "time_text": ts.strftime("%H:%M"),
+                        "amount": raw_entry.get("amount") if isinstance(raw_entry, dict) else None,
                     }
                 )
 
@@ -2213,7 +2227,8 @@ def build_supplement_day_actions_keyboard(entries: list[dict], target_date: date
     rows: list[list[InlineKeyboardButton]] = []
 
     for entry in entries:
-        label = f"{entry['supplement_name']} ({entry['time_text']})"
+        amount_text = f" — {entry['amount']}" if entry.get("amount") is not None else ""
+        label = f"{entry['supplement_name']} ({entry['time_text']}{amount_text})"
         rows.append(
             [
                 InlineKeyboardButton(
@@ -2270,7 +2285,8 @@ async def show_supplement_day_entries(message: Message, user_id: str, target_dat
 
     lines = [f"📅 {target_date.strftime('%d.%m.%Y')} — приёмы добавок:"]
     for entry in entries:
-        lines.append(f"• {entry['supplement_name']} в {entry['time_text']}")
+        amount_text = f" — {entry['amount']}" if entry.get("amount") is not None else ""
+        lines.append(f"• {entry['supplement_name']} в {entry['time_text']}{amount_text}")
 
     await message.answer(
         "\n".join(lines), reply_markup=build_supplement_day_actions_keyboard(entries, target_date)
@@ -2399,6 +2415,9 @@ async def edit_supplement_entry(callback: CallbackQuery):
             "date": target_date,
             "original": {"supplement_index": sup_idx, "entry_index": entry_idx},
             "supplement_name": None,
+            "original_amount": history[entry_idx].get("amount")
+            if isinstance(history[entry_idx], dict)
+            else None,
         },
     )
 
@@ -2550,6 +2569,69 @@ async def log_supplement_intake(message: Message):
     await answer_with_menu(message, get_date_prompt("supplement_log"), reply_markup=training_date_menu)
 
 
+@dp.message(lambda m: getattr(m.bot, "expecting_supplement_amount", False))
+async def set_supplement_amount(message: Message):
+    user_id = str(message.from_user.id)
+    if not hasattr(message.bot, "supplement_log_choice"):
+        message.bot.expecting_supplement_amount = False
+        await message.answer("Не выбрана добавка для записи приёма.")
+        return
+
+    supplement_name = message.bot.supplement_log_choice.get(user_id)
+    if not supplement_name:
+        message.bot.expecting_supplement_amount = False
+        await message.answer("Не выбрана добавка для записи приёма.")
+        return
+
+    amount = parse_supplement_amount(message.text)
+    if amount is None:
+        await message.answer("Пожалуйста, укажи количество числом, например: 1 или 2.5")
+        return
+
+    selected_date = getattr(message.bot, "supplement_log_date", {}).get(user_id, date.today())
+    supplements_list = get_supplements_for_user(message.bot, user_id)
+    target = next(
+        (item for item in supplements_list if item["name"].lower() == supplement_name.lower()),
+        None,
+    )
+
+    timestamp = datetime.combine(selected_date, datetime.now().time())
+    new_entry_id: int | None = None
+    if target and target.get("id") is not None:
+        session = SessionLocal()
+        try:
+            new_entry = SupplementEntry(
+                user_id=user_id,
+                supplement_id=target["id"],
+                timestamp=timestamp,
+                amount=amount,
+            )
+            session.add(new_entry)
+            session.commit()
+            session.refresh(new_entry)
+            new_entry_id = new_entry.id
+        finally:
+            session.close()
+
+    if target is not None:
+        target.setdefault("history", []).append(
+            {"id": new_entry_id, "timestamp": timestamp, "amount": amount}
+        )
+        await answer_with_menu(
+            message,
+            f"Записал приём {target['name']} ({amount}) на {timestamp.strftime('%d.%m.%Y %H:%M')}.",
+            reply_markup=supplements_main_menu(has_items=True),
+        )
+    else:
+        await message.answer("Не нашёл выбранную добавку для записи приёма.")
+
+    message.bot.expecting_supplement_amount = False
+    if hasattr(message.bot, "supplement_log_choice"):
+        message.bot.supplement_log_choice.pop(user_id, None)
+    if hasattr(message.bot, "supplement_log_date"):
+        message.bot.supplement_log_date.pop(user_id, None)
+
+
 @dp.message(lambda m: getattr(m.bot, "expecting_supplement_history_choice", False))
 async def choose_supplement_for_history(message: Message):
     user_id = str(message.from_user.id)
@@ -2612,6 +2694,53 @@ async def set_history_entry_time(message: Message):
         return
 
     timestamp = datetime.combine(action["date"], datetime.strptime(time_text, "%H:%M").time())
+    action["time"] = timestamp.time()
+    message.bot.expecting_supplement_history_time = False
+    message.bot.expecting_supplement_history_amount = True
+    set_supplement_history_action(message.bot, user_id, action)
+
+    hint = ""
+    if action.get("original_amount") is not None:
+        hint = f" Текущее значение: {action['original_amount']}"
+
+    await message.answer(
+        f"Укажи количество для приёма.{hint}".strip()
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_supplement_history_amount", False))
+async def set_history_entry_amount(message: Message):
+    user_id = str(message.from_user.id)
+    action = getattr(message.bot, "supplement_history_action", {}).get(user_id)
+    amount = parse_supplement_amount(message.text)
+
+    if amount is None:
+        await message.answer("Пожалуйста, укажи количество числом, например: 1 или 2.5")
+        return
+
+    if not action:
+        message.bot.expecting_supplement_history_amount = False
+        await message.answer("Не получилось сохранить приём: не найдено действие.")
+        return
+
+    supplement_name = action.get("supplement_name")
+    if not supplement_name:
+        message.bot.expecting_supplement_history_amount = False
+        await message.answer("Не выбрана добавка для записи.")
+        return
+
+    supplements_list = get_user_supplements(message)
+    target = next(
+        (item for item in supplements_list if item["name"].lower() == supplement_name.lower()),
+        None,
+    )
+
+    if not target:
+        message.bot.expecting_supplement_history_amount = False
+        await message.answer("Не нашёл выбранную добавку для записи.")
+        return
+
+    timestamp = datetime.combine(action["date"], action.get("time") or datetime.now().time())
 
     if action.get("mode") == "edit" and action.get("original"):
         original = action["original"]
@@ -2637,7 +2766,10 @@ async def set_history_entry_time(message: Message):
         session = SessionLocal()
         try:
             new_entry = SupplementEntry(
-                user_id=user_id, supplement_id=target["id"], timestamp=timestamp
+                user_id=user_id,
+                supplement_id=target["id"],
+                timestamp=timestamp,
+                amount=amount,
             )
             session.add(new_entry)
             session.commit()
@@ -2646,13 +2778,15 @@ async def set_history_entry_time(message: Message):
         finally:
             session.close()
 
-    target.setdefault("history", []).append({"id": new_entry_id, "timestamp": timestamp})
+    target.setdefault("history", []).append(
+        {"id": new_entry_id, "timestamp": timestamp, "amount": amount}
+    )
 
-    message.bot.expecting_supplement_history_time = False
+    message.bot.expecting_supplement_history_amount = False
     set_supplement_history_action(message.bot, user_id, None)
 
     await message.answer(
-        f"Записал приём {target['name']} на {timestamp.strftime('%d.%m.%Y %H:%M')}.",
+        f"Записал приём {target['name']} ({amount}) на {timestamp.strftime('%d.%m.%Y %H:%M')}.",
     )
     await show_supplement_day_entries(message, user_id, action["date"])
 
