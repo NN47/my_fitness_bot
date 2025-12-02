@@ -474,6 +474,31 @@ def format_kbju_goal_text(calories: float, protein: float, fat: float, carbs: fl
     )
 
 
+def get_kbju_goal_label(goal: str | None) -> str:
+    labels = {
+        "loss": "Похудение",
+        "maintain": "Поддержание веса",
+        "gain": "Набор массы",
+    }
+    if goal in labels:
+        return labels[goal]
+    if goal:
+        return goal
+    return "Своя норма"
+
+
+def format_current_kbju_goal(settings: KbjuSettings) -> str:
+    goal_label = get_kbju_goal_label(settings.goal)
+    return (
+        "🎯 Твоя текущая цель по КБЖУ:\n\n"
+        f"🔥 Калории: <b>{settings.calories:.0f} ккал</b>\n"
+        f"💪 Белки: <b>{settings.protein:.0f} г</b>\n"
+        f"🧈 Жиры: <b>{settings.fat:.0f} г</b>\n"
+        f"🍞 Углеводы: <b>{settings.carbs:.0f} г</b>\n\n"
+        f"Цель: <b>{goal_label}</b>"
+    )
+
+
 def get_kbju_test_session(bot, user_id: str) -> dict:
     if not hasattr(bot, "kbju_test_sessions"):
         bot.kbju_test_sessions = {}
@@ -3285,13 +3310,30 @@ async def kbju_intro_choice(message: Message):
 @dp.message(lambda m: m.text == "🎯 Цель / Норма КБЖУ" and getattr(m.bot, "kbju_menu_open", False))
 async def kbju_goal_menu_entry(message: Message):
     reset_user_state(message, keep_supplements=True)
+    user_id = str(message.from_user.id)
     message.bot.kbju_menu_open = True
     message.bot.awaiting_kbju_choice = True
 
+    settings = get_kbju_settings(user_id)
+
+    if settings:
+        text = format_current_kbju_goal(settings)
+        await message.answer(text, parse_mode="HTML")
+    else:
+        await answer_with_menu(
+            message,
+            "🍱 Раздел КБЖУ\n\n",
+            "Давай один раз настроим твою дневную норму КБЖУ — так я смогу не просто считать калории, ",
+            "а сравнивать их с твоей целью.\n\n",
+            "Выбери вариант:",
+            reply_markup=kbju_intro_menu,
+        )
+        return
+
     await answer_with_menu(
         message,
-        "🎯 Настройка цели по КБЖУ\n\n"
-        "Можно пересчитать норму через тест или задать свои числа вручную.\n\n"
+        "🎯 Настройка цели по КБЖУ\n\n",
+        "Можно пересчитать норму через тест или задать свои числа вручную.\n\n",
         "Что выбираешь?",
         reply_markup=kbju_intro_menu,
     )
