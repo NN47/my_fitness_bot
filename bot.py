@@ -946,7 +946,7 @@ async def proceed_after_date_selection(message: Message):
         message.bot.expecting_supplement_amount = True
 
         await message.answer(
-            "Укажи количество для приёма (например, 1 или 2 капсулы).",
+            "Укажи количество добавки цифрой (например, 1 или 2.5).",
         )
 
 
@@ -1379,6 +1379,9 @@ async def delete_entry_start(message: Message):
     lambda m: not getattr(m.bot, "expecting_weight", False),
     # не срабатываем, если идёт тест КБЖУ
     lambda m: getattr(m.bot, "kbju_test_step", None) is None,
+    # не срабатываем, если ждём количество добавки
+    lambda m: not getattr(m.bot, "expecting_supplement_amount", False),
+    lambda m: not getattr(m.bot, "expecting_supplement_history_amount", False),
 )
 async def process_number(message: Message):
 
