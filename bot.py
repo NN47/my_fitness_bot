@@ -592,6 +592,36 @@ def get_today_summary_text(user_id: str) -> str:
     return f"{motivation}\n\n{summary}"
 
 
+def build_progress_bar(current: float, target: float, length: int = 20) -> str:
+    if target <= 0:
+        filled_blocks = 0
+    else:
+        filled_blocks = min(int(round((current / target) * length)), length)
+    empty_blocks = max(length - filled_blocks, 0)
+    return "▰" * filled_blocks + "▱" * empty_blocks
+
+
+def format_progress_block(user_id: str) -> str:
+    settings = get_kbju_settings(user_id)
+    if not settings:
+        return "🍱 Настрой цель по КБЖУ через «🎯 Цель / Норма КБЖУ», чтобы я показывал прогресс."
+
+    totals = get_daily_meal_totals(user_id, date.today())
+
+    def line(label: str, current: float, target: float, unit: str) -> str:
+        percent = 0 if target <= 0 else round((current / target) * 100)
+        bar = build_progress_bar(current, target)
+        return f"{label}: {current:.0f}/{target:.0f} {unit} ({percent}%)\n{bar}"
+
+    lines = ["📊 Ваш прогресс по КБЖУ на сегодня:"]
+    lines.append(line("🔥 Калории", totals["calories"], settings.calories, "ккал"))
+    lines.append(line("💪 Белки", totals["protein_g"], settings.protein, "г"))
+    lines.append(line("🧈 Жиры", totals["fat_total_g"], settings.fat, "г"))
+    lines.append(line("🍞 Углеводы", totals["carbohydrates_total_g"], settings.carbs, "г"))
+
+    return "\n".join(lines)
+
+
 def add_weight(user_id, value, entry_date):
     session = SessionLocal()
     weight = Weight(
@@ -1230,11 +1260,13 @@ measurements_menu = ReplyKeyboardMarkup(
 async def start(message: Message):
     user_id = str(message.from_user.id)
     text = get_today_summary_text(user_id)
+    progress_text = format_progress_block(user_id)
     name = message.from_user.first_name or "друг"
     welcome = (
         f"👋 Привет, {name}!\n"
         f"Твой фитнес-помощник готов 💪\n\n"
         f"{text}\n\n"
+        f"{progress_text}\n\n"
         "Выбери действие ниже:"
     )
     await answer_with_menu(message, welcome, reply_markup=main_menu)
@@ -1920,7 +1952,12 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
 async def go_main_menu(message: Message):
     reset_user_state(message)
     message.bot.menu_stack = [main_menu]
-    await answer_with_menu(message, "🏠 Возвращаю в главное меню", reply_markup=main_menu)
+    progress_text = format_progress_block(str(message.from_user.id))
+    await answer_with_menu(
+        message,
+        f"🏠 Возвращаю в главное меню\n\n{progress_text}",
+        reply_markup=main_menu,
+    )
 
 
 @dp.message(F.text == "⬅️ Назад")
@@ -3191,9 +3228,10 @@ async def calories(message: Message):
 
     # если норма уже есть — просто открываем меню КБЖУ
     message.bot.kbju_menu_open = True
+    progress_text = format_progress_block(user_id)
     await answer_with_menu(
         message,
-        "🍱 Раздел КБЖУ\n\nВыбери действие:",
+        f"🍱 Раздел КБЖУ\n\n{progress_text}\n\nВыбери действие:",
         reply_markup=kbju_menu,
     )
 
