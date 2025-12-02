@@ -1012,6 +1012,14 @@ kbju_goal_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+kbju_add_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 
 kbju_after_meal_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -3128,7 +3136,7 @@ async def calories_add(message: Message):
         "• 100 г овсянки, 2 яйца, 1 банан\n"
         "• 150 г куриной грудки и 200 г риса\n\n"
         "Важно писать именно в такой последовательности, где сначала идёт количество (например: 100 г или 2 шт), а после — сам продукт.",
-        reply_markup=kbju_menu,
+        reply_markup=kbju_add_menu,
     )
 
 
