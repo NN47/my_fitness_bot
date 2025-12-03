@@ -2074,9 +2074,11 @@ def has_pending_supplement_amount(message: Message) -> bool:
     """
 
     user_id = str(message.from_user.id)
+    context_is_supplement = getattr(message.bot, "date_selection_context", None) == "supplement_log"
+    awaiting_amount = getattr(message.bot, "expecting_supplement_amount", False)
     choice = getattr(message.bot, "supplement_log_choice", {}).get(user_id)
     selected_date = getattr(message.bot, "supplement_log_date", {}).get(user_id)
-    return bool(choice) or selected_date is not None
+    return awaiting_amount or context_is_supplement or bool(choice) or selected_date is not None
 
 
 def load_supplements_from_db(user_id: str) -> list[dict]:
