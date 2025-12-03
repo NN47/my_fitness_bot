@@ -911,10 +911,16 @@ def build_kbju_day_actions_keyboard(target_date: date) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="➕ Добавить",
+                    callback_data=f"meal_cal_add:{target_date.isoformat()}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="⬅️ Назад к календарю",
                     callback_data=f"meal_cal_back:{target_date.year}-{target_date.month:02d}",
                 )
-            ]
+            ],
         ]
     )
 
@@ -1941,6 +1947,12 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
     if hasattr(message.bot, "meal_edit_context"):
         try:
             message.bot.meal_edit_context.pop(user_id, None)
+        except Exception:
+            pass
+
+    if hasattr(message.bot, "meal_entry_dates"):
+        try:
+            message.bot.meal_entry_dates.pop(user_id, None)
         except Exception:
             pass
 
@@ -3170,6 +3182,14 @@ def build_meals_actions_keyboard(
         rows.append(
             [
                 InlineKeyboardButton(
+                    text="➕ Добавить",
+                    callback_data=f"meal_cal_add:{target_date.isoformat()}",
+                )
+            ]
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
                     text="⬅️ Назад к календарю",
                     callback_data=f"meal_cal_back:{target_date.year}-{target_date.month:02d}",
                 )
@@ -3568,7 +3588,7 @@ async def handle_food_input(message: Message):
         return
 
     user_id = str(message.from_user.id)
-    entry_date = date.today()
+    entry_date = getattr(message.bot, "meal_entry_dates", {}).get(user_id, date.today())
 
     translated_query = translate_text(user_text, source_lang="ru", target_lang="en")
     print(f"🍱 Перевод запроса для API: {translated_query}")
@@ -3641,6 +3661,8 @@ async def handle_food_input(message: Message):
 
     # Закрываем режим ввода еды
     message.bot.expecting_food_input = False
+    if hasattr(message.bot, "meal_entry_dates"):
+        message.bot.meal_entry_dates.pop(user_id, None)
 
     text = "\n".join(lines)
     await answer_with_menu(
@@ -3862,6 +3884,30 @@ async def select_kbju_calendar_day(callback: CallbackQuery):
     _, date_str = callback.data.split(":", 1)
     target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     await show_day_meals(callback.message, str(callback.from_user.id), target_date)
+
+
+@dp.callback_query(F.data.startswith("meal_cal_add:"))
+async def add_kbju_from_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, date_str = callback.data.split(":", 1)
+    target_date = date.fromisoformat(date_str)
+    user_id = str(callback.from_user.id)
+
+    reset_user_state(callback.message, keep_supplements=True)
+    callback.bot.kbju_menu_open = True
+    callback.bot.expecting_food_input = True
+
+    if not hasattr(callback.bot, "meal_entry_dates"):
+        callback.bot.meal_entry_dates = {}
+    callback.bot.meal_entry_dates[user_id] = target_date
+
+    await answer_with_menu(
+        callback.message,
+        "🍱 Раздел КБЖУ\n\n"
+        "Напиши, что ты съел(а) одним сообщением — я запишу это на выбранную дату.\n\n"
+        f"Дата: {target_date.strftime('%d.%m.%Y')}",
+        reply_markup=kbju_add_menu,
+    )
 
 
 @dp.callback_query(F.data.startswith("wrk_add:"))
