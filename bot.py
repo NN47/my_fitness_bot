@@ -1578,12 +1578,15 @@ async def delete_entry_start(message: Message):
     lambda m: not getattr(m.bot, "expecting_weight", False),
     # не срабатываем, если идёт тест КБЖУ
     lambda m: getattr(m.bot, "kbju_test_step", None) is None,
-    # не срабатываем, если ждём количество добавки
-    lambda m: not getattr(m.bot, "expecting_supplement_amount", False),
-    lambda m: not has_pending_supplement_amount(m),
     lambda m: not getattr(m.bot, "expecting_supplement_history_amount", False),
 )
 async def process_number(message: Message):
+
+    # Если пользователь вводит число в процессе отметки добавки, перенаправляем
+    # в соответствующий обработчик и не создаём тренировочную запись.
+    if has_pending_supplement_amount(message):
+        await set_supplement_amount(message)
+        return
 
     user_id = str(message.from_user.id)
     number = int(message.text)
