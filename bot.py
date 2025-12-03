@@ -1447,6 +1447,7 @@ async def delete_entry_start(message: Message):
     lambda m: getattr(m.bot, "kbju_test_step", None) is None,
     # не срабатываем, если ждём количество добавки
     lambda m: not getattr(m.bot, "expecting_supplement_amount", False),
+    lambda m: not has_pending_supplement_amount(m),
     lambda m: not getattr(m.bot, "expecting_supplement_history_amount", False),
 )
 async def process_number(message: Message):
@@ -2052,6 +2053,20 @@ def parse_supplement_amount(text: str) -> float | None:
         return None
 
 
+def has_pending_supplement_amount(message: Message) -> bool:
+    """Понимаем, что пользователь находится в потоке отметки приёма добавки.
+
+    Иногда флаг ``expecting_supplement_amount`` может сбрасываться другими
+    обработчиками. Чтобы пользователь не попадал в тренировочный сценарий,
+    дополнительно проверяем, что для него выбрана добавка или дата приёма.
+    """
+
+    user_id = str(message.from_user.id)
+    choice = getattr(message.bot, "supplement_log_choice", {}).get(user_id)
+    selected_date = getattr(message.bot, "supplement_log_date", {}).get(user_id)
+    return bool(choice) or selected_date is not None
+
+
 def load_supplements_from_db(user_id: str) -> list[dict]:
     session = SessionLocal()
     try:
@@ -2652,7 +2667,10 @@ async def log_supplement_intake(message: Message):
     await answer_with_menu(message, get_date_prompt("supplement_log"), reply_markup=training_date_menu)
 
 
-@dp.message(lambda m: getattr(m.bot, "expecting_supplement_amount", False))
+@dp.message(
+    lambda m: getattr(m.bot, "expecting_supplement_amount", False)
+    or has_pending_supplement_amount(m)
+)
 async def set_supplement_amount(message: Message):
     user_id = str(message.from_user.id)
     if not hasattr(message.bot, "supplement_log_choice"):
