@@ -1990,6 +1990,9 @@ async def go_main_menu(message: Message):
 
 @dp.message(F.text == "⬅️ Назад")
 async def go_back(message: Message):
+    # запоминаем, была ли открыта КБЖУ-сессия, чтобы не терять флаг при возврате
+    kbju_was_open = getattr(message.bot, "kbju_menu_open", False)
+
     reset_user_state(message, keep_supplements=True)
 
     stack = getattr(message.bot, "menu_stack", [main_menu])
@@ -2001,6 +2004,11 @@ async def go_back(message: Message):
 
     previous_menu = stack[-1] if stack else main_menu
     message.bot.menu_stack = stack
+
+    # если были в разделе КБЖУ, возвращая меню снова включаем обработчики этого раздела
+    kbju_menus = {kbju_menu, kbju_intro_menu, kbju_add_menu, kbju_after_meal_menu}
+    if kbju_was_open or previous_menu in kbju_menus:
+        message.bot.kbju_menu_open = True
 
     await answer_with_menu(message, "⬅️ Возвращаюсь назад", reply_markup=previous_menu)
 
