@@ -119,6 +119,8 @@ class Workout(Base):
     variant = Column(String)
     count = Column(Integer)
     date = Column(Date, default=date.today)
+    # 🔥 Новое поле — примерные сожжённые калории
+    calories = Column(Float, default=0)
 
 class Weight(Base):
     __tablename__ = "weights"
@@ -196,12 +198,20 @@ class SupplementEntry(Base):
 
 Base.metadata.create_all(engine)
 
-# Простая миграция для добавления столбца amount в supplement_entries, если его ещё нет.
+# Простая миграция для добавления столбцов
 with engine.connect() as conn:
     inspector = inspect(conn)
+
+    # supplement_entries.amount
     columns = {col["name"] for col in inspector.get_columns("supplement_entries")}
     if "amount" not in columns:
         conn.execute(text("ALTER TABLE supplement_entries ADD COLUMN amount FLOAT"))
+        conn.commit()
+
+    # 🔥 workouts.calories
+    workout_columns = {col["name"] for col in inspector.get_columns("workouts")}
+    if "calories" not in workout_columns:
+        conn.execute(text("ALTER TABLE workouts ADD COLUMN calories FLOAT"))
         conn.commit()
 
 
@@ -561,16 +571,95 @@ def calculate_kbju_from_test(data: dict) -> tuple[float, float, float, float, st
 
 def add_workout(user_id, exercise, variant, count):
     session = SessionLocal()
-    workout = Workout(
-        user_id=str(user_id),
-        exercise=exercise,
-        variant=variant,
-        count=count,
-        date=date.today()
-    )
-    session.add(workout)
-    session.commit()
-    session.close()
+    try:
+        calories = calculate_workout_calories(str(user_id), exercise, variant, count)
+        workout = Workout(
+            user_id=str(user_id),
+            exercise=exercise,
+            variant=variant,
+            count=count,
+            date=date.today(),
+            calories=calories,
+        )
+        session.add(workout)
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_last_weight_kg(user_id: str) -> float | None:
+    """Берём последний записанный вес пользователя (кг)."""
+    session = SessionLocal()
+    try:
+        w = (
+            session.query(Weight)
+            .filter(Weight.user_id == str(user_id))
+            .order_by(Weight.date.desc(), Weight.id.desc())
+            .first()
+        )
+        if not w:
+            return None
+        try:
+            return float(str(w.value).replace(",", "."))
+        except ValueError:
+            return None
+    finally:
+        session.close()
+
+
+def estimate_met_for_exercise(exercise: str) -> float:
+    """Очень грубая оценка интенсивности упражнения (MET)."""
+    name = (exercise or "").lower()
+    if "ходь" in name or "walk" in name:
+        return 3.5
+    if "бег" in name or "run" in name:
+        return 7.0
+    if "прыж" in name or "jump" in name:
+        return 8.0
+    if "присед" in name or "squat" in name:
+        return 5.0
+    if "отжим" in name or "push" in name:
+        return 5.0
+    # по умолчанию — умеренная нагрузка
+    return 4.5
+
+
+def calculate_workout_calories(
+    user_id: str,
+    exercise: str,
+    variant: str | None,
+    count: int | float,
+) -> float:
+    """
+    Грубая оценка калорий по тренировке.
+    - Если variant == "Минуты" — считаем по формуле MET.
+    - Если variant == "Количество шагов" — переводим шаги в минуты.
+    - Иначе считаем по повторам.
+    """
+
+    weight = get_last_weight_kg(user_id) or 75.0  # дефолт, если веса нет
+    count = float(count or 0)
+
+    # 1️⃣ Упражнения по времени (Минуты)
+    if variant == "Минуты":
+        minutes = count
+        met = estimate_met_for_exercise(exercise)
+        # формула: калории = MET * 3.5 * вес(кг) / 200 * минуты
+        return met * 3.5 * weight / 200.0 * minutes
+
+    # 2️⃣ Ходьба по шагам
+    if variant == "Количество шагов":
+        steps = count
+        # грубо: ~80 шагов в минуту
+        minutes = steps / 80.0
+        met = 3.0  # лёгкая активность
+        return met * 3.5 * weight / 200.0 * minutes
+
+    # 3️⃣ Всё остальное — по повторам
+    reps = count
+    # базово: ~0.4 ккал за повтор для 70 кг, масштабируем по весу
+    base_per_rep = 0.4
+    return reps * base_per_rep * (weight / 70.0)
 
 def get_today_summary_text(user_id: str) -> str:
     session = SessionLocal()
@@ -888,10 +977,18 @@ async def show_day_workouts(message: Message, user_id: str, target_date: date):
         return
 
     text = [f"📅 {target_date.strftime('%d.%m.%Y')} — тренировки:"]
+    total_calories = 0.0
+
     for w in workouts:
-        variant_text = f" ({w.variant})" if w.variant and w.variant != "Минуты" else ""
+        variant_text = f" ({w.variant})" if w.variant else ""
+        entry_calories = w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
+        total_calories += entry_calories
         formatted_count = format_count_with_unit(w.count, w.variant)
-        text.append(f"• {w.exercise}{variant_text}: {formatted_count}")
+        text.append(
+            f"• {w.exercise}{variant_text}: {formatted_count} (~{entry_calories:.0f} ккал)"
+        )
+
+    text.append(f"\n🔥 Итого за день: ~{total_calories:.0f} ккал")
 
     await message.answer(
         "\n".join(text), reply_markup=build_day_actions_keyboard(workouts, target_date)
@@ -1501,6 +1598,9 @@ async def process_number(message: Message):
                 await message.answer("Не нашёл тренировку для изменения.")
             else:
                 workout.count = number
+                workout.calories = calculate_workout_calories(
+                    user_id, workout.exercise, workout.variant, number
+                )
                 session.commit()
                 target_date = workout.date
                 await message.answer(
@@ -1650,31 +1750,32 @@ async def process_number(message: Message):
     exercise = message.bot.current_exercise
     variant = message.bot.current_variant
 
-    # Сохраняем тренировку в базу
     session = SessionLocal()
-    # если пользователь выбрал дату ранее — сохраняем на неё
-    selected_date = getattr(message.bot, "selected_date", date.today())
+    try:
+        selected_date = getattr(message.bot, "selected_date", date.today())
+        calories = calculate_workout_calories(user_id, exercise, variant, count)
 
-    new_workout = Workout(
-        user_id=user_id,
-        exercise=exercise,
-        variant=variant,
-        count=count,
-        date=selected_date
-    )
+        new_workout = Workout(
+            user_id=user_id,
+            exercise=exercise,
+            variant=variant,
+            count=count,
+            date=selected_date,
+            calories=calories,
+        )
 
-    session.add(new_workout)
-    session.commit()
+        session.add(new_workout)
+        session.commit()
 
-    # Считаем общее количество по выбранной дате
-    total_for_date = (
-        session.query(Workout)
-        .filter_by(user_id=user_id, exercise=exercise, date=selected_date)
-        .with_entities(func.sum(Workout.count))
-        .scalar()
-    ) or 0
-
-    session.close()
+        # Считаем общее количество по выбранной дате
+        total_for_date = (
+            session.query(Workout)
+            .filter_by(user_id=user_id, exercise=exercise, date=selected_date)
+            .with_entities(func.sum(Workout.count))
+            .scalar()
+        ) or 0
+    finally:
+        session.close()
 
     date_label = (
         "сегодня" if selected_date == date.today() else selected_date.strftime("%d.%m.%Y")
@@ -4059,10 +4160,19 @@ async def workouts_today(message: Message):
 
     # формируем текст для вывода
     text = "💪 Результаты за сегодня:\n\n"
+    total_calories = 0.0
+
     for i, w in enumerate(todays_workouts, 1):
         variant_text = f" ({w.variant})" if w.variant and w.variant != "Минуты" else ""
         formatted_count = format_count_with_unit(w.count, w.variant)
-        text += f"{i}. {w.exercise}{variant_text}: {formatted_count}\n"
+        entry_calories = w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
+        total_calories += entry_calories
+        text += (
+            f"{i}. {w.exercise}{variant_text}: {formatted_count} "
+            f"(~{entry_calories:.0f} ккал)\n"
+        )
+
+    text += f"\n🔥 Примерно сожжено за сегодня: ~{total_calories:.0f} ккал"
 
     await answer_with_menu(message, text, reply_markup=today_menu)
 
@@ -4095,7 +4205,11 @@ async def workouts_history(message: Message):
     for w in history:
         variant_text = f" ({w.variant})" if w.variant and w.variant != "Минуты" else ""
         formatted_count = format_count_with_unit(w.count, w.variant)
-        text += f"{w.date}: {w.exercise}{variant_text}: {formatted_count}\n"
+        entry_calories = w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
+        text += (
+            f"{w.date}: {w.exercise}{variant_text}: "
+            f"{formatted_count} (~{entry_calories:.0f} ккал)\n"
+        )
 
     await answer_with_menu(message, text, reply_markup=history_menu)
 
