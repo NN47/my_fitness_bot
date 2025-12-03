@@ -1030,6 +1030,15 @@ kbju_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+kbju_goal_view_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="✏️ Редактировать")],
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 kbju_intro_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="✅ Пройти быстрый тест КБЖУ")],
@@ -1900,6 +1909,7 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "kbju_menu_open",
         "awaiting_kbju_choice",
         "expecting_kbju_manual_norm",
+        "awaiting_kbju_goal_edit",
 
     ]:
         if hasattr(message.bot, attr):
@@ -3312,14 +3322,23 @@ async def kbju_goal_menu_entry(message: Message):
     reset_user_state(message, keep_supplements=True)
     user_id = str(message.from_user.id)
     message.bot.kbju_menu_open = True
-    message.bot.awaiting_kbju_choice = True
+    message.bot.awaiting_kbju_goal_edit = False
 
     settings = get_kbju_settings(user_id)
 
     if settings:
+        message.bot.awaiting_kbju_choice = False
+        message.bot.awaiting_kbju_goal_edit = True
         text = format_current_kbju_goal(settings)
-        await message.answer(text, parse_mode="HTML")
+        await answer_with_menu(
+            message,
+            text,
+            parse_mode="HTML",
+            reply_markup=kbju_goal_view_menu,
+        )
+        return
     else:
+        message.bot.awaiting_kbju_choice = True
         await answer_with_menu(
             message,
             "🍱 Раздел КБЖУ\n\n",
@@ -3330,11 +3349,30 @@ async def kbju_goal_menu_entry(message: Message):
         )
         return
 
+
+@dp.message(
+    lambda m: m.text == "✏️ Редактировать" and getattr(m.bot, "awaiting_kbju_goal_edit", False)
+)
+async def kbju_goal_edit(message: Message):
+    reset_user_state(message, keep_supplements=True)
+    user_id = str(message.from_user.id)
+    message.bot.kbju_menu_open = True
+    message.bot.awaiting_kbju_choice = True
+
+    settings = get_kbju_settings(user_id)
+    intro_text = (
+        "🍱 Раздел КБЖУ\n\n"
+        "Можно пересчитать норму через тест или задать свои числа вручную.\n\n"
+        "Что выбираешь?"
+    )
+
+    if not settings:
+        await kbju_goal_menu_entry(message)
+        return
+
     await answer_with_menu(
         message,
-        "🎯 Настройка цели по КБЖУ\n\n",
-        "Можно пересчитать норму через тест или задать свои числа вручную.\n\n",
-        "Что выбираешь?",
+        intro_text,
         reply_markup=kbju_intro_menu,
     )
 
