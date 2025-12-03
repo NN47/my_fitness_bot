@@ -592,11 +592,15 @@ def get_today_summary_text(user_id: str) -> str:
         summary = f"Сегодня ({today_str}) тренировок пока нет 💭\n"
     else:
         summary = f"📅 {today_str}\n 🏋️ Тренировка:\n"
-        totals = {}
+        totals: dict[str, dict[str, str | int]] = {}
         for w in workouts:
-            totals[w.exercise] = totals.get(w.exercise, 0) + w.count
-        for ex, total in totals.items():
-            summary += f"• {ex}: {total}\n"
+            if w.exercise not in totals:
+                totals[w.exercise] = {"count": 0, "variant": w.variant}
+            totals[w.exercise]["count"] = totals[w.exercise].get("count", 0) + w.count
+            if not totals[w.exercise].get("variant"):
+                totals[w.exercise]["variant"] = w.variant
+        for ex, info in totals.items():
+            summary += f"• {ex}: {format_count_with_unit(info.get('count', 0), info.get('variant'))}\n"
 
     # --- последний вес ---
     weight = session.query(Weight).filter_by(user_id=user_id).order_by(Weight.id.desc()).first()
@@ -885,8 +889,9 @@ async def show_day_workouts(message: Message, user_id: str, target_date: date):
 
     text = [f"📅 {target_date.strftime('%d.%m.%Y')} — тренировки:"]
     for w in workouts:
-        variant_text = f" ({w.variant})" if w.variant else ""
-        text.append(f"• {w.exercise}{variant_text}: {w.count}")
+        variant_text = f" ({w.variant})" if w.variant and w.variant != "Минуты" else ""
+        formatted_count = format_count_with_unit(w.count, w.variant)
+        text.append(f"• {w.exercise}{variant_text}: {formatted_count}")
 
     await message.answer(
         "\n".join(text), reply_markup=build_day_actions_keyboard(workouts, target_date)
@@ -1186,6 +1191,7 @@ bodyweight_exercises = [
     "Скакалка",
     "Становая тяга без утяжелителя",
     "Румынская тяга без утяжелителя",
+    "Планка",
     "Йога",
     "Другое",
 ]
@@ -1232,6 +1238,18 @@ count_menu = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True,
 )
+
+
+def format_count_with_unit(count: int | float, variant: str | None) -> str:
+    if variant == "Минуты":
+        unit = "мин"
+    elif variant == "Количество шагов":
+        unit = "шагов"
+    elif variant == "Количество прыжков":
+        unit = "раз"
+    else:
+        unit = "повторений"
+    return f"{count} {unit}"
 
 
 my_data_menu = ReplyKeyboardMarkup(
@@ -1408,6 +1426,14 @@ async def choose_exercise(message: Message):
     elif message.text == "Скакалка":
         message.bot.current_variant = "Количество прыжков"
         await message.answer("Сколько раз прыгал на скакалке? Введи число:")
+        return
+    elif message.text == "Йога":
+        message.bot.current_variant = "Минуты"
+        await message.answer("Сколько минут занимался йогой? Введи число:")
+        return
+    elif message.text == "Планка":
+        message.bot.current_variant = "Минуты"
+        await message.answer("Сколько минут стоял в планке? Введи число:")
         return
 
     # обычные упражнения
@@ -1651,7 +1677,7 @@ async def process_number(message: Message):
     )
 
     await message.answer(
-        f"Записал! 👍\nВсего {exercise} за {date_label}: {total_for_date} повторений"
+        f"Записал! 👍\nВсего {exercise} за {date_label}: {format_count_with_unit(total_for_date, variant)}"
     )
     await message.answer("Если хочешь — введи ещё количество или вернись через '⬅️ Назад'")
 
@@ -4016,8 +4042,9 @@ async def workouts_today(message: Message):
     # формируем текст для вывода
     text = "💪 Результаты за сегодня:\n\n"
     for i, w in enumerate(todays_workouts, 1):
-        variant_text = f" ({w.variant})" if w.variant else ""
-        text += f"{i}. {w.exercise}{variant_text}: {w.count}\n"
+        variant_text = f" ({w.variant})" if w.variant and w.variant != "Минуты" else ""
+        formatted_count = format_count_with_unit(w.count, w.variant)
+        text += f"{i}. {w.exercise}{variant_text}: {formatted_count}\n"
 
     await answer_with_menu(message, text, reply_markup=today_menu)
 
@@ -4048,8 +4075,9 @@ async def workouts_history(message: Message):
     # формируем текст
     text = "📅 История твоих тренировок:\n\n"
     for w in history:
-        variant_text = f" ({w.variant})" if w.variant else ""
-        text += f"{w.date}: {w.exercise}{variant_text}: {w.count} раз\n"
+        variant_text = f" ({w.variant})" if w.variant and w.variant != "Минуты" else ""
+        formatted_count = format_count_with_unit(w.count, w.variant)
+        text += f"{w.date}: {w.exercise}{variant_text}: {formatted_count}\n"
 
     await answer_with_menu(message, text, reply_markup=history_menu)
 
@@ -4083,8 +4111,9 @@ async def delete_from_history_start(message: Message):
     # формируем текст
     text = "Выбери номер записи для удаления:\n\n"
     for i, w in enumerate(history, 1):
-        variant_text = f" ({w.variant})" if w.variant else ""
-        text += f"{i}. {w.date} — {w.exercise}{variant_text}: {w.count}\n"
+        variant_text = f" ({w.variant})" if w.variant and w.variant != "Минуты" else ""
+        formatted_count = format_count_with_unit(w.count, w.variant)
+        text += f"{i}. {w.date} — {w.exercise}{variant_text}: {formatted_count}\n"
 
     await message.answer(text)
 
