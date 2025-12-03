@@ -1010,6 +1010,10 @@ async def proceed_after_date_selection(message: Message):
             message.bot.supplement_log_date = {}
         message.bot.supplement_log_date[user_id] = selected_date
         message.bot.expecting_supplement_amount = True
+        message.bot.expecting_supplement_amount_users = getattr(
+            message.bot, "expecting_supplement_amount_users", set()
+        )
+        message.bot.expecting_supplement_amount_users.add(user_id)
 
         await message.answer(
             "Укажи количество добавки цифрой (например, 1 или 2.5).",
@@ -2102,9 +2106,19 @@ def has_pending_supplement_amount(message: Message) -> bool:
     user_id = str(message.from_user.id)
     context_is_supplement = getattr(message.bot, "date_selection_context", None) == "supplement_log"
     awaiting_amount = getattr(message.bot, "expecting_supplement_amount", False)
+    awaiting_for_user = (
+        user_id
+        in getattr(message.bot, "expecting_supplement_amount_users", set())
+    )
     choice = getattr(message.bot, "supplement_log_choice", {}).get(user_id)
     selected_date = getattr(message.bot, "supplement_log_date", {}).get(user_id)
-    return awaiting_amount or context_is_supplement or bool(choice) or selected_date is not None
+    return (
+        awaiting_amount
+        or awaiting_for_user
+        or context_is_supplement
+        or bool(choice)
+        or selected_date is not None
+    )
 
 
 def load_supplements_from_db(user_id: str) -> list[dict]:
@@ -2202,6 +2216,8 @@ def reset_supplement_state(message: Message):
         message.bot.supplement_log_date.pop(str(message.from_user.id), None)
     if hasattr(message.bot, "supplement_history_action"):
         message.bot.supplement_history_action.pop(str(message.from_user.id), None)
+    if hasattr(message.bot, "expecting_supplement_amount_users"):
+        message.bot.expecting_supplement_amount_users.discard(str(message.from_user.id))
 
 
 def get_active_supplement(message: Message) -> dict:
@@ -2767,6 +2783,8 @@ async def set_supplement_amount(message: Message):
         await message.answer("Не нашёл выбранную добавку для записи приёма.")
 
     message.bot.expecting_supplement_amount = False
+    if hasattr(message.bot, "expecting_supplement_amount_users"):
+        message.bot.expecting_supplement_amount_users.discard(user_id)
     if hasattr(message.bot, "supplement_log_choice"):
         message.bot.supplement_log_choice.pop(user_id, None)
     if hasattr(message.bot, "supplement_log_date"):
