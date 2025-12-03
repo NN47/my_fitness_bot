@@ -710,6 +710,31 @@ def get_today_summary_text(user_id: str) -> str:
     return f"{motivation}\n\n{summary}"
 
 
+def format_today_workouts_block(user_id: str) -> str:
+    today = date.today()
+    today_str = today.strftime("%d.%m.%Y")
+    workouts = get_workouts_for_day(user_id, today)
+
+    if not workouts:
+        return f"📅 {today_str}: тренировок пока нет."
+
+    text = [f"📅 {today_str} — тренировки:"]
+    total_calories = 0.0
+
+    for w in workouts:
+        variant_text = f" ({w.variant})" if w.variant else ""
+        entry_calories = w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
+        total_calories += entry_calories
+        formatted_count = format_count_with_unit(w.count, w.variant)
+        text.append(
+            f"• {w.exercise}{variant_text}: {formatted_count} (~{entry_calories:.0f} ккал)"
+        )
+
+    text.append(f"🔥 Итого за день: ~{total_calories:.0f} ккал")
+
+    return "\n".join(text)
+
+
 def build_progress_bar(current: float, target: float, length: int = 20) -> str:
     if target <= 0:
         filled_blocks = 0
@@ -1420,12 +1445,14 @@ async def start(message: Message):
     user_id = str(message.from_user.id)
     text = get_today_summary_text(user_id)
     progress_text = format_progress_block(user_id)
+    workouts_text = format_today_workouts_block(user_id)
     name = message.from_user.first_name or "друг"
     welcome = (
         f"👋 Привет, {name}!\n"
         f"Твой фитнес-помощник готов 💪\n\n"
         f"{text}\n\n"
         f"{progress_text}\n\n"
+        f"{workouts_text}\n\n"
         "Выбери действие ниже:"
     )
     await answer_with_menu(message, welcome, reply_markup=main_menu)
@@ -1436,9 +1463,10 @@ async def start(message: Message):
 @dp.message(F.text == "🏋️ Тренировка")
 async def show_training_menu(message: Message):
     reset_user_state(message, keep_supplements=True)
+    workouts_text = format_today_workouts_block(str(message.from_user.id))
     await answer_with_menu(
         message,
-        "Что делаем?",
+        f"Что делаем?\n\n{workouts_text}",
         reply_markup=training_menu,
     )
 
@@ -2138,9 +2166,10 @@ async def go_main_menu(message: Message):
     reset_user_state(message)
     message.bot.menu_stack = [main_menu]
     progress_text = format_progress_block(str(message.from_user.id))
+    workouts_text = format_today_workouts_block(str(message.from_user.id))
     await answer_with_menu(
         message,
-        f"🏠 Возвращаю в главное меню\n\n{progress_text}",
+        f"🏠 Возвращаю в главное меню\n\n{progress_text}\n\n{workouts_text}",
         reply_markup=main_menu,
     )
 
