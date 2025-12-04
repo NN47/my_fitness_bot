@@ -4267,25 +4267,14 @@ async def workouts_today(message: Message):
         await answer_with_menu(message, text, reply_markup=my_workouts_menu)
         return
 
-    # сохраняем список для возможности удаления
+    # если тренировки есть — остаётся старое поведение
     message.bot.todays_workouts = todays_workouts
     message.bot.expecting_delete = False
 
-    # формируем текст для вывода
     text = "💪 Результаты за сегодня:\n\n"
-    total_calories = 0.0
-
     for i, w in enumerate(todays_workouts, 1):
-        variant_text = f" ({w.variant})" if w.variant and w.variant != "Минуты" else ""
-        formatted_count = format_count_with_unit(w.count, w.variant)
-        entry_calories = w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
-        total_calories += entry_calories
-        text += (
-            f"{i}. {w.exercise}{variant_text}: {formatted_count} "
-            f"(~{entry_calories:.0f} ккал)\n"
-        )
-
-    text += f"\n🔥 Примерно сожжено за сегодня: ~{total_calories:.0f} ккал"
+        variant_text = f" ({w.variant})" if w.variant else ""
+        text += f"{i}. {w.exercise}{variant_text}: {w.count}\n"
 
     await answer_with_menu(message, text, reply_markup=today_menu)
 
