@@ -710,15 +710,19 @@ def get_today_summary_text(user_id: str) -> str:
     return f"{motivation}\n\n{summary}"
 
 
-def format_today_workouts_block(user_id: str) -> str:
+def format_today_workouts_block(user_id: str, include_date: bool = True) -> str:
     today = date.today()
     today_str = today.strftime("%d.%m.%Y")
     workouts = get_workouts_for_day(user_id, today)
 
     if not workouts:
-        return f"📅 {today_str}: тренировок пока нет."
+        if include_date:
+            return f"📅 {today_str}: тренировок пока нет."
+        return "Тренировок на сегодня пока нет."
 
-    text = [f"📅 {today_str} — тренировки:"]
+    text = ["Тренировки:"]
+    if include_date:
+        text[0] = f"📅 {today_str} — тренировки:"
     total_calories = 0.0
 
     for w in workouts:
@@ -1445,11 +1449,13 @@ async def start(message: Message):
     user_id = str(message.from_user.id)
     text = get_today_summary_text(user_id)
     progress_text = format_progress_block(user_id)
-    workouts_text = format_today_workouts_block(user_id)
+    workouts_text = format_today_workouts_block(user_id, include_date=False)
     name = message.from_user.first_name or "друг"
+    today_line = f"📅 Сегодня: {date.today().strftime('%d.%m.%Y')}"
     welcome = (
         f"👋 Привет, {name}!\n"
         f"Твой фитнес-помощник готов 💪\n\n"
+        f"{today_line}\n\n"
         f"{text}\n\n"
         f"{progress_text}\n\n"
         f"{workouts_text}\n\n"
@@ -2166,10 +2172,11 @@ async def go_main_menu(message: Message):
     reset_user_state(message)
     message.bot.menu_stack = [main_menu]
     progress_text = format_progress_block(str(message.from_user.id))
-    workouts_text = format_today_workouts_block(str(message.from_user.id))
+    workouts_text = format_today_workouts_block(str(message.from_user.id), include_date=False)
+    today_line = f"📅 Сегодня: {date.today().strftime('%d.%m.%Y')}"
     await answer_with_menu(
         message,
-        f"🏠 Возвращаю в главное меню\n\n{progress_text}\n\n{workouts_text}",
+        f"🏠 Возвращаю в главное меню\n\n{today_line}\n\n{progress_text}\n\n{workouts_text}",
         reply_markup=main_menu,
     )
 
