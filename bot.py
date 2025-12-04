@@ -664,51 +664,107 @@ def calculate_workout_calories(
 
 def get_today_summary_text(user_id: str) -> str:
     session = SessionLocal()
-    today = date.today()
-    today_str = datetime.now().strftime("%d.%m.%Y")
+    try:
+        today = date.today()
+        today_str = datetime.now().strftime("%d.%m.%Y")
 
-    greetings = [
-        "🔥 Новый день — новые победы!",
-        "🚀 Пора действовать!",
-        "💪 Сегодня ты становишься сильнее!",
-        "🌟 Всё получится, просто начни!",
-        "🏁 Вперёд к цели!"
-    ]
-    motivation = random.choice(greetings)
+        greetings = [
+            "🔥 Новый день — новые победы!",
+            "🚀 Пора действовать!",
+            "💪 Сегодня ты становишься сильнее!",
+            "🌟 Всё получится, просто начни!",
+            "🏁 Вперёд к цели!",
+        ]
+        motivation = random.choice(greetings)
 
-    # --- тренировки ---
-    workouts = session.query(Workout).filter_by(user_id=user_id, date=today).all()
-    if not workouts:
-        summary = f"Сегодня ({today_str}) тренировок пока нет 💭\n"
-    else:
-        summary = f"📅 {today_str}\n 🏋️ Тренировка:\n"
-        totals: dict[str, dict[str, str | int]] = {}
-        for w in workouts:
-            if w.exercise not in totals:
-                totals[w.exercise] = {"count": 0, "variant": w.variant}
-            totals[w.exercise]["count"] = totals[w.exercise].get("count", 0) + w.count
-            if not totals[w.exercise].get("variant"):
-                totals[w.exercise]["variant"] = w.variant
-        for ex, info in totals.items():
-            summary += f"• {ex}: {format_count_with_unit(info.get('count', 0), info.get('variant'))}\n"
+        # --- записи за сегодня ---
+        workouts = session.query(Workout).filter_by(user_id=user_id, date=today).all()
+        meals_today = session.query(Meal).filter_by(user_id=user_id, date=today).all()
 
-    # --- последний вес ---
-    weight = session.query(Weight).filter_by(user_id=user_id).order_by(Weight.id.desc()).first()
-    if weight:
-        summary += f"\n⚖️ Вес: {weight.value} кг (от {weight.date})"
+        # --- последний вес ---
+        weight = (
+            session.query(Weight)
+            .filter_by(user_id=user_id)
+            .order_by(Weight.id.desc())
+            .first()
+        )
 
-    # --- последние замеры ---
-    m = session.query(Measurement).filter_by(user_id=user_id).order_by(Measurement.id.desc()).first()
-    if m:
-        parts = []
-        if m.chest: parts.append(f"Грудь {m.chest} см")
-        if m.waist: parts.append(f"Талия {m.waist} см")
-        if m.hips: parts.append(f"Бёдра {m.hips} см")
-        if parts:
-            summary += f"\n📏 Замеры: {', '.join(parts)} ({m.date})"
+        # --- последние замеры ---
+        m = (
+            session.query(Measurement)
+            .filter_by(user_id=user_id)
+            .order_by(Measurement.id.desc())
+            .first()
+        )
 
-    session.close()
-    return f"{motivation}\n\n{summary}"
+        # Есть ли вообще что-то за сегодня
+        has_today_anything = bool(workouts or meals_today)
+
+        # 🔹 Полный онбординг, если за сегодня нет ни тренировок, ни еды
+        if not has_today_anything:
+            summary_lines = [
+                f"Сегодня ({today_str}) у тебя пока нет записей 📭\n",
+                "🏋️ <b>Тренировки</b>\n"
+                "Записывай подходы, время и шаги. Бот считает примерный расход калорий "
+                "по типу упражнения, длительности/повторам и твоему весу.",
+                "\n🍱 <b>Питание</b>\n"
+                "Добавляй приёмы пищи — я посчитаю КБЖУ для каждого приёма и суммарно за день.",
+                "\n⚖️ <b>Вес и замеры</b>\n"
+                "Фиксируй вес и замеры (грудь, талия, бёдра), чтобы видеть прогресс не только "
+                "в цифрах калорий.",
+                "\nНачни с любого раздела в меню ниже 👇",
+            ]
+            # Можно дополнительно подсветить последний вес/замеры, если есть история
+            if weight or m:
+                summary_lines.append("\n\n<b>Последние данные:</b>")
+                if weight:
+                    summary_lines.append(
+                        f"\n⚖️ Вес: {weight.value} кг (от {weight.date})"
+                    )
+                if m:
+                    parts = []
+                    if m.chest:
+                        parts.append(f"Грудь {m.chest} см")
+                    if m.waist:
+                        parts.append(f"Талия {m.waist} см")
+                    if m.hips:
+                        parts.append(f"Бёдра {m.hips} см")
+                    if parts:
+                        summary_lines.append(
+                            f"\n📏 Замеры: {', '.join(parts)} ({m.date})"
+                        )
+
+            summary = "".join(summary_lines)
+
+        else:
+            # 🔹 Обычное поведение, когда что-то уже есть
+            if not workouts:
+                summary = f"Сегодня ({today_str}) тренировок пока нет 💭\n"
+            else:
+                summary = f"📅 {today_str}\n 🏋️ Тренировка:\n"
+                totals: dict[str, int] = {}
+                for w in workouts:
+                    totals[w.exercise] = totals.get(w.exercise, 0) + w.count
+                for ex, total in totals.items():
+                    summary += f"• {ex}: {total}\n"
+
+            if weight:
+                summary += f"\n⚖️ Вес: {weight.value} кг (от {weight.date})"
+
+            if m:
+                parts = []
+                if m.chest:
+                    parts.append(f"Грудь {m.chest} см")
+                if m.waist:
+                    parts.append(f"Талия {m.waist} см")
+                if m.hips:
+                    parts.append(f"Бёдра {m.hips} см")
+                if parts:
+                    summary += f"\n📏 Замеры: {', '.join(parts)} ({m.date})"
+
+        return f"{motivation}\n\n{summary}"
+    finally:
+        session.close()
 
 
 def format_today_workouts_block(user_id: str, include_date: bool = True) -> str:
