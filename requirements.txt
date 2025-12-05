@@ -5,14 +5,14 @@ python-dotenv
 
 # Database
 SQLAlchemy==2.0.35
-psycopg2-binary  # если PostgreSQL (удали, если используешь SQLite)
+psycopg2-binary  # если PostgreSQL
 
-# Server / API (если у тебя FastAPI-сервер)
+# Server / API
 fastapi
 uvicorn
 
-# Прочее (если используешь HTTP-запросы или JSON)
+# HTTP-запросы
 requests
 
-# Google Gemini API
-google-generativeai
+# Gemini NEW API client
+google-genai>=0.3.0
