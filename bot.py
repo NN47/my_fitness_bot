@@ -803,14 +803,26 @@ def format_today_workouts_block(user_id: str, include_date: bool = True) -> str:
     if include_date:
         text[0] = f"📅 {today_str} — тренировки:"
     total_calories = 0.0
+    aggregates: dict[tuple[str, str | None], dict[str, float]] = {}
 
     for w in workouts:
-        variant_text = f" ({w.variant})" if w.variant else ""
-        entry_calories = w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
+        entry_calories = w.calories or calculate_workout_calories(
+            user_id, w.exercise, w.variant, w.count
+        )
         total_calories += entry_calories
-        formatted_count = format_count_with_unit(w.count, w.variant)
+
+        key = (w.exercise, w.variant)
+        if key not in aggregates:
+            aggregates[key] = {"count": 0, "calories": 0.0}
+
+        aggregates[key]["count"] += w.count
+        aggregates[key]["calories"] += entry_calories
+
+    for (exercise, variant), data in aggregates.items():
+        variant_text = f" ({variant})" if variant else ""
+        formatted_count = format_count_with_unit(data["count"], variant)
         text.append(
-            f"• {w.exercise}{variant_text}: {formatted_count} (~{entry_calories:.0f} ккал)"
+            f"• {exercise}{variant_text}: {formatted_count} (~{data['calories']:.0f} ккал)"
         )
 
     text.append(f"🔥 Итого за день: ~{total_calories:.0f} ккал")
