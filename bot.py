@@ -101,9 +101,7 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
     return translated or text
 
 
-def gemini_analyze(text: str) -> str:
-    response = model.generate_content(text)
-    return response.text
+
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
