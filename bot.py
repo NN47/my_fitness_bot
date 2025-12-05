@@ -1306,6 +1306,16 @@ kbju_add_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+kbju_add_choice_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Внести данные с помощью CalorieNinja")],
+        [KeyboardButton(text="Внести данные с помощью ИИ")],
+        [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 
 kbju_after_meal_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -2197,6 +2207,7 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "expecting_supplement_history_choice",
         "expecting_supplement_history_time",
         "expecting_food_input",
+        "awaiting_kbju_add_source",
         "kbju_menu_open",
         "awaiting_kbju_choice",
         "expecting_kbju_manual_norm",
@@ -2315,7 +2326,13 @@ async def go_back(message: Message):
     message.bot.menu_stack = stack
 
     # если были в разделе КБЖУ, возвращая меню снова включаем обработчики этого раздела
-    kbju_menus = {kbju_menu, kbju_intro_menu, kbju_add_menu, kbju_after_meal_menu}
+    kbju_menus = {
+        kbju_menu,
+        kbju_intro_menu,
+        kbju_add_menu,
+        kbju_add_choice_menu,
+        kbju_after_meal_menu,
+    }
     if kbju_was_open or previous_menu in kbju_menus:
         message.bot.kbju_menu_open = True
 
@@ -3730,6 +3747,23 @@ async def kbju_goal_edit(message: Message):
 async def calories_add(message: Message):
     reset_user_state(message)
     message.bot.kbju_menu_open = True
+    message.bot.awaiting_kbju_add_source = True
+    await answer_with_menu(
+        message,
+        "🍱 Раздел КБЖУ\n\n"
+        "Выбери, как внести приём пищи:",
+        reply_markup=kbju_add_choice_menu,
+    )
+
+
+@dp.message(
+    lambda m: m.text == "Внести данные с помощью CalorieNinja"
+    and getattr(m.bot, "kbju_menu_open", False)
+)
+async def calories_add_calorieninja(message: Message):
+    reset_user_state(message)
+    message.bot.kbju_menu_open = True
+    message.bot.awaiting_kbju_add_source = False
     message.bot.expecting_food_input = True
     await answer_with_menu(
         message,
@@ -3740,6 +3774,22 @@ async def calories_add(message: Message):
         "• 150 г куриной грудки и 200 г риса\n\n"
         "Важно писать именно в такой последовательности, где сначала идёт количество (например: 100 г или 2 шт), а после — сам продукт.",
         reply_markup=kbju_add_menu,
+    )
+
+
+@dp.message(
+    lambda m: m.text == "Внести данные с помощью ИИ"
+    and getattr(m.bot, "kbju_menu_open", False)
+)
+async def calories_add_ai_stub(message: Message):
+    reset_user_state(message)
+    message.bot.kbju_menu_open = True
+    message.bot.awaiting_kbju_add_source = False
+    await answer_with_menu(
+        message,
+        "🍱 Раздел КБЖУ\n\n"
+        "Скоро добавлю возможность внести данные с помощью ИИ. Пока можно использовать CalorieNinja 👇",
+        reply_markup=kbju_add_choice_menu,
     )
 
 
