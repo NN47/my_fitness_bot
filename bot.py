@@ -1644,72 +1644,139 @@ async def start(message: Message):
 async def analyze_activity(message: Message):
     user_id = str(message.from_user.id)
     today = date.today()
-
-    weight = get_last_weight_kg(user_id)
-    weight_text = f"{weight:.1f} кг" if weight is not None else "не указан"
-
-    meal_totals = get_daily_meal_totals(user_id, today)
+    today_str = today.strftime("%d.%m.%Y")
 
     session = SessionLocal()
     try:
-        workout_count, workout_calories = (
-            session.query(
-                func.count(Workout.id),
-                func.coalesce(func.sum(Workout.calories), 0.0),
-            )
+        # 🔹 Тренировки за сегодня
+        workouts = (
+            session.query(Workout)
             .filter(Workout.user_id == user_id, Workout.date == today)
-            .one()
+            .all()
         )
+
+        workouts_by_ex = {}
+        total_workout_calories = 0.0
+
+        for w in workouts:
+            key = (w.exercise, w.variant)
+            entry = workouts_by_ex.setdefault(
+                key, {"count": 0, "calories": 0.0}
+            )
+            entry["count"] += w.count
+            cals = w.calories or calculate_workout_calories(
+                user_id, w.exercise, w.variant, w.count
+            )
+            entry["calories"] += cals
+            total_workout_calories += cals
+
+        if workouts_by_ex:
+            workout_lines = []
+            for (exercise, variant), data in workouts_by_ex.items():
+                formatted_count = format_count_with_unit(
+                    data["count"], variant
+                )
+                variant_text = f" ({variant})" if variant else ""
+                workout_lines.append(
+                    f"- {exercise}{variant_text}: {formatted_count}, ~{data['calories']:.0f} ккал"
+                )
+            workout_summary = "\n".join(workout_lines)
+        else:
+            workout_summary = "Сегодня тренировки не записаны."
+
+        # 🔹 КБЖУ за сегодня
+        meal_totals = get_daily_meal_totals(user_id, today)
+        meals_summary = (
+            f"Калории: {meal_totals['calories']:.0f} ккал, "
+            f"Белки: {meal_totals['protein_g']:.1f} г, "
+            f"Жиры: {meal_totals['fat_total_g']:.1f} г, "
+            f"Углеводы: {meal_totals['carbohydrates_total_g']:.1f} г."
+        )
+
+        # 🔹 Цель / норма КБЖУ
+        settings = get_kbju_settings(user_id)
+        if settings:
+            goal_label = get_kbju_goal_label(settings.goal)
+            kbju_goal_summary = (
+                f"Цель: {goal_label}. "
+                f"Норма — {settings.calories:.0f} ккал, "
+                f"Б {settings.protein:.0f} г, "
+                f"Ж {settings.fat:.0f} г, "
+                f"У {settings.carbs:.0f} г."
+            )
+        else:
+            kbju_goal_summary = "Цель по КБЖУ ещё не настроена."
+
+        # 🔹 Вес и история веса
+        weights = (
+            session.query(Weight)
+            .filter(Weight.user_id == user_id)
+            .order_by(Weight.date.desc(), Weight.id.desc())
+            .limit(7)
+            .all()
+        )
+
+        if weights:
+            current_weight = weights[0]
+            history_lines = [
+                f"{w.date.strftime('%d.%m')}: {w.value} кг"
+                for w in weights
+            ]
+            weight_summary = (
+                f"Текущий вес: {current_weight.value} кг (от {current_weight.date.strftime('%d.%m.%Y')}). "
+                "История последних измерений: "
+                + "; ".join(history_lines)
+            )
+        else:
+            weight_summary = "Записей по весу ещё нет."
+
     finally:
         session.close()
 
-    summary = (
-        f"Пользователь {user_id}. Вес: {weight_text}. "
-        f"Тренировки сегодня: {workout_count} (расход {float(workout_calories or 0):.0f} ккал). "
-        f"КБЖУ за сегодня: {meal_totals.get('calories', 0):.0f} ккал, "
-        f"белки {meal_totals.get('protein_g', 0):.1f} г, жиры {meal_totals.get('fat_total_g', 0):.1f} г, "
-        f"углеводы {meal_totals.get('carbohydrates_total_g', 0):.1f} г."
-    )
+    # 🔹 Собираем summary для Gemini
+    summary = f"""
+Дата: {today_str}.
 
+Тренировки за сегодня:
+{workout_summary}
+Всего ориентировочно израсходовано: ~{total_workout_calories:.0f} ккал.
+
+Питание (КБЖУ) за сегодня:
+{meals_summary}
+
+Норма / цель КБЖУ:
+{kbju_goal_summary}
+
+Вес:
+{weight_summary}
+"""
+
+    # 🔹 Промпт для робота Дайри
     prompt = f"""
 Ты — робот Дайри 🤖, персональный фитнес-помощник пользователя.
 Говори дружелюбно, уверенно и по делу.
 
+Очень важно:
+- Не считай количество записей тренировок, я уже дал тебе готовый текст по объёму и видам упражнений.
+- Цель по КБЖУ уже указана в данных, не используй формулировки вроде "если твоя цель...".
+- История веса может включать несколько измерений — используй её для оценки тенденции, не говори, что измерение одно, если в данных есть история.
+
 Всегда начинай анализ с приветствия:
 "Привет, это Дайри на связи! Вот твой отчёт за сегодня👇"
 
-Разбери данные по четырём пунктам:
-
-1) 🏋️ Тренировки
-• Оцени объём нагрузки: много / умеренно / мало.
-• Отметь главное упражнение или тип нагрузки.
-• Дай один практичный совет.
-
-2) 🍱 Питание (КБЖУ)
-• Оцени калории, белки, жиры и углеводы.
-• Если указана норма — сравни кратко.
-• Что получилось лучше всего и что стоит улучшить.
-• Дай один совет по питанию.
-
-3) ⚖️ Вес
-• Если вес есть — оцени тенденцию (стабилен / растёт / падает).
-• Если данных мало — мягко предложи обновлять вес регулярно.
-
-4) 📊 Прогресс
-• Короткое резюме: насколько день приблизил к цели.
-• Дружелюбная мотивация от Дайри.
-
-Важно:
-— Пиши кратко и структурировано.
-— Не придумывай данные — используй только то, что получил.
-— Если данных недостаточно, спокойно об этом скажи.
-
-Вот данные пользователя:
+Данные пользователя на сегодня:
 {summary}
+
+Сделай краткий отчёт по 4 блокам:
+1) Тренировки
+2) Питание (КБЖУ)
+3) Вес
+4) Общий прогресс и мотивация
+
+Пиши структурированно, но компактно.
 """
 
     result = gemini_analyze(prompt)
-
     await message.answer(result)
 
 
