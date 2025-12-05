@@ -51,6 +51,67 @@ def gemini_analyze(text: str) -> str:
         return "Сервис анализа временно недоступен, попробуй позже 🙏"
 
 
+def gemini_estimate_kbju(food_text: str) -> dict | None:
+    """
+    Оценивает КБЖУ продуктов через Gemini.
+
+    Возвращает dict вида:
+    {
+      "items": [
+        {"name": "курица", "grams": 200, "kcal": 330, "protein": 40, "fat": 15, "carbs": 0},
+        ...
+      ],
+      "total": {"kcal": ..., "protein": ..., "fat": ..., "carbs": ...}
+    }
+    либо None при ошибке.
+    """
+    prompt = f"""
+Ты помощник по питанию.
+
+Пользователь вводит список продуктов на русском с примерным весом:
+"200 г курица, 100 г йогурта, 30 г орехов".
+
+Твоя задача — ОЦЕНИТЬ КБЖУ (не обязательно идеально точно, но реалистично)
+по данным о типичных продуктах.
+
+Очень важно: ответь СТРОГО в виде JSON без пояснений, текста и комментариев.
+
+Формат ответа:
+{{
+  "items": [
+    {{
+      "name": "курица",
+      "grams": 200,
+      "kcal": 330,
+      "protein": 40,
+      "fat": 15,
+      "carbs": 0
+    }}
+  ],
+  "total": {{
+    "kcal": 330,
+    "protein": 40,
+    "fat": 15,
+    "carbs": 0
+  }}
+}}
+
+Вот входные данные пользователя: "{food_text}"
+"""
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
+        raw = response.text.strip()
+        data = json.loads(raw)
+        return data
+    except Exception as e:
+        print("❌ Ошибка Gemini (КБЖУ):", repr(e))
+        return None
+
+
 def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") -> str:
     """Переводит текст через публичное API MyMemory.
 
@@ -1312,6 +1373,8 @@ kbju_goal_menu = ReplyKeyboardMarkup(
 
 kbju_add_menu = ReplyKeyboardMarkup(
     keyboard=[
+        [KeyboardButton(text="➕ Через CalorieNinjas")],
+        [KeyboardButton(text="🤖 Через ИИ")],
         [KeyboardButton(text="⬅️ Назад")],
         [main_menu_button],
     ],
@@ -2209,6 +2272,7 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "expecting_supplement_history_choice",
         "expecting_supplement_history_time",
         "expecting_food_input",
+        "expecting_ai_food_input",
         "kbju_menu_open",
         "awaiting_kbju_choice",
         "expecting_kbju_manual_norm",
@@ -3677,6 +3741,28 @@ async def kbju_intro_choice(message: Message):
     await message.answer("Пожалуйста, выбери вариант из кнопок ниже 😊")
 
 
+async def start_kbju_add_flow(message: Message, entry_date: date):
+    user_id = str(message.from_user.id)
+
+    message.bot.kbju_menu_open = True
+    message.bot.expecting_food_input = False
+    message.bot.expecting_ai_food_input = False
+
+    if not hasattr(message.bot, "meal_entry_dates"):
+        message.bot.meal_entry_dates = {}
+    message.bot.meal_entry_dates[user_id] = entry_date
+
+    await answer_with_menu(
+        message,
+        "🍱 Раздел КБЖУ\n\n",
+        "Выбери, как добавить приём пищи:\n",
+        "• CalorieNinjas — точнее, но нужны названия продуктов на латинице\n",
+        "• ИИ — оценка на основе типичных значений\n\n",
+        "Затем пришли список продуктов одной строкой (например: 200 г курицы, 100 г йогурта).",
+        reply_markup=kbju_add_menu,
+    )
+
+
 @dp.message(lambda m: m.text == "🎯 Цель / Норма КБЖУ" and getattr(m.bot, "kbju_menu_open", False))
 async def kbju_goal_menu_entry(message: Message):
     reset_user_state(message, keep_supplements=True)
@@ -3741,18 +3827,7 @@ async def kbju_goal_edit(message: Message):
 @dp.message(lambda m: m.text == "➕ Добавить" and getattr(m.bot, "kbju_menu_open", False))
 async def calories_add(message: Message):
     reset_user_state(message)
-    message.bot.kbju_menu_open = True
-    message.bot.expecting_food_input = True
-    await answer_with_menu(
-        message,
-        "🍱 Раздел КБЖУ\n\n"
-        "Напиши, что ты съел(а) одним сообщением.\n\n"
-        "Например:\n"
-        "• 100 г овсянки, 2 яйца, 1 банан\n"
-        "• 150 г куриной грудки и 200 г риса\n\n"
-        "Важно писать именно в такой последовательности, где сначала идёт количество (например: 100 г или 2 шт), а после — сам продукт.",
-        reply_markup=kbju_add_menu,
-    )
+    await start_kbju_add_flow(message, date.today())
 
 
 @dp.message(lambda m: m.text == "📊 Результаты за сегодня" and getattr(m.bot, "kbju_menu_open", False))
@@ -3760,6 +3835,35 @@ async def calories_today_results(message: Message):
     reset_user_state(message)
     message.bot.kbju_menu_open = True
     await send_today_results(message, str(message.from_user.id))
+
+
+@dp.message(lambda m: m.text == "➕ Через CalorieNinjas" and getattr(m.bot, "kbju_menu_open", False))
+async def kbju_add_via_calorieninjas(message: Message):
+    message.bot.expecting_food_input = True
+    message.bot.expecting_ai_food_input = False
+    await answer_with_menu(
+        message,
+        "🍱 Раздел КБЖУ\n\n",
+        "Напиши, что ты съел(а) одним сообщением.\n\n",
+        "Например:\n",
+        "• 100 г овсянки, 2 яйца, 1 банан\n",
+        "• 150 г куриной грудки и 200 г риса\n\n",
+        "Важно писать именно в такой последовательности, где сначала идёт количество (например: 100 г или 2 шт), а после — сам продукт.",
+        reply_markup=kbju_add_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "🤖 Через ИИ" and getattr(m.bot, "kbju_menu_open", False))
+async def kbju_add_via_ai(message: Message):
+    message.bot.expecting_food_input = False
+    message.bot.expecting_ai_food_input = True
+    await answer_with_menu(
+        message,
+        "🍱 Раздел КБЖУ\n\n",
+        "Напиши, что ты съел, с примерным весом в одном сообщении.\n\n",
+        "Например: 200 г курицы, 100 г йогурта, 30 г орехов",
+        reply_markup=kbju_add_menu,
+    )
 
 
 @dp.message(lambda m: m.text == "📆 Календарь КБЖУ" and getattr(m.bot, "kbju_menu_open", False))
@@ -3791,6 +3895,122 @@ async def kbju_manual_norm_input(message: Message):
     message.bot.kbju_menu_open = True
     await message.answer(text, parse_mode="HTML")
     await message.answer("Теперь можешь пользоваться разделом КБЖУ 👇", reply_markup=kbju_menu)
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_ai_food_input", False))
+async def kbju_ai_process(message: Message):
+    user_id = str(message.from_user.id)
+    food_text = (message.text or "").strip()
+
+    if not food_text:
+        await message.answer("Напиши продукты одной строкой, например: 200 г курицы, 100 г йогурта")
+        return
+
+    entry_date = getattr(message.bot, "meal_entry_dates", {}).get(user_id, date.today())
+
+    await message.answer("Считаю КБЖУ с помощью ИИ, секунду... 🤖")
+
+    data = gemini_estimate_kbju(food_text)
+
+    if not data:
+        await message.answer(
+            "Не удалось оценить КБЖУ через ИИ 😔 Попробуй переформулировать или используй CalorieNinjas."
+        )
+        message.bot.expecting_ai_food_input = False
+        if hasattr(message.bot, "meal_entry_dates"):
+            message.bot.meal_entry_dates.pop(user_id, None)
+        return
+
+    items = data.get("items") or []
+    total = data.get("total") or {}
+
+    def safe_float(value) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    totals_for_db = {
+        "calories": safe_float(total.get("kcal")),
+        "protein_g": safe_float(total.get("protein")),
+        "fat_total_g": safe_float(total.get("fat")),
+        "carbohydrates_total_g": safe_float(total.get("carbs")),
+        "products": [],
+    }
+
+    lines = ["🤖 Оценка по ИИ для этого приёма пищи:\n"]
+    api_details_lines: list[str] = []
+
+    for item in items:
+        name = item.get("name") or "продукт"
+        grams = safe_float(item.get("grams"))
+        cal = safe_float(item.get("kcal"))
+        p = safe_float(item.get("protein"))
+        f = safe_float(item.get("fat"))
+        c = safe_float(item.get("carbs"))
+
+        lines.append(
+            f"• {name} ({grams:.0f} г) — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+        )
+        api_details_lines.append(
+            f"• {name} ({grams:.0f} г) — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+        )
+
+        totals_for_db["products"].append(
+            {
+                "name": name,
+                "grams": grams,
+                "calories": cal,
+                "protein_g": p,
+                "fat_total_g": f,
+                "carbohydrates_total_g": c,
+            }
+        )
+
+    lines.append("\nИТОГО:")
+    lines.append(
+        f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals_for_db['protein_g']:.1f} г\n"
+        f"🥑 Жиры: {totals_for_db['fat_total_g']:.1f} г\n"
+        f"🍩 Углеводы: {totals_for_db['carbohydrates_total_g']:.1f} г"
+    )
+
+    api_details = "\n".join(api_details_lines) if api_details_lines else None
+
+    save_meal_entry(
+        user_id=user_id,
+        raw_query=food_text,
+        totals=totals_for_db,
+        entry_date=entry_date,
+        api_details=api_details,
+    )
+
+    daily_totals = get_daily_meal_totals(user_id, entry_date)
+
+    lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    lines.append(
+        f"🔥 Калории: {daily_totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
+        f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
+        f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
+    )
+
+    lines.append(
+        "\n⚠️ Это оценка, а не точные лабораторные данные. Для более точного расчёта используй режим CalorieNinjas."
+    )
+
+    message.bot.expecting_ai_food_input = False
+    if hasattr(message.bot, "meal_entry_dates"):
+        message.bot.meal_entry_dates.pop(user_id, None)
+
+    await answer_with_menu(
+        message,
+        "\n".join(lines),
+        reply_markup=kbju_after_meal_menu,
+    )
+
 
 @dp.message(lambda m: getattr(m.bot, "kbju_test_step", None) == "gender")
 async def kbju_test_gender(message: Message):
@@ -3988,9 +4208,7 @@ async def handle_food_input(message: Message):
 
 @dp.message(F.text == "➕ Внести ещё приём")
 async def kbju_add_more_meal(message: Message):
-    # снова ждём текст про еду
-    message.bot.expecting_food_input = True
-    await message.answer("Опиши, что ты съел(а):")
+    await start_kbju_add_flow(message, date.today())
 
 
 @dp.message(F.text == "✏️ Редактировать")
@@ -4205,23 +4423,9 @@ async def add_kbju_from_calendar(callback: CallbackQuery):
     await callback.answer()
     _, date_str = callback.data.split(":", 1)
     target_date = date.fromisoformat(date_str)
-    user_id = str(callback.from_user.id)
 
     reset_user_state(callback.message, keep_supplements=True)
-    callback.bot.kbju_menu_open = True
-    callback.bot.expecting_food_input = True
-
-    if not hasattr(callback.bot, "meal_entry_dates"):
-        callback.bot.meal_entry_dates = {}
-    callback.bot.meal_entry_dates[user_id] = target_date
-
-    await answer_with_menu(
-        callback.message,
-        "🍱 Раздел КБЖУ\n\n"
-        "Напиши, что ты съел(а) одним сообщением — я запишу это на выбранную дату.\n\n"
-        f"Дата: {target_date.strftime('%d.%m.%Y')}",
-        reply_markup=kbju_add_menu,
-    )
+    await start_kbju_add_flow(callback.message, target_date)
 
 
 @dp.callback_query(F.data.startswith("wrk_add:"))
