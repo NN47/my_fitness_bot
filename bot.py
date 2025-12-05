@@ -37,7 +37,15 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Выбор модели
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-1.5-flash-002")
+
+def gemini_analyze(text: str) -> str:
+    try:
+        response = model.generate_content(text)
+        return response.text
+    except Exception as e:
+        print("❌ Ошибка Gemini:", repr(e))
+        return "Сейчас не могу проанализировать данные, попробуй чуть позже 🙏"
 
 
 def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") -> str:
