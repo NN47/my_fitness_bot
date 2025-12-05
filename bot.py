@@ -28,24 +28,27 @@ import random
 from datetime import datetime
 import requests
 import re
-import google.generativeai as genai
-
+from google import genai
+import os
 
 load_dotenv()
 
-# Настройка клиента Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Выбор модели
-model = genai.GenerativeModel("gemini-1.5-flash-002")
 
+# Создаём клиента Gemini (новый API)
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+# Функция анализа данных через Gemini
 def gemini_analyze(text: str) -> str:
     try:
-        response = model.generate_content(text)
+        response = client.models.generate_content(
+            model="gemini-3.0-pro-preview",  # новая рабочая модель
+            contents=text
+        )
         return response.text
     except Exception as e:
         print("❌ Ошибка Gemini:", repr(e))
-        return "Сейчас не могу проанализировать данные, попробуй чуть позже 🙏"
+        return "Сервис анализа временно недоступен, попробуй позже 🙏"
 
 
 def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") -> str:
