@@ -13,3 +13,6 @@ uvicorn
 
 # Прочее (если используешь HTTP-запросы или JSON)
 requests
+
+# Google Gemini API
+google-generativeai
