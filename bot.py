@@ -28,6 +28,16 @@ import random
 from datetime import datetime
 import requests
 import re
+import google.generativeai as genai
+
+
+load_dotenv()
+
+# Настройка клиента Gemini
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# Выбор модели
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 
 def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") -> str:
@@ -78,6 +88,11 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
             print("⚠️ Ошибка резервного перевода через Google:", repr(e))
 
     return translated or text
+
+
+def gemini_analyze(text: str) -> str:
+    response = model.generate_content(text)
+    return response.text
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -228,9 +243,6 @@ def start_keepalive_server():
 
 # Запуск мини-сервера в отдельном потоке
 threading.Thread(target=start_keepalive_server, daemon=True).start()
-
-
-load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN")
 NUTRITION_API_KEY = os.getenv("NUTRITION_API_KEY")  # 🔸 новый ключ CalorieNinjas
@@ -1211,6 +1223,7 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="📆 Календарь")],
+        [KeyboardButton(text="Анализ деятельности")],
         [KeyboardButton(text="💬 Обратная связь")],
     ],
     resize_keyboard=True
@@ -1522,6 +1535,42 @@ async def start(message: Message):
     await answer_with_menu(message, welcome, reply_markup=main_menu)
 
 
+@dp.message(F.text == "Анализ деятельности")
+async def analyze_activity(message: Message):
+    user_id = str(message.from_user.id)
+    today = date.today()
+
+    weight = get_last_weight_kg(user_id)
+    weight_text = f"{weight:.1f} кг" if weight is not None else "не указан"
+
+    meal_totals = get_daily_meal_totals(user_id, today)
+
+    session = SessionLocal()
+    try:
+        workout_count, workout_calories = (
+            session.query(
+                func.count(Workout.id),
+                func.coalesce(func.sum(Workout.calories), 0.0),
+            )
+            .filter(Workout.user_id == user_id, Workout.date == today)
+            .one()
+        )
+    finally:
+        session.close()
+
+    summary = (
+        f"Пользователь {user_id}. Вес: {weight_text}. "
+        f"Тренировки сегодня: {workout_count} (расход {float(workout_calories or 0):.0f} ккал). "
+        f"КБЖУ за сегодня: {meal_totals.get('calories', 0):.0f} ккал, "
+        f"белки {meal_totals.get('protein_g', 0):.1f} г, жиры {meal_totals.get('fat_total_g', 0):.1f} г, "
+        f"углеводы {meal_totals.get('carbohydrates_total_g', 0):.1f} г."
+    )
+
+    result = gemini_analyze(
+        f"Проанализируй данные пользователя и дай краткий, понятный отчет: {summary}"
+    )
+
+    await message.answer(result)
 
 
 @dp.message(F.text == "🏋️ Тренировка")
