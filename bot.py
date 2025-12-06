@@ -2749,7 +2749,7 @@ def get_current_supplement_view(message: Message) -> int | None:
 def supplements_main_menu(has_items: bool = False) -> ReplyKeyboardMarkup:
     buttons = [[KeyboardButton(text="➕ Создать добавку")]]
     if has_items:
-        buttons.append([KeyboardButton(text="📋 Мои добавки"), KeyboardButton(text="📜 История добавок")])
+        buttons.append([KeyboardButton(text="📋 Мои добавки"), KeyboardButton(text="📅 Календарь добавок")])
         buttons.append([KeyboardButton(text="✅ Отметить приём")])
     buttons.append([main_menu_button])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -2933,7 +2933,7 @@ async def show_supplement_calendar(message: Message, user_id: str, year: int | N
     month = month or today.month
     keyboard = build_supplement_calendar_keyboard(message.bot, user_id, year, month)
     await message.answer(
-        "📜 История добавок. Выберите день, чтобы посмотреть, добавить или изменить приёмы:",
+        "📅 Календарь добавок. Выберите день, чтобы посмотреть, добавить или изменить приёмы:",
         reply_markup=keyboard,
     )
 
@@ -3800,11 +3800,15 @@ async def mark_supplement_from_details(message: Message):
     )
 
 
-@dp.message(F.text == "📜 История добавок")
+@dp.message(F.text.in_(["📅 Календарь добавок", "📜 История добавок"]))
 async def supplements_history(message: Message):
     supplements_list = get_user_supplements(message)
     if not supplements_list:
-        await answer_with_menu(message, "История добавок пуста.", reply_markup=supplements_main_menu(False))
+        await answer_with_menu(
+            message,
+            "Календарь добавок пока пуст. Сначала создай добавку, чтобы отмечать приёмы.",
+            reply_markup=supplements_main_menu(False),
+        )
         return
     user_id = str(message.from_user.id)
     await show_supplement_calendar(message, user_id)
