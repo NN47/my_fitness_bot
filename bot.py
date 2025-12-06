@@ -2912,7 +2912,10 @@ def build_supplement_day_actions_keyboard(entries: list[dict], target_date: date
 
     rows.append(
         [
-            InlineKeyboardButton(text="➕ Добавить приём", callback_data=f"supcal_add:{target_date.isoformat()}"),
+            InlineKeyboardButton(
+                text="➕ Добавить ещё" if entries else "➕ Добавить приём",
+                callback_data=f"supcal_add:{target_date.isoformat()}",
+            ),
         ]
     )
     rows.append(
@@ -2942,12 +2945,15 @@ async def show_supplement_day_entries(message: Message, user_id: str, target_dat
     entries = get_supplement_entries_for_day(message.bot, user_id, target_date)
     if not entries:
         await message.answer(
-            f"{target_date.strftime('%d.%m.%Y')}: приёмы не найдены.",
+            f"{target_date.strftime('%d.%m.%Y')}: приёмы не найдены. Можно добавить новый приём.",
             reply_markup=build_supplement_day_actions_keyboard([], target_date),
         )
         return
 
-    lines = [f"📅 {target_date.strftime('%d.%m.%Y')} — приёмы добавок:"]
+    lines = [
+        f"📅 {target_date.strftime('%d.%m.%Y')} — приёмы добавок:",
+        "Можно изменить, удалить или добавить ещё приём.",
+    ]
     for entry in entries:
         amount_text = f" — {entry['amount']}" if entry.get("amount") is not None else ""
         lines.append(f"• {entry['supplement_name']} в {entry['time_text']}{amount_text}")
@@ -3800,7 +3806,7 @@ async def mark_supplement_from_details(message: Message):
     )
 
 
-@dp.message(F.text.in_(["📅 Календарь добавок", "📜 История добавок"]))
+@dp.message(F.text == "📅 Календарь добавок")
 async def supplements_history(message: Message):
     supplements_list = get_user_supplements(message)
     if not supplements_list:
