@@ -2646,6 +2646,21 @@ def persist_supplement_record(user_id: str, payload: dict, supplement_id: int | 
         session.close()
 
 
+def delete_supplement_record(user_id: str, supplement_id: int | None) -> None:
+    if not supplement_id:
+        return
+
+    session = SessionLocal()
+    try:
+        session.query(SupplementEntry).filter_by(
+            user_id=user_id, supplement_id=supplement_id
+        ).delete()
+        session.query(Supplement).filter_by(id=supplement_id, user_id=user_id).delete()
+        session.commit()
+    finally:
+        session.close()
+
+
 def reset_supplement_state(message: Message):
     for flag in [
         "expecting_supplement_name",
@@ -2653,6 +2668,8 @@ def reset_supplement_state(message: Message):
         "selecting_days",
         "expecting_supplement_log",
         "choosing_supplement_for_edit",
+        "choosing_supplement_for_view",
+        "viewing_supplement_details",
         "expecting_supplement_history_choice",
         "expecting_supplement_history_time",
         "expecting_supplement_history_amount",
@@ -2673,6 +2690,8 @@ def reset_supplement_state(message: Message):
         message.bot.supplement_history_action.pop(str(message.from_user.id), None)
     if hasattr(message.bot, "expecting_supplement_amount_users"):
         message.bot.expecting_supplement_amount_users.discard(str(message.from_user.id))
+    if hasattr(message.bot, "current_supplement_view"):
+        message.bot.current_supplement_view.pop(str(message.from_user.id), None)
 
 
 def get_active_supplement(message: Message) -> dict:
@@ -2710,10 +2729,27 @@ def set_supplement_edit_index(message: Message, index: int | None):
         message.bot.supplement_edit_index[user_id] = index
 
 
+def set_current_supplement_view(message: Message, index: int | None):
+    user_id = str(message.from_user.id)
+    if not hasattr(message.bot, "current_supplement_view"):
+        message.bot.current_supplement_view = {}
+    if index is None:
+        message.bot.current_supplement_view.pop(user_id, None)
+    else:
+        message.bot.current_supplement_view[user_id] = index
+
+
+def get_current_supplement_view(message: Message) -> int | None:
+    user_id = str(message.from_user.id)
+    if not hasattr(message.bot, "current_supplement_view"):
+        return None
+    return message.bot.current_supplement_view.get(user_id)
+
+
 def supplements_main_menu(has_items: bool = False) -> ReplyKeyboardMarkup:
     buttons = [[KeyboardButton(text="➕ Создать добавку")]]
     if has_items:
-        buttons.append([KeyboardButton(text="✏️ Редактировать добавку"), KeyboardButton(text="📜 История добавок")])
+        buttons.append([KeyboardButton(text="📋 Мои добавки"), KeyboardButton(text="📜 История добавок")])
         buttons.append([KeyboardButton(text="✅ Отметить приём")])
     buttons.append([main_menu_button])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -2723,6 +2759,25 @@ def supplements_choice_menu(supplements: list[dict]) -> ReplyKeyboardMarkup:
     rows = [[KeyboardButton(text=item["name"])] for item in supplements]
     rows.append([KeyboardButton(text="⬅️ Назад")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def supplements_view_menu(supplements: list[dict]) -> ReplyKeyboardMarkup:
+    rows = [[KeyboardButton(text=item["name"])] for item in supplements]
+    rows.append([KeyboardButton(text="⬅️ Назад")])
+    rows.append([main_menu_button])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def supplement_details_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✏️ Редактировать добавку")],
+            [KeyboardButton(text="🗑 Удалить добавку"), KeyboardButton(text="✅ Отметить добавку")],
+            [KeyboardButton(text="⬅️ Назад")],
+            [main_menu_button],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def normalize_history_entry(entry) -> datetime | None:
@@ -2807,7 +2862,7 @@ def build_supplement_calendar_keyboard(bot, user_id: str, year: int, month: int)
             if day == 0:
                 row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
             else:
-                marker = "●" if day in days_with_history else ""
+                marker = "💊" if day in days_with_history else ""
                 row.append(
                     InlineKeyboardButton(
                         text=f"{day}{marker}",
@@ -2899,6 +2954,61 @@ async def show_supplement_day_entries(message: Message, user_id: str, target_dat
 
     await message.answer(
         "\n".join(lines), reply_markup=build_supplement_day_actions_keyboard(entries, target_date)
+    )
+
+
+def format_supplement_history_lines(sup: dict) -> list[str]:
+    history = sup.get("history", [])
+    if not history:
+        return ["Отметок пока нет."]
+
+    sorted_history = sorted(
+        history,
+        key=lambda entry: normalize_history_entry(entry) or datetime.min,
+        reverse=True,
+    )
+
+    lines: list[str] = []
+    for entry in sorted_history:
+        ts = normalize_history_entry(entry)
+        if not ts:
+            continue
+        amount = entry.get("amount") if isinstance(entry, dict) else None
+        amount_text = f" — {amount}" if amount is not None else ""
+        lines.append(f"{ts.strftime('%d.%m.%Y %H:%M')}{amount_text}")
+
+    return lines or ["Отметок пока нет."]
+
+
+async def show_supplement_details(message: Message, sup: dict, index: int):
+    set_current_supplement_view(message, index)
+    message.bot.viewing_supplement_details = True
+    history_lines = format_supplement_history_lines(sup)
+
+    lines = [f"💊 {sup.get('name', 'Добавка')}", "", "Отметки:"]
+    lines.extend([f"• {item}" for item in history_lines])
+
+    await answer_with_menu(message, "\n".join(lines), reply_markup=supplement_details_menu())
+
+
+async def show_my_supplements_list(message: Message):
+    supplements_list = get_user_supplements(message)
+    if not supplements_list:
+        await answer_with_menu(
+            message,
+            "Пока нет созданных добавок.",
+            reply_markup=supplements_main_menu(has_items=False),
+        )
+        return
+
+    message.bot.choosing_supplement_for_view = True
+    message.bot.viewing_supplement_details = False
+    set_current_supplement_view(message, None)
+
+    await answer_with_menu(
+        message,
+        "Выбери добавку из списка:",
+        reply_markup=supplements_view_menu(supplements_list),
     )
 
 
@@ -3057,6 +3167,42 @@ async def supplements(message: Message):
             f"\n💊 {item['name']} \n⏰ Время приема: {times}\n📅 Дни приема: {days}\n⏳ Длительность: {item['duration']}"
         )
     await answer_with_menu(message, "\n".join(lines), reply_markup=supplements_main_menu(has_items=True))
+
+
+@dp.message(F.text == "📋 Мои добавки")
+async def supplements_list_view(message: Message):
+    await show_my_supplements_list(message)
+
+
+@dp.message(lambda m: getattr(m.bot, "choosing_supplement_for_view", False))
+async def choose_supplement_for_view(message: Message):
+    if message.text == "⬅️ Назад":
+        message.bot.choosing_supplement_for_view = False
+        await answer_with_menu(
+            message,
+            "Возвращаю в меню добавок.",
+            reply_markup=supplements_main_menu(has_items=bool(get_user_supplements(message))),
+        )
+        return
+
+    supplements_list = get_user_supplements(message)
+    target_index = next(
+        (idx for idx, item in enumerate(supplements_list) if item["name"].lower() == message.text.lower()),
+        None,
+    )
+
+    if target_index is None:
+        await message.answer("Не нашёл такую добавку. Выбери название из списка.")
+        return
+
+    message.bot.choosing_supplement_for_view = False
+    await show_supplement_details(message, supplements_list[target_index], target_index)
+
+
+@dp.message(lambda m: getattr(m.bot, "viewing_supplement_details", False) and m.text == "⬅️ Назад")
+async def back_from_supplement_details(message: Message):
+    message.bot.viewing_supplement_details = False
+    await show_my_supplements_list(message)
 
 
 @dp.message(F.text == "✅ Отметить приём")
@@ -3542,8 +3688,41 @@ async def cancel_supplement(message: Message):
     await supplements(message)
 
 
+async def start_editing_supplement(message: Message, target_index: int):
+    supplements_list = get_user_supplements(message)
+    if not supplements_list or target_index < 0 or target_index >= len(supplements_list):
+        await answer_with_menu(message, "Не нашёл такую добавку. Выбери название из списка.")
+        return
+
+    message.bot.choosing_supplement_for_edit = False
+    set_supplement_edit_index(message, target_index)
+    selected = supplements_list[target_index]
+    sup = get_active_supplement(message)
+    sup.update({
+        "id": selected.get("id"),
+        "name": selected.get("name", ""),
+        "times": selected.get("times", []).copy(),
+        "days": selected.get("days", []).copy(),
+        "duration": selected.get("duration", "постоянно"),
+        "history": [dict(entry) for entry in selected.get("history", [])],
+        "ready": True,
+    })
+
+    await answer_with_menu(
+        message,
+        supplement_schedule_prompt(sup),
+        reply_markup=supplement_edit_menu(show_save=True),
+    )
+
+
 @dp.message(F.text == "✏️ Редактировать добавку")
 async def edit_supplement_placeholder(message: Message):
+    view_index = get_current_supplement_view(message)
+    if view_index is not None:
+        message.bot.viewing_supplement_details = False
+        await start_editing_supplement(message, view_index)
+        return
+
     supplements_list = get_user_supplements(message)
     if not supplements_list:
         await answer_with_menu(message, "Пока нет добавок для редактирования.", reply_markup=supplements_main_menu(False))
@@ -3569,24 +3748,55 @@ async def choose_supplement_to_edit(message: Message):
         await message.answer("Не нашёл такую добавку. Выбери название из списка.")
         return
 
-    message.bot.choosing_supplement_for_edit = False
-    set_supplement_edit_index(message, target_index)
-    selected = supplements_list[target_index]
-    sup = get_active_supplement(message)
-    sup.update({
-        "id": selected.get("id"),
-        "name": selected.get("name", ""),
-        "times": selected.get("times", []).copy(),
-        "days": selected.get("days", []).copy(),
-        "duration": selected.get("duration", "постоянно"),
-        "history": [dict(entry) for entry in selected.get("history", [])],
-        "ready": True,
-    })
+    await start_editing_supplement(message, target_index)
 
+
+@dp.message(F.text == "🗑 Удалить добавку")
+async def delete_supplement(message: Message):
+    current_index = get_current_supplement_view(message)
+    supplements_list = get_user_supplements(message)
+    user_id = str(message.from_user.id)
+
+    if current_index is None or current_index >= len(supplements_list):
+        await message.answer("Сначала выбери добавку в списке 'Мои добавки'.")
+        return
+
+    target = supplements_list[current_index]
+    delete_supplement_record(user_id, target.get("id"))
+    refresh_supplements_cache(message.bot, user_id)
+
+    await message.answer(f"🗑 Добавка {target.get('name', 'без названия')} удалена.")
+    message.bot.viewing_supplement_details = False
+    await show_my_supplements_list(message)
+
+
+@dp.message(F.text == "✅ Отметить добавку")
+async def mark_supplement_from_details(message: Message):
+    current_index = get_current_supplement_view(message)
+    supplements_list = get_user_supplements(message)
+    user_id = str(message.from_user.id)
+
+    if current_index is None or current_index >= len(supplements_list):
+        await answer_with_menu(
+            message,
+            "Сначала выбери добавку в списке 'Мои добавки'.",
+            reply_markup=supplements_main_menu(has_items=bool(supplements_list)),
+        )
+        return
+
+    target = supplements_list[current_index]
+    if not hasattr(message.bot, "supplement_log_choice"):
+        message.bot.supplement_log_choice = {}
+
+    message.bot.supplement_log_choice[user_id] = target.get("name", "")
+    message.bot.expecting_supplement_log = False
+    message.bot.viewing_supplement_details = False
+
+    start_date_selection(message.bot, "supplement_log")
     await answer_with_menu(
         message,
-        supplement_schedule_prompt(sup),
-        reply_markup=supplement_edit_menu(show_save=True),
+        get_date_prompt("supplement_log"),
+        reply_markup=training_date_menu,
     )
 
 
