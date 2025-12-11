@@ -2412,6 +2412,10 @@ async def process_weight_or_number(message: Message):
         await handle_kbju_test_number(message, step)
         return
 
+    # 1.5️⃣ Если ожидается ввод веса для этикетки - пропускаем (обработается в kbju_label_weight_input)
+    if getattr(message.bot, "expecting_label_weight_input", False):
+        return
+
     # 2️⃣ Если сейчас ждём ввод веса
     if getattr(message.bot, "expecting_weight", False):
         weight_value = float(message.text.replace(",", "."))  # поддержка 72,5
