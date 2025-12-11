@@ -2133,8 +2133,13 @@ async def delete_entry_start(message: Message):
     # не срабатываем, если идёт тест КБЖУ
     lambda m: getattr(m.bot, "kbju_test_step", None) is None,
     lambda m: not getattr(m.bot, "expecting_supplement_history_amount", False),
+    # не срабатываем, если ожидается ввод веса для этикетки
+    lambda m: not getattr(m.bot, "expecting_label_weight_input", False),
 )
 async def process_number(message: Message):
+    # Проверяем, не ожидается ли ввод веса для этикетки
+    if getattr(message.bot, "expecting_label_weight_input", False):
+        return
 
     # Если пользователь вводит число в процессе отметки добавки, перенаправляем
     # в соответствующий обработчик и не создаём тренировочную запись.
