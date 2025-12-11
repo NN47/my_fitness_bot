@@ -4846,22 +4846,47 @@ async def kbju_label_photo_process(message: Message):
         fat_100g = safe_float(kbju_100g.get("fat"))
         carbs_100g = safe_float(kbju_100g.get("carbs"))
 
-        if not found_weight or package_weight is None:
-            # Вес не найден - спрашиваем у пользователя
-            message.bot.expecting_label_photo_input = False
-            message.bot.expecting_label_weight_input = True
-            # Сохраняем данные КБЖУ на 100г для пересчёта
-            if not hasattr(message.bot, "label_kbju_cache"):
-                message.bot.label_kbju_cache = {}
-            message.bot.label_kbju_cache[user_id] = {
-                "kcal_100g": kcal_100g,
-                "protein_100g": protein_100g,
-                "fat_100g": fat_100g,
-                "carbs_100g": carbs_100g,
-                "product_name": product_name,
-                "entry_date": entry_date
-            }
+        # Всегда спрашиваем у пользователя, сколько он съел
+        message.bot.expecting_label_photo_input = False
+        message.bot.expecting_label_weight_input = True
+        # Сохраняем данные КБЖУ на 100г для пересчёта
+        if not hasattr(message.bot, "label_kbju_cache"):
+            message.bot.label_kbju_cache = {}
+        message.bot.label_kbju_cache[user_id] = {
+            "kcal_100g": kcal_100g,
+            "protein_100g": protein_100g,
+            "fat_100g": fat_100g,
+            "carbs_100g": carbs_100g,
+            "product_name": product_name,
+            "entry_date": entry_date
+        }
 
+        # Формируем сообщение в зависимости от того, найден ли вес
+        if found_weight and package_weight is not None:
+            weight = safe_float(package_weight)
+            if weight > 0:
+                await message.answer(
+                    f"✅ Нашёл КБЖУ на этикетке!\n\n"
+                    f"📦 Продукт: {product_name}\n"
+                    f"📊 КБЖУ на 100 г:\n"
+                    f"🔥 Калории: {kcal_100g:.0f} ккал\n"
+                    f"💪 Белки: {protein_100g:.1f} г\n"
+                    f"🥑 Жиры: {fat_100g:.1f} г\n"
+                    f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
+                    f"📦 В упаковке {weight:.0f} г, сколько Вы съели?"
+                )
+            else:
+                await message.answer(
+                    f"✅ Нашёл КБЖУ на этикетке!\n\n"
+                    f"📦 Продукт: {product_name}\n"
+                    f"📊 КБЖУ на 100 г:\n"
+                    f"🔥 Калории: {kcal_100g:.0f} ккал\n"
+                    f"💪 Белки: {protein_100g:.1f} г\n"
+                    f"🥑 Жиры: {fat_100g:.1f} г\n"
+                    f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
+                    f"❓ Вес в упаковке не найден, сколько вы съели?"
+                )
+        else:
             await message.answer(
                 f"✅ Нашёл КБЖУ на этикетке!\n\n"
                 f"📦 Продукт: {product_name}\n"
@@ -4870,65 +4895,8 @@ async def kbju_label_photo_process(message: Message):
                 f"💪 Белки: {protein_100g:.1f} г\n"
                 f"🥑 Жиры: {fat_100g:.1f} г\n"
                 f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
-                f"❓ Вес упаковки не указан на этикетке.\n"
-                f"Сколько грамм ты съел(а)? Введи число (например: 50 или 100):"
+                f"❓ Вес в упаковке не найден, сколько вы съели?"
             )
-            return
-
-        # Вес найден - пересчитываем автоматически
-        weight = safe_float(package_weight)
-        if weight <= 0:
-            weight = 100.0  # fallback
-
-        # Пересчитываем пропорционально
-        multiplier = weight / 100.0
-        totals_for_db = {
-            "calories": kcal_100g * multiplier,
-            "protein_g": protein_100g * multiplier,
-            "fat_total_g": fat_100g * multiplier,
-            "carbohydrates_total_g": carbs_100g * multiplier,
-            "products": [],
-        }
-
-        lines = [f"📋 Анализ этикетки: {product_name}\n"]
-        lines.append(f"📦 Вес: {weight:.0f} г\n")
-        lines.append("КБЖУ:")
-        lines.append(
-            f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
-            f"💪 Белки: {totals_for_db['protein_g']:.1f} г\n"
-            f"🥑 Жиры: {totals_for_db['fat_total_g']:.1f} г\n"
-            f"🍩 Углеводы: {totals_for_db['carbohydrates_total_g']:.1f} г"
-        )
-
-        api_details = f"{product_name} ({weight:.0f} г) — {totals_for_db['calories']:.0f} ккал (Б {totals_for_db['protein_g']:.1f} / Ж {totals_for_db['fat_total_g']:.1f} / У {totals_for_db['carbohydrates_total_g']:.1f})"
-
-        save_meal_entry(
-            user_id=user_id,
-            raw_query=f"[Этикетка: {product_name}]",
-            totals=totals_for_db,
-            entry_date=entry_date,
-            api_details=api_details,
-        )
-
-        daily_totals = get_daily_meal_totals(user_id, entry_date)
-
-        lines.append("\nСУММА ЗА СЕГОДНЯ:")
-        lines.append(
-            f"🔥 Калории: {daily_totals['calories']:.0f} ккал\n"
-            f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
-            f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
-            f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
-        )
-
-        message.bot.expecting_label_photo_input = False
-        if hasattr(message.bot, "meal_entry_dates"):
-            message.bot.meal_entry_dates.pop(user_id, None)
-
-        await answer_with_menu(
-            message,
-            "\n".join(lines),
-            reply_markup=kbju_after_meal_menu,
-        )
         
     except Exception as e:
         print("❌ Ошибка при обработке фото этикетки:", repr(e))
