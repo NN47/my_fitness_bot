@@ -5254,11 +5254,51 @@ async def start_meal_edit(callback: CallbackQuery):
         (idx for idx, m in enumerate(meals_for_day, start=1) if m.id == meal_id),
         meal_id,
     )
+    
+    # Показываем результат бота (api_details), а не ввод пользователя
+    api_details = getattr(meal, "api_details", None)
+    current_result = None
+    
+    if api_details:
+        # Используем результат от бота
+        current_result = api_details
+    else:
+        # Fallback: пробуем достать продукты из JSON (на случай старых записей)
+        products = []
+        raw_products = getattr(meal, "products_json", None)
+        if raw_products:
+            try:
+                products = json.loads(raw_products)
+            except Exception:
+                pass
+        
+        if products:
+            # Форматируем продукты из JSON
+            result_lines = []
+            for p in products:
+                name = p.get("name_ru") or p.get("name") or "продукт"
+                cal = p.get("calories") or p.get("_calories") or 0
+                prot = p.get("protein_g") or p.get("_protein_g") or 0
+                fat = p.get("fat_total_g") or p.get("_fat_total_g") or 0
+                carb = p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 0
+                result_lines.append(
+                    f"• {name} — {cal:.0f} ккал (Б {prot:.1f} / Ж {fat:.1f} / У {carb:.1f})"
+                )
+            current_result = "\n".join(result_lines)
+        else:
+            # Последний fallback: показываем итоговые КБЖУ
+            current_result = (
+                f"🔥 {meal.calories:.0f} ккал "
+                f"(Б {meal.protein:.1f} / Ж {meal.fat:.1f} / У {meal.carbs:.1f})"
+            )
+    
     await callback.message.answer(
         "\n".join(
             [
                 f"✏️ Введи новый состав для позиции №{position}:",
-                f"Сейчас записано: {meal.description}",
+                f"Сейчас записано:",
+                current_result,
+                "",
                 "Я пересчитаю КБЖУ автоматически.",
             ]
         )
