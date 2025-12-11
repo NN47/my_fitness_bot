@@ -252,6 +252,91 @@ def gemini_estimate_kbju_from_photo(image_bytes: bytes) -> dict | None:
         return None
 
 
+def gemini_extract_kbju_from_label(image_bytes: bytes) -> dict | None:
+    """
+    Извлекает КБЖУ из текста на этикетке/упаковке через Gemini Vision API.
+
+    Возвращает dict вида:
+    {
+      "product_name": "название продукта",
+      "kbju_per_100g": {
+        "kcal": 200,
+        "protein": 10,
+        "fat": 5,
+        "carbs": 30
+      },
+      "package_weight": 50,  # вес упаковки в граммах, если найден, иначе null
+      "found_weight": true/false  # найден ли вес на упаковке
+    }
+    или None при ошибке.
+    """
+    prompt = """
+Ты анализируешь фото этикетки или упаковки продукта. Твоя задача — найти в тексте информацию о КБЖУ (калориях, белках, жирах, углеводах).
+
+ВАЖНО:
+1. Прочитай весь текст на этикетке/упаковке
+2. Найди таблицу пищевой ценности или информацию о КБЖУ
+3. Обычно КБЖУ указывается на 100 грамм продукта
+4. Также попробуй найти вес упаковки/порции (может быть указан как "масса нетто", "вес", "порция" и т.д.)
+
+Ответь СТРОГО в формате JSON, БЕЗ объяснений, комментариев и оформления:
+
+{
+  "product_name": "название продукта (если видно)",
+  "kbju_per_100g": {
+    "kcal": число_калорий_на_100г,
+    "protein": число_белков_на_100г,
+    "fat": число_жиров_на_100г,
+    "carbs": число_углеводов_на_100г
+  },
+  "package_weight": число_грамм_упаковки_или_null,
+  "found_weight": true_если_найден_вес_иначе_false
+}
+
+Если не нашёл КБЖУ в тексте, верни null для всех значений.
+Если нашёл КБЖУ, но не нашёл вес упаковки, установи "package_weight": null и "found_weight": false.
+"""
+
+    try:
+        from google.genai import types
+        
+        mime_type = "image/jpeg"
+        if image_bytes.startswith(b'\x89PNG'):
+            mime_type = "image/png"
+        elif image_bytes.startswith(b'GIF'):
+            mime_type = "image/gif"
+        elif image_bytes.startswith(b'WEBP'):
+            mime_type = "image/webp"
+        
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=mime_type
+                ),
+                prompt
+            ]
+        )
+        
+        raw = response.text.strip()
+        print("Gemini raw label KBJU response:", raw[:500])
+
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                snippet = raw[start : end + 1]
+                return json.loads(snippet)
+            raise
+
+    except Exception as e:
+        print("❌ Ошибка Gemini (КБЖУ с этикетки):", repr(e))
+        return None
+
+
 def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") -> str:
     """Переводит текст через публичное API MyMemory.
 
@@ -1515,7 +1600,7 @@ kbju_add_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🤖 Через ИИ")],
         [KeyboardButton(text="📷 Анализ еды по фото")],
-        [KeyboardButton(text="🏷️ Анализ еды по штрих коду")],
+        [KeyboardButton(text="📋 Анализ этикетки")],
         [KeyboardButton(text="➕ Через CalorieNinjas")],
         [KeyboardButton(text="⬅️ Назад")],
         [main_menu_button],
@@ -2516,6 +2601,8 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "expecting_supplement_history_choice",
         "expecting_supplement_history_time",
         "expecting_photo_input",
+        "expecting_label_photo_input",
+        "expecting_label_weight_input",
         "expecting_food_input",
         "expecting_ai_food_input",
         "kbju_menu_open",
@@ -4244,7 +4331,7 @@ async def start_kbju_add_flow(message: Message, entry_date: date):
         "Выбери, как добавить приём пищи:\n"
         "• 🤖 ИИ — умный анализ на основе типичных значений (рекомендуется)\n"
         "• 📷 Анализ еды по фото — отправь фото еды\n"
-        "• 🏷️ Анализ еды по штрих коду (в разработке)\n"
+        "• 📋 Анализ этикетки — отправь фото этикетки/упаковки\n"
         "• CalorieNinjas — альтернативный вариант (нужны названия продуктов на латинице)\n\n"
         "Затем пришли список продуктов одной строкой "
         "(например: 200 г курицы, 100 г йогурта) или фото."
@@ -4397,17 +4484,23 @@ async def kbju_add_via_photo(message: Message):
     )
 
 
-@dp.message(lambda m: m.text == "🏷️ Анализ еды по штрих коду" and getattr(m.bot, "kbju_menu_open", False))
-async def kbju_add_via_barcode(message: Message):
-    """Заглушка для анализа еды по штрих коду"""
+@dp.message(lambda m: m.text == "📋 Анализ этикетки" and getattr(m.bot, "kbju_menu_open", False))
+async def kbju_add_via_label(message: Message):
+    """Обработчик кнопки анализа этикетки"""
     reset_user_state(message)
     message.bot.kbju_menu_open = True
+    message.bot.expecting_food_input = False
+    message.bot.expecting_ai_food_input = False
+    message.bot.expecting_photo_input = False
+    message.bot.expecting_label_photo_input = True
     
     text = (
         "🍱 Раздел КБЖУ\n\n"
-        "🏷️ Анализ еды по штрих коду\n\n"
-        "Эта функция пока в разработке. Скоро здесь можно будет отсканировать штрих-код продукта, "
-        "и бот автоматически определит КБЖУ!"
+        "📋 Анализ этикетки/упаковки\n\n"
+        "Отправь мне фото этикетки или упаковки продукта, и я найду КБЖУ в тексте! 📸\n\n"
+        "Я прочитаю информацию о пищевой ценности и извлеку точные данные о калориях, белках, жирах и углеводах.\n\n"
+        "Если на этикетке указан вес упаковки — использую его автоматически. "
+        "Если нет — спрошу у тебя, сколько грамм ты съел(а)."
     )
     
     await answer_with_menu(
@@ -4704,6 +4797,234 @@ async def kbju_photo_expected_but_text_received(message: Message):
         "Пожалуйста, отправь фото еды, которую хочешь проанализировать. "
         "Убедись, что еда хорошо видна на изображении.\n\n"
         "Если хочешь добавить КБЖУ другим способом, используй кнопки меню."
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_label_photo_input", False) and m.photo is not None)
+async def kbju_label_photo_process(message: Message):
+    """Обработчик анализа этикетки по фото"""
+    user_id = str(message.from_user.id)
+    entry_date = getattr(message.bot, "meal_entry_dates", {}).get(user_id, date.today())
+
+    photo = message.photo[-1]
+    
+    await message.answer("📋 Анализирую этикетку с помощью ИИ, секунду... 🤖")
+    
+    try:
+        file_info = await message.bot.get_file(photo.file_id)
+        image_bytes = await message.bot.download_file(file_info.file_path)
+        image_data = image_bytes.read()
+        
+        data = gemini_extract_kbju_from_label(image_data)
+        
+        if not data or not data.get("kbju_per_100g"):
+            await message.answer(
+                "Не удалось найти КБЖУ на этикетке 😔\n"
+                "Убедись, что фото этикетки/упаковки чёткое и видна таблица пищевой ценности. "
+                "Попробуй отправить фото ещё раз или используй другие способы добавления КБЖУ."
+            )
+            message.bot.expecting_label_photo_input = False
+            if hasattr(message.bot, "meal_entry_dates"):
+                message.bot.meal_entry_dates.pop(user_id, None)
+            return
+
+        kbju_100g = data.get("kbju_per_100g", {})
+        package_weight = data.get("package_weight")
+        found_weight = data.get("found_weight", False)
+        product_name = data.get("product_name", "Продукт")
+
+        def safe_float(value) -> float:
+            try:
+                if value is None:
+                    return 0.0
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+
+        kcal_100g = safe_float(kbju_100g.get("kcal"))
+        protein_100g = safe_float(kbju_100g.get("protein"))
+        fat_100g = safe_float(kbju_100g.get("fat"))
+        carbs_100g = safe_float(kbju_100g.get("carbs"))
+
+        if not found_weight or package_weight is None:
+            # Вес не найден - спрашиваем у пользователя
+            message.bot.expecting_label_photo_input = False
+            message.bot.expecting_label_weight_input = True
+            # Сохраняем данные КБЖУ на 100г для пересчёта
+            if not hasattr(message.bot, "label_kbju_cache"):
+                message.bot.label_kbju_cache = {}
+            message.bot.label_kbju_cache[user_id] = {
+                "kcal_100g": kcal_100g,
+                "protein_100g": protein_100g,
+                "fat_100g": fat_100g,
+                "carbs_100g": carbs_100g,
+                "product_name": product_name,
+                "entry_date": entry_date
+            }
+
+            await message.answer(
+                f"✅ Нашёл КБЖУ на этикетке!\n\n"
+                f"📦 Продукт: {product_name}\n"
+                f"📊 КБЖУ на 100 г:\n"
+                f"🔥 Калории: {kcal_100g:.0f} ккал\n"
+                f"💪 Белки: {protein_100g:.1f} г\n"
+                f"🥑 Жиры: {fat_100g:.1f} г\n"
+                f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
+                f"❓ Вес упаковки не указан на этикетке.\n"
+                f"Сколько грамм ты съел(а)? Введи число (например: 50 или 100):"
+            )
+            return
+
+        # Вес найден - пересчитываем автоматически
+        weight = safe_float(package_weight)
+        if weight <= 0:
+            weight = 100.0  # fallback
+
+        # Пересчитываем пропорционально
+        multiplier = weight / 100.0
+        totals_for_db = {
+            "calories": kcal_100g * multiplier,
+            "protein_g": protein_100g * multiplier,
+            "fat_total_g": fat_100g * multiplier,
+            "carbohydrates_total_g": carbs_100g * multiplier,
+            "products": [],
+        }
+
+        lines = [f"📋 Анализ этикетки: {product_name}\n"]
+        lines.append(f"📦 Вес: {weight:.0f} г\n")
+        lines.append("КБЖУ:")
+        lines.append(
+            f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
+            f"💪 Белки: {totals_for_db['protein_g']:.1f} г\n"
+            f"🥑 Жиры: {totals_for_db['fat_total_g']:.1f} г\n"
+            f"🍩 Углеводы: {totals_for_db['carbohydrates_total_g']:.1f} г"
+        )
+
+        api_details = f"{product_name} ({weight:.0f} г) — {totals_for_db['calories']:.0f} ккал (Б {totals_for_db['protein_g']:.1f} / Ж {totals_for_db['fat_total_g']:.1f} / У {totals_for_db['carbohydrates_total_g']:.1f})"
+
+        save_meal_entry(
+            user_id=user_id,
+            raw_query=f"[Этикетка: {product_name}]",
+            totals=totals_for_db,
+            entry_date=entry_date,
+            api_details=api_details,
+        )
+
+        daily_totals = get_daily_meal_totals(user_id, entry_date)
+
+        lines.append("\nСУММА ЗА СЕГОДНЯ:")
+        lines.append(
+            f"🔥 Калории: {daily_totals['calories']:.0f} ккал\n"
+            f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
+            f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
+            f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
+        )
+
+        message.bot.expecting_label_photo_input = False
+        if hasattr(message.bot, "meal_entry_dates"):
+            message.bot.meal_entry_dates.pop(user_id, None)
+
+        await answer_with_menu(
+            message,
+            "\n".join(lines),
+            reply_markup=kbju_after_meal_menu,
+        )
+        
+    except Exception as e:
+        print("❌ Ошибка при обработке фото этикетки:", repr(e))
+        await message.answer(
+            "Произошла ошибка при обработке фото этикетки 😔\n"
+            "Попробуй отправить фото ещё раз или используй другие способы добавления КБЖУ."
+        )
+        message.bot.expecting_label_photo_input = False
+        if hasattr(message.bot, "meal_entry_dates"):
+            message.bot.meal_entry_dates.pop(user_id, None)
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_label_photo_input", False) and m.photo is None)
+async def kbju_label_photo_expected_but_text_received(message: Message):
+    """Обработчик случая, когда ожидается фото этикетки, но получен текст"""
+    await message.answer(
+        "📋 Я ожидаю фото этикетки или упаковки продукта!\n\n"
+        "Пожалуйста, отправь фото этикетки, где видна таблица пищевой ценности. "
+        "Убедись, что текст хорошо читается.\n\n"
+        "Если хочешь добавить КБЖУ другим способом, используй кнопки меню."
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_label_weight_input", False))
+async def kbju_label_weight_input(message: Message):
+    """Обработчик ввода веса пользователем для этикетки"""
+    user_id = str(message.from_user.id)
+    
+    if not hasattr(message.bot, "label_kbju_cache") or user_id not in message.bot.label_kbju_cache:
+        await message.answer("Что-то пошло не так. Начни заново с отправки фото этикетки.")
+        message.bot.expecting_label_weight_input = False
+        return
+
+    try:
+        weight = float(message.text.replace(",", "."))
+        if weight <= 0:
+            await message.answer("Вес должен быть больше нуля. Введи правильное число (например: 50 или 100):")
+            return
+    except ValueError:
+        await message.answer("Пожалуйста, введи число (например: 50 или 100):")
+        return
+
+    cache = message.bot.label_kbju_cache[user_id]
+    entry_date = cache.get("entry_date", date.today())
+
+    # Пересчитываем пропорционально указанному весу
+    multiplier = weight / 100.0
+    totals_for_db = {
+        "calories": cache["kcal_100g"] * multiplier,
+        "protein_g": cache["protein_100g"] * multiplier,
+        "fat_total_g": cache["fat_100g"] * multiplier,
+        "carbohydrates_total_g": cache["carbs_100g"] * multiplier,
+        "products": [],
+    }
+
+    product_name = cache.get("product_name", "Продукт")
+
+    lines = [f"📋 Анализ этикетки: {product_name}\n"]
+    lines.append(f"📦 Вес: {weight:.0f} г\n")
+    lines.append("КБЖУ:")
+    lines.append(
+        f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals_for_db['protein_g']:.1f} г\n"
+        f"🥑 Жиры: {totals_for_db['fat_total_g']:.1f} г\n"
+        f"🍩 Углеводы: {totals_for_db['carbohydrates_total_g']:.1f} г"
+    )
+
+    api_details = f"{product_name} ({weight:.0f} г) — {totals_for_db['calories']:.0f} ккал (Б {totals_for_db['protein_g']:.1f} / Ж {totals_for_db['fat_total_g']:.1f} / У {totals_for_db['carbohydrates_total_g']:.1f})"
+
+    save_meal_entry(
+        user_id=user_id,
+        raw_query=f"[Этикетка: {product_name}]",
+        totals=totals_for_db,
+        entry_date=entry_date,
+        api_details=api_details,
+    )
+
+    daily_totals = get_daily_meal_totals(user_id, entry_date)
+
+    lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    lines.append(
+        f"🔥 Калории: {daily_totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
+        f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
+        f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
+    )
+
+    message.bot.expecting_label_weight_input = False
+    del message.bot.label_kbju_cache[user_id]
+    if hasattr(message.bot, "meal_entry_dates"):
+        message.bot.meal_entry_dates.pop(user_id, None)
+
+    await answer_with_menu(
+        message,
+        "\n".join(lines),
+        reply_markup=kbju_after_meal_menu,
     )
 
 
