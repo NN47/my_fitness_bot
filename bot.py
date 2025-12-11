@@ -11,6 +11,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     CallbackQuery,
+    PhotoSize,
 )
 from aiogram.filters import Command
 import os
@@ -130,6 +131,124 @@ def gemini_estimate_kbju(food_text: str) -> dict | None:
 
     except Exception as e:
         print("❌ Ошибка Gemini (КБЖУ):", repr(e))
+        return None
+
+
+def gemini_estimate_kbju_from_photo(image_bytes: bytes) -> dict | None:
+    """
+    Оценивает КБЖУ через Gemini Vision API по фото еды.
+
+    Возвращает dict вида:
+    {
+      "items": [
+        {"name": "курица", "grams": 100, "kcal": 165, "protein": 31, "fat": 4, "carbs": 0}
+      ],
+      "total": {"kcal": 165, "protein": 31, "fat": 4, "carbs": 0}
+    }
+    или None при ошибке.
+    """
+    prompt = """
+Ты нутрициолог. Твоя задача — ОЦЕНИТЬ калории, белки, жиры и углеводы для еды на фотографии.
+
+Проанализируй изображение и определи:
+1. Какие продукты/блюда видны на фото
+2. Примерный вес каждого продукта (в граммах)
+3. КБЖУ для каждого продукта
+
+Требования:
+1. Оценивай вес продуктов визуально, исходя из типичных размеров порций
+2. Используй типичные значения КБЖУ для обычных продуктов (не бренд-специфично)
+3. Ответь СТРОГО в формате JSON, БЕЗ объяснений, комментариев и оформления
+
+ФОРМАТ ОТВЕТА (пример):
+{
+  "items": [
+    {
+      "name": "курица",
+      "grams": 200,
+      "kcal": 330,
+      "protein": 40,
+      "fat": 15,
+      "carbs": 0
+    },
+    {
+      "name": "рис",
+      "grams": 150,
+      "kcal": 195,
+      "protein": 4,
+      "fat": 1,
+      "carbs": 42
+    }
+  ],
+  "total": {
+    "kcal": 525,
+    "protein": 44,
+    "fat": 16,
+    "carbs": 42
+  }
+}
+"""
+
+    try:
+        # Используем Gemini Vision API
+        # В новом API нужно передать изображение через Part
+        try:
+            from google.genai import types
+            
+            # Определяем MIME тип (по умолчанию jpeg, но можно определить по содержимому)
+            mime_type = "image/jpeg"
+            if image_bytes.startswith(b'\x89PNG'):
+                mime_type = "image/png"
+            elif image_bytes.startswith(b'GIF'):
+                mime_type = "image/gif"
+            elif image_bytes.startswith(b'WEBP'):
+                mime_type = "image/webp"
+            
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Part.from_bytes(
+                        data=image_bytes,
+                        mime_type=mime_type
+                    ),
+                    prompt
+                ]
+            )
+        except (ImportError, AttributeError) as e:
+            # Если types не доступен, пробуем альтернативный способ
+            print(f"⚠️ Не удалось использовать types.Part, пробуем альтернативный способ: {e}")
+            # Пробуем через PIL если доступен
+            try:
+                from PIL import Image
+                import io
+                img = Image.open(io.BytesIO(image_bytes))
+                # Конвертируем в base64 и передаем как текст (не идеально, но работает)
+                import base64
+                buffered = io.BytesIO()
+                img.save(buffered, format="JPEG")
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                # Это не будет работать для Vision API, но оставим как fallback
+                raise NotImplementedError("Vision API требует types.Part")
+            except Exception:
+                raise Exception("Не удалось обработать изображение. Убедитесь, что установлен google-genai с поддержкой Vision API")
+        
+        raw = response.text.strip()
+        print("Gemini raw KBJU response from photo:", raw[:500])  # первые 500 символов для логов
+
+        # Парсим JSON ответ
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            # Если Gemini добавил лишний текст — вырежем JSON
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                snippet = raw[start : end + 1]
+                return json.loads(snippet)
+            raise
+
+    except Exception as e:
+        print("❌ Ошибка Gemini (КБЖУ по фото):", repr(e))
         return None
 
 
@@ -2396,6 +2515,7 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "choosing_supplement_for_edit",
         "expecting_supplement_history_choice",
         "expecting_supplement_history_time",
+        "expecting_photo_input",
         "expecting_food_input",
         "expecting_ai_food_input",
         "kbju_menu_open",
@@ -4113,6 +4233,7 @@ async def start_kbju_add_flow(message: Message, entry_date: date):
     message.bot.kbju_menu_open = True
     message.bot.expecting_food_input = False
     message.bot.expecting_ai_food_input = False
+    message.bot.expecting_photo_input = False
 
     if not hasattr(message.bot, "meal_entry_dates"):
         message.bot.meal_entry_dates = {}
@@ -4123,10 +4244,10 @@ async def start_kbju_add_flow(message: Message, entry_date: date):
         "Выбери, как добавить приём пищи:\n"
         "• CalorieNinjas — точнее, но нужны названия продуктов на латинице\n"
         "• ИИ — оценка на основе типичных значений\n"
-        "• 📷 Анализ еды по фото (в разработке)\n"
+        "• 📷 Анализ еды по фото — отправь фото еды\n"
         "• 🏷️ Анализ еды по штрих коду (в разработке)\n\n"
         "Затем пришли список продуктов одной строкой "
-        "(например: 200 г курицы, 100 г йогурта)."
+        "(например: 200 г курицы, 100 г йогурта) или фото."
     )
 
     await answer_with_menu(
@@ -4253,15 +4374,18 @@ async def kbju_add_via_ai(message: Message):
 
 @dp.message(lambda m: m.text == "📷 Анализ еды по фото" and getattr(m.bot, "kbju_menu_open", False))
 async def kbju_add_via_photo(message: Message):
-    """Заглушка для анализа еды по фото"""
+    """Обработчик кнопки анализа еды по фото"""
     reset_user_state(message)
     message.bot.kbju_menu_open = True
+    message.bot.expecting_food_input = False
+    message.bot.expecting_ai_food_input = False
+    message.bot.expecting_photo_input = True
     
     text = (
         "🍱 Раздел КБЖУ\n\n"
         "📷 Анализ еды по фото\n\n"
-        "Эта функция пока в разработке. Скоро здесь можно будет отправить фото еды, "
-        "и бот автоматически определит КБЖУ!"
+        "Отправь мне фото еды, и я определю КБЖУ с помощью ИИ! 🤖\n\n"
+        "Сделай фото так, чтобы еда была хорошо видна на изображении."
     )
     
     await answer_with_menu(
@@ -4435,6 +4559,150 @@ async def kbju_ai_process(message: Message):
         message,
         "\n".join(lines),
         reply_markup=kbju_after_meal_menu,
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_photo_input", False) and m.photo is not None)
+async def kbju_photo_process(message: Message):
+    """Обработчик анализа еды по фото"""
+    user_id = str(message.from_user.id)
+    entry_date = getattr(message.bot, "meal_entry_dates", {}).get(user_id, date.today())
+
+    # Получаем фото наибольшего размера
+    photo = message.photo[-1]  # последний элемент - самое большое фото
+    
+    await message.answer("📷 Анализирую фото с помощью ИИ, секунду... 🤖")
+    
+    try:
+        # Скачиваем фото
+        file_info = await message.bot.get_file(photo.file_id)
+        image_bytes = await message.bot.download_file(file_info.file_path)
+        image_data = image_bytes.read()
+        
+        # Анализируем фото через Gemini
+        data = gemini_estimate_kbju_from_photo(image_data)
+        
+        if not data:
+            await message.answer(
+                "Не удалось проанализировать фото 😔\n"
+                "Попробуй сделать фото ещё раз, убедись что еда хорошо видна, "
+                "или используй другие способы добавления КБЖУ."
+            )
+            message.bot.expecting_photo_input = False
+            if hasattr(message.bot, "meal_entry_dates"):
+                message.bot.meal_entry_dates.pop(user_id, None)
+            return
+
+        items = data.get("items") or []
+        total = data.get("total") or {}
+
+        def safe_float(value) -> float:
+            try:
+                if value is None:
+                    return 0.0
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+
+        totals_for_db = {
+            "calories": safe_float(total.get("kcal")),
+            "protein_g": safe_float(total.get("protein")),
+            "fat_total_g": safe_float(total.get("fat")),
+            "carbohydrates_total_g": safe_float(total.get("carbs")),
+            "products": [],
+        }
+
+        lines = ["📷 Анализ фото еды (ИИ):\n"]
+        api_details_lines: list[str] = []
+
+        for item in items:
+            name = item.get("name") or "продукт"
+            grams = safe_float(item.get("grams"))
+            cal = safe_float(item.get("kcal"))
+            p = safe_float(item.get("protein"))
+            f = safe_float(item.get("fat"))
+            c = safe_float(item.get("carbs"))
+
+            lines.append(
+                f"• {name} ({grams:.0f} г) — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+            )
+            api_details_lines.append(
+                f"• {name} ({grams:.0f} г) — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+            )
+
+            totals_for_db["products"].append(
+                {
+                    "name": name,
+                    "grams": grams,
+                    "calories": cal,
+                    "protein_g": p,
+                    "fat_total_g": f,
+                    "carbohydrates_total_g": c,
+                }
+            )
+
+        lines.append("\nИТОГО:")
+        lines.append(
+            f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
+            f"💪 Белки: {totals_for_db['protein_g']:.1f} г\n"
+            f"🥑 Жиры: {totals_for_db['fat_total_g']:.1f} г\n"
+            f"🍩 Углеводы: {totals_for_db['carbohydrates_total_g']:.1f} г"
+        )
+
+        api_details = "\n".join(api_details_lines) if api_details_lines else None
+
+        save_meal_entry(
+            user_id=user_id,
+            raw_query="[Анализ по фото]",
+            totals=totals_for_db,
+            entry_date=entry_date,
+            api_details=api_details,
+        )
+
+        daily_totals = get_daily_meal_totals(user_id, entry_date)
+
+        lines.append("\nСУММА ЗА СЕГОДНЯ:")
+        lines.append(
+            f"🔥 Калории: {daily_totals['calories']:.0f} ккал\n"
+            f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
+            f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
+            f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
+        )
+
+        lines.append(
+            "\n⚠️ Это оценка на основе визуального анализа, а не точные лабораторные данные. "
+            "Для более точного расчёта используй режим CalorieNinjas или введи продукты вручную."
+        )
+
+        message.bot.expecting_photo_input = False
+        if hasattr(message.bot, "meal_entry_dates"):
+            message.bot.meal_entry_dates.pop(user_id, None)
+
+        await answer_with_menu(
+            message,
+            "\n".join(lines),
+            reply_markup=kbju_after_meal_menu,
+        )
+        
+    except Exception as e:
+        print("❌ Ошибка при обработке фото:", repr(e))
+        await message.answer(
+            "Произошла ошибка при обработке фото 😔\n"
+            "Попробуй отправить фото ещё раз или используй другие способы добавления КБЖУ."
+        )
+        message.bot.expecting_photo_input = False
+        if hasattr(message.bot, "meal_entry_dates"):
+            message.bot.meal_entry_dates.pop(user_id, None)
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_photo_input", False) and m.photo is None)
+async def kbju_photo_expected_but_text_received(message: Message):
+    """Обработчик случая, когда ожидается фото, но получен текст"""
+    await message.answer(
+        "📷 Я ожидаю фото еды для анализа!\n\n"
+        "Пожалуйста, отправь фото еды, которую хочешь проанализировать. "
+        "Убедись, что еда хорошо видна на изображении.\n\n"
+        "Если хочешь добавить КБЖУ другим способом, используй кнопки меню."
     )
 
 
