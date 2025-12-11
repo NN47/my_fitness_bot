@@ -2401,6 +2401,82 @@ async def delete_weight_start(message: Message):
     await message.answer(text)
 
 
+@dp.message(lambda m: getattr(m.bot, "expecting_label_weight_input", False))
+async def kbju_label_weight_input(message: Message):
+    """Обработчик ввода веса пользователем для этикетки"""
+    user_id = str(message.from_user.id)
+    
+    if not hasattr(message.bot, "label_kbju_cache") or user_id not in message.bot.label_kbju_cache:
+        await message.answer("Что-то пошло не так. Начни заново с отправки фото этикетки.")
+        message.bot.expecting_label_weight_input = False
+        return
+
+    try:
+        weight = float(message.text.replace(",", "."))
+        if weight <= 0:
+            await message.answer("Вес должен быть больше нуля. Введи правильное число (например: 50 или 100):")
+            return
+    except ValueError:
+        await message.answer("Пожалуйста, введи число (например: 50 или 100):")
+        return
+
+    cache = message.bot.label_kbju_cache[user_id]
+    entry_date = cache.get("entry_date", date.today())
+
+    # Пересчитываем пропорционально указанному весу
+    multiplier = weight / 100.0
+    totals_for_db = {
+        "calories": cache["kcal_100g"] * multiplier,
+        "protein_g": cache["protein_100g"] * multiplier,
+        "fat_total_g": cache["fat_100g"] * multiplier,
+        "carbohydrates_total_g": cache["carbs_100g"] * multiplier,
+        "products": [],
+    }
+
+    product_name = cache.get("product_name", "Продукт")
+
+    lines = [f"📋 Анализ этикетки: {product_name}\n"]
+    lines.append(f"📦 Вес: {weight:.0f} г\n")
+    lines.append("КБЖУ:")
+    lines.append(
+        f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals_for_db['protein_g']:.1f} г\n"
+        f"🥑 Жиры: {totals_for_db['fat_total_g']:.1f} г\n"
+        f"🍩 Углеводы: {totals_for_db['carbohydrates_total_g']:.1f} г"
+    )
+
+    api_details = f"{product_name} ({weight:.0f} г) — {totals_for_db['calories']:.0f} ккал (Б {totals_for_db['protein_g']:.1f} / Ж {totals_for_db['fat_total_g']:.1f} / У {totals_for_db['carbohydrates_total_g']:.1f})"
+
+    save_meal_entry(
+        user_id=user_id,
+        raw_query=f"[Этикетка: {product_name}]",
+        totals=totals_for_db,
+        entry_date=entry_date,
+        api_details=api_details,
+    )
+
+    daily_totals = get_daily_meal_totals(user_id, entry_date)
+
+    lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    lines.append(
+        f"🔥 Калории: {daily_totals['calories']:.0f} ккал\n"
+        f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
+        f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
+        f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
+    )
+
+    message.bot.expecting_label_weight_input = False
+    del message.bot.label_kbju_cache[user_id]
+    if hasattr(message.bot, "meal_entry_dates"):
+        message.bot.meal_entry_dates.pop(user_id, None)
+
+    await answer_with_menu(
+        message,
+        "\n".join(lines),
+        reply_markup=kbju_after_meal_menu,
+    )
+
+
 @dp.message(F.text.regexp(r"^\d+([.,]\d+)?$"))
 async def process_weight_or_number(message: Message):
     user_id = str(message.from_user.id)
@@ -4921,82 +4997,6 @@ async def kbju_label_photo_expected_but_text_received(message: Message):
         "Пожалуйста, отправь фото этикетки, где видна таблица пищевой ценности. "
         "Убедись, что текст хорошо читается.\n\n"
         "Если хочешь добавить КБЖУ другим способом, используй кнопки меню."
-    )
-
-
-@dp.message(lambda m: getattr(m.bot, "expecting_label_weight_input", False))
-async def kbju_label_weight_input(message: Message):
-    """Обработчик ввода веса пользователем для этикетки"""
-    user_id = str(message.from_user.id)
-    
-    if not hasattr(message.bot, "label_kbju_cache") or user_id not in message.bot.label_kbju_cache:
-        await message.answer("Что-то пошло не так. Начни заново с отправки фото этикетки.")
-        message.bot.expecting_label_weight_input = False
-        return
-
-    try:
-        weight = float(message.text.replace(",", "."))
-        if weight <= 0:
-            await message.answer("Вес должен быть больше нуля. Введи правильное число (например: 50 или 100):")
-            return
-    except ValueError:
-        await message.answer("Пожалуйста, введи число (например: 50 или 100):")
-        return
-
-    cache = message.bot.label_kbju_cache[user_id]
-    entry_date = cache.get("entry_date", date.today())
-
-    # Пересчитываем пропорционально указанному весу
-    multiplier = weight / 100.0
-    totals_for_db = {
-        "calories": cache["kcal_100g"] * multiplier,
-        "protein_g": cache["protein_100g"] * multiplier,
-        "fat_total_g": cache["fat_100g"] * multiplier,
-        "carbohydrates_total_g": cache["carbs_100g"] * multiplier,
-        "products": [],
-    }
-
-    product_name = cache.get("product_name", "Продукт")
-
-    lines = [f"📋 Анализ этикетки: {product_name}\n"]
-    lines.append(f"📦 Вес: {weight:.0f} г\n")
-    lines.append("КБЖУ:")
-    lines.append(
-        f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
-        f"💪 Белки: {totals_for_db['protein_g']:.1f} г\n"
-        f"🥑 Жиры: {totals_for_db['fat_total_g']:.1f} г\n"
-        f"🍩 Углеводы: {totals_for_db['carbohydrates_total_g']:.1f} г"
-    )
-
-    api_details = f"{product_name} ({weight:.0f} г) — {totals_for_db['calories']:.0f} ккал (Б {totals_for_db['protein_g']:.1f} / Ж {totals_for_db['fat_total_g']:.1f} / У {totals_for_db['carbohydrates_total_g']:.1f})"
-
-    save_meal_entry(
-        user_id=user_id,
-        raw_query=f"[Этикетка: {product_name}]",
-        totals=totals_for_db,
-        entry_date=entry_date,
-        api_details=api_details,
-    )
-
-    daily_totals = get_daily_meal_totals(user_id, entry_date)
-
-    lines.append("\nСУММА ЗА СЕГОДНЯ:")
-    lines.append(
-        f"🔥 Калории: {daily_totals['calories']:.0f} ккал\n"
-        f"💪 Белки: {daily_totals['protein_g']:.1f} г\n"
-        f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г\n"
-        f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
-    )
-
-    message.bot.expecting_label_weight_input = False
-    del message.bot.label_kbju_cache[user_id]
-    if hasattr(message.bot, "meal_entry_dates"):
-        message.bot.meal_entry_dates.pop(user_id, None)
-
-    await answer_with_menu(
-        message,
-        "\n".join(lines),
-        reply_markup=kbju_after_meal_menu,
     )
 
 
