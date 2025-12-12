@@ -1183,7 +1183,29 @@ def format_progress_block(user_id: str) -> str:
         bar = build_progress_bar(current, target)
         return f"{label}: {current:.0f}/{target:.0f} {unit} ({percent}%)\n{bar}"
 
+    goal_label = get_kbju_goal_label(settings.goal)
+    
     lines = ["🍱 <b>КБЖУ</b>"]
+    
+    # Пояснение о цели, норме и сожженных калориях
+    explanation_lines = [
+        f"🎯 <b>Цель:</b> {goal_label}",
+        f"📊 <b>Базовая норма:</b> {base_calories_target:.0f} ккал, Б {settings.protein:.0f} г, Ж {settings.fat:.0f} г, У {settings.carbs:.0f} г"
+    ]
+    
+    if burned_calories > 0:
+        explanation_lines.append(
+            f"🔥 <b>Сожжено на тренировках:</b> ~{burned_calories:.0f} ккал"
+        )
+        explanation_lines.append(
+            f"✅ <b>Скорректированная норма:</b> {adjusted_calories_target:.0f} ккал "
+            f"(базовая норма + сожженные калории)"
+        )
+    else:
+        explanation_lines.append("💪 Сегодня тренировок не было")
+    
+    lines.append("\n" + "\n".join(explanation_lines) + "\n")
+    
     lines.append(line("🔥 Калории", totals["calories"], adjusted_calories_target, "ккал"))
     lines.append(line("💪 Белки", totals["protein_g"], adjusted_protein_target, "г"))
     lines.append(line("🥑 Жиры", totals["fat_total_g"], adjusted_fat_target, "г"))
