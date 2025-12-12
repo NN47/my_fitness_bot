@@ -726,6 +726,18 @@ def get_daily_meal_totals(user_id: str, entry_date: date):
 
 
 
+def get_daily_workout_calories(user_id: str, entry_date: date) -> float:
+    """Получает общее количество сожженных калорий за день от тренировок"""
+    workouts = get_workouts_for_day(user_id, entry_date)
+    total_calories = 0.0
+    for w in workouts:
+        entry_calories = w.calories or calculate_workout_calories(
+            user_id, w.exercise, w.variant, w.count
+        )
+        total_calories += entry_calories
+    return total_calories
+
+
 def get_meals_for_date(user_id: str, entry_date: date) -> list[Meal]:
     session = SessionLocal()
     try:
@@ -1146,17 +1158,48 @@ def format_progress_block(user_id: str) -> str:
         return "🍱 Настрой цель по КБЖУ через «🎯 Цель / Норма КБЖУ», чтобы я показывал прогресс."
 
     totals = get_daily_meal_totals(user_id, date.today())
-
+    burned_calories = get_daily_workout_calories(user_id, date.today())
+    
+    # Базовая норма калорий
+    base_calories_target = settings.calories
+    
+    # Норма калорий с учетом сожженных (сожженные добавляются к норме)
+    adjusted_calories_target = base_calories_target + burned_calories
+    
+    # Пропорционально увеличиваем норму БЖУ
+    # Формула: новая норма = базовая норма * (новая норма калорий / базовая норма калорий)
+    if base_calories_target > 0:
+        ratio = adjusted_calories_target / base_calories_target
+        adjusted_protein_target = settings.protein * ratio
+        adjusted_fat_target = settings.fat * ratio
+        adjusted_carbs_target = settings.carbs * ratio
+    else:
+        adjusted_protein_target = settings.protein
+        adjusted_fat_target = settings.fat
+        adjusted_carbs_target = settings.carbs
+    
+    # Съеденные калории
+    eaten_calories = totals["calories"]
+    # Осталось калорий (может быть отрицательным)
+    remaining_calories = adjusted_calories_target - eaten_calories
+    
+    # Процент для калорий (относительно скорректированной нормы)
+    calories_percent = 0 if adjusted_calories_target <= 0 else round((eaten_calories / adjusted_calories_target) * 100)
+    calories_bar = build_progress_bar(eaten_calories, adjusted_calories_target)
+    
+    # Форматируем строку калорий: "Съедено | осталось | сожжено"
+    calories_line = f"🔥 Калории: {eaten_calories:.0f} | {remaining_calories:+.0f} | {burned_calories:.0f} ({calories_percent}%)\n{calories_bar}"
+    
     def line(label: str, current: float, target: float, unit: str) -> str:
         percent = 0 if target <= 0 else round((current / target) * 100)
         bar = build_progress_bar(current, target)
-        return f"{label}: {current:.0f} {unit}\n{bar}"
+        return f"{label}: {current:.0f}/{target:.0f} {unit} ({percent}%)\n{bar}"
 
     lines = ["🍱 <b>КБЖУ</b>"]
-    lines.append(line("🔥 Калории", totals["calories"], settings.calories, "ккал"))
-    lines.append(line("💪 Белки", totals["protein_g"], settings.protein, "г"))
-    lines.append(line("🥑 Жиры", totals["fat_total_g"], settings.fat, "г"))
-    lines.append(line("🍩 Углеводы", totals["carbohydrates_total_g"], settings.carbs, "г"))
+    lines.append(calories_line)
+    lines.append(line("💪 Белки", totals["protein_g"], adjusted_protein_target, "г"))
+    lines.append(line("🥑 Жиры", totals["fat_total_g"], adjusted_fat_target, "г"))
+    lines.append(line("🍩 Углеводы", totals["carbohydrates_total_g"], adjusted_carbs_target, "г"))
 
     return "\n".join(lines)
 
