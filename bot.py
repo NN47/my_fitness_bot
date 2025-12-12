@@ -1116,13 +1116,32 @@ def format_today_workouts_block(user_id: str, include_date: bool = True) -> str:
     return "\n".join(text)
 
 
-def build_progress_bar(current: float, target: float, length: int = 20) -> str:
-    if target <= 0:
-        filled_blocks = 0
+def build_progress_bar(current: float, target: float, length: int = 10) -> str:
+    """
+    Строит индикатор прогресса по КБЖУ:
+    - ◾️◾️◾️◾️◾️◾️◾️◾️◾️◾️ - Пустое значение (target <= 0 или current == 0)
+    - 🟩🟩🟩🟩◾️◾️◾️◾️◾️◾️ - Обычный прогресс (1-100%)
+    - 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 - 100% (ровно)
+    - 🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨 - 101-125%
+    - 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 - >125%
+    """
+    if target <= 0 or current <= 0:
+        # Пустое значение
+        return "◾️" * length
+    
+    percent = (current / target) * 100
+    
+    if percent > 125:
+        # >125% - все красные
+        return "🟥" * length
+    elif percent > 100:
+        # 101-125% - все желтые
+        return "🟨" * length
     else:
+        # 1-100% - зеленые пропорционально + пустые
         filled_blocks = min(int(round((current / target) * length)), length)
-    empty_blocks = max(length - filled_blocks, 0)
-    return "▰" * filled_blocks + "▱" * empty_blocks
+        empty_blocks = max(length - filled_blocks, 0)
+        return "🟩" * filled_blocks + "◾️" * empty_blocks
 
 
 def format_progress_block(user_id: str) -> str:
