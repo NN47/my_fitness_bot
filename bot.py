@@ -1081,13 +1081,9 @@ def format_today_workouts_block(user_id: str, include_date: bool = True) -> str:
     workouts = get_workouts_for_day(user_id, today)
 
     if not workouts:
-        if include_date:
-            return f"📅 {today_str}: тренировок пока нет."
-        return "Тренировок на сегодня пока нет."
+        return "💪 <b>Тренировки</b>\n—"
 
-    text = ["Тренировки:"]
-    if include_date:
-        text[0] = f"📅 {today_str} — тренировки:"
+    text = ["💪 <b>Тренировки</b>"]
     total_calories = 0.0
     aggregates: dict[tuple[str, str | None], dict[str, float]] = {}
 
@@ -1151,16 +1147,11 @@ def format_progress_block(user_id: str) -> str:
 
     totals = get_daily_meal_totals(user_id, date.today())
 
-    def line(label: str, current: float, target: float, unit: str) -> str:
-        percent = 0 if target <= 0 else round((current / target) * 100)
-        bar = build_progress_bar(current, target)
-        return f"{label}: {current:.0f}/{target:.0f} {unit} ({percent}%)\n{bar}"
-
-    lines = ["📊 Ваш прогресс по КБЖУ на сегодня:"]
-    lines.append(line("🔥 Калории", totals["calories"], settings.calories, "ккал"))
-    lines.append(line("💪 Белки", totals["protein_g"], settings.protein, "г"))
-    lines.append(line("🧈 Жиры", totals["fat_total_g"], settings.fat, "г"))
-    lines.append(line("🍞 Углеводы", totals["carbohydrates_total_g"], settings.carbs, "г"))
+    lines = ["🍱 <b>КБЖУ</b>"]
+    lines.append(f"🔥 Калории: {totals['calories']:.0f} ккал")
+    lines.append(f"💪 Белки: {totals['protein_g']:.1f} г")
+    lines.append(f"🥑 Жиры: {totals['fat_total_g']:.1f} г")
+    lines.append(f"🍩 Углеводы: {totals['carbohydrates_total_g']:.1f} г")
 
     return "\n".join(lines)
 
@@ -1848,21 +1839,12 @@ measurements_menu = ReplyKeyboardMarkup(
 @dp.message(Command("start"))
 async def start(message: Message):
     user_id = str(message.from_user.id)
-    text = get_today_summary_text(user_id)
     progress_text = format_progress_block(user_id)
     workouts_text = format_today_workouts_block(user_id, include_date=False)
-    name = message.from_user.first_name or "друг"
-    today_line = f"📅 Сегодня: {date.today().strftime('%d.%m.%Y')}"
-    welcome = (
-        f"👋 Привет, {name}!\n"
-        f"Твой фитнес-помощник готов 💪\n\n"
-        f"{today_line}\n\n"
-        f"{text}\n\n"
-        f"{progress_text}\n\n"
-        f"{workouts_text}\n\n"
-        "Выбери действие ниже:"
-    )
-    await answer_with_menu(message, welcome, reply_markup=main_menu)
+    today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
+    
+    welcome = f"{today_line}\n\n{progress_text}\n\n{workouts_text}"
+    await answer_with_menu(message, welcome, reply_markup=main_menu, parse_mode="HTML")
 
 
 @dp.message(F.text == "Анализ деятельности")
@@ -2013,6 +1995,7 @@ async def show_training_menu(message: Message):
         message,
         f"Что делаем?\n\n{workouts_text}",
         reply_markup=training_menu,
+        parse_mode="HTML",
     )
 
 
@@ -2799,13 +2782,21 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
 async def go_main_menu(message: Message):
     reset_user_state(message)
     message.bot.menu_stack = [main_menu]
+    
+    # Отдельное сообщение "Возвращаю в главное меню"
+    await message.answer("🏠 Возвращаю в главное меню")
+    
+    # Главное меню
     progress_text = format_progress_block(str(message.from_user.id))
     workouts_text = format_today_workouts_block(str(message.from_user.id), include_date=False)
-    today_line = f"📅 Сегодня: {date.today().strftime('%d.%m.%Y')}"
+    today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
+    
+    main_menu_text = f"{today_line}\n\n{progress_text}\n\n{workouts_text}"
     await answer_with_menu(
         message,
-        f"🏠 Возвращаю в главное меню\n\n{today_line}\n\n{progress_text}\n\n{workouts_text}",
+        main_menu_text,
         reply_markup=main_menu,
+        parse_mode="HTML",
     )
 
 
@@ -4372,6 +4363,7 @@ async def calories(message: Message):
         message,
         f"🍱 Раздел КБЖУ\n\n{progress_text}\n\nВыбери действие:",
         reply_markup=kbju_menu,
+        parse_mode="HTML",
     )
 
 @dp.message(lambda m: getattr(m.bot, "awaiting_kbju_choice", False))
