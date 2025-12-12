@@ -5433,32 +5433,51 @@ async def handle_meal_edit_input(message: Message):
 
     message.bot.meal_edit_context.pop(user_id, None)
 
+    # Получаем общие дневные итоги после обновления
+    daily_totals = get_daily_meal_totals(user_id, target_date)
+    
     # Получаем настройки КБЖУ для отображения нормы и процентов
     settings = get_kbju_settings(user_id)
     
     lines = ["✅ Обновил запись по КБЖУ:\n"]
     
     if settings:
+        # Получаем сожженные калории и скорректированные нормы (как в format_progress_block)
+        burned_calories = get_daily_workout_calories(user_id, target_date)
+        base_calories_target = settings.calories
+        adjusted_calories_target = base_calories_target + burned_calories
+        
+        # Пропорционально увеличиваем норму БЖУ
+        if base_calories_target > 0:
+            ratio = adjusted_calories_target / base_calories_target
+            adjusted_protein_target = settings.protein * ratio
+            adjusted_fat_target = settings.fat * ratio
+            adjusted_carbs_target = settings.carbs * ratio
+        else:
+            adjusted_protein_target = settings.protein
+            adjusted_fat_target = settings.fat
+            adjusted_carbs_target = settings.carbs
+        
         def format_line(label: str, current: float, target: float, unit: str) -> str:
             percent = 0 if target <= 0 else round((current / target) * 100)
             return f"{label}: {current:.0f}/{target:.0f} {unit} ({percent}%)"
         
         lines.extend(
             [
-                format_line("🔥 Калории", float(totals['calories']), settings.calories, "ккал"),
-                format_line("💪 Белки", float(totals['protein_g']), settings.protein, "г"),
-                format_line("🥑 Жиры", float(totals['fat_total_g']), settings.fat, "г"),
-                format_line("🍩 Углеводы", float(totals['carbohydrates_total_g']), settings.carbs, "г"),
+                format_line("🔥 Калории", daily_totals['calories'], adjusted_calories_target, "ккал"),
+                format_line("💪 Белки", daily_totals['protein_g'], adjusted_protein_target, "г"),
+                format_line("🥑 Жиры", daily_totals['fat_total_g'], adjusted_fat_target, "г"),
+                format_line("🍩 Углеводы", daily_totals['carbohydrates_total_g'], adjusted_carbs_target, "г"),
             ]
         )
     else:
         # Если настройки не заданы, показываем без нормы
         lines.extend(
             [
-                f"🔥 Калории: {float(totals['calories']):.0f} ккал",
-                f"💪 Белки: {float(totals['protein_g']):.1f} г",
-                f"🥑 Жиры: {float(totals['fat_total_g']):.1f} г",
-                f"🍩 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г",
+                f"🔥 Калории: {daily_totals['calories']:.0f} ккал",
+                f"💪 Белки: {daily_totals['protein_g']:.1f} г",
+                f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г",
+                f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г",
             ]
         )
 
