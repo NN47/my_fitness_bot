@@ -1178,25 +1178,13 @@ def format_progress_block(user_id: str) -> str:
         adjusted_fat_target = settings.fat
         adjusted_carbs_target = settings.carbs
     
-    # Съеденные калории
-    eaten_calories = totals["calories"]
-    # Осталось калорий (может быть отрицательным)
-    remaining_calories = adjusted_calories_target - eaten_calories
-    
-    # Процент для калорий (относительно скорректированной нормы)
-    calories_percent = 0 if adjusted_calories_target <= 0 else round((eaten_calories / adjusted_calories_target) * 100)
-    calories_bar = build_progress_bar(eaten_calories, adjusted_calories_target)
-    
-    # Форматируем строку калорий: "Съедено | осталось | сожжено"
-    calories_line = f"🔥 Калории: {eaten_calories:.0f} | {remaining_calories:+.0f} | {burned_calories:.0f} ({calories_percent}%)\n{calories_bar}"
-    
     def line(label: str, current: float, target: float, unit: str) -> str:
         percent = 0 if target <= 0 else round((current / target) * 100)
         bar = build_progress_bar(current, target)
         return f"{label}: {current:.0f}/{target:.0f} {unit} ({percent}%)\n{bar}"
 
     lines = ["🍱 <b>КБЖУ</b>"]
-    lines.append(calories_line)
+    lines.append(line("🔥 Калории", totals["calories"], adjusted_calories_target, "ккал"))
     lines.append(line("💪 Белки", totals["protein_g"], adjusted_protein_target, "г"))
     lines.append(line("🥑 Жиры", totals["fat_total_g"], adjusted_fat_target, "г"))
     lines.append(line("🍩 Углеводы", totals["carbohydrates_total_g"], adjusted_carbs_target, "г"))
