@@ -1116,10 +1116,10 @@ def build_progress_bar(current: float, target: float, length: int = 10) -> str:
     """
     Строит индикатор прогресса по КБЖУ:
     - ◾️◾️◾️◾️◾️◾️◾️◾️◾️◾️ - Пустое значение (target <= 0 или current == 0)
-    - 🟩🟩🟩🟩◾️◾️◾️◾️◾️◾️ - Обычный прогресс (1-100%)
-    - 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 - 100% (ровно)
-    - 🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨 - 101-125%
-    - 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 - >125%
+    - 🟩🟩🟩🟩◾️◾️◾️◾️◾️◾️ - Обычный прогресс (0-101%)
+    - 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 - 101% (ровно)
+    - 🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨 - 102-135%
+    - 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 - >135%
     """
     if target <= 0 or current <= 0:
         # Пустое значение
@@ -1127,14 +1127,14 @@ def build_progress_bar(current: float, target: float, length: int = 10) -> str:
     
     percent = (current / target) * 100
     
-    if percent > 125:
-        # >125% - все красные
+    if percent > 135:
+        # >135% - все красные
         return "🟥" * length
-    elif percent > 100:
-        # 101-125% - все желтые
+    elif percent > 101:
+        # 102-135% - все желтые
         return "🟨" * length
     else:
-        # 1-100% - зеленые пропорционально + пустые
+        # 0-101% - зеленые пропорционально + пустые
         filled_blocks = min(int(round((current / target) * length)), length)
         empty_blocks = max(length - filled_blocks, 0)
         return "🟩" * filled_blocks + "◾️" * empty_blocks
@@ -5338,36 +5338,49 @@ async def handle_meal_edit_input(message: Message):
         await message.answer("Напиши новое описание продуктов, пожалуйста 🙏")
         return
 
-    translated_query = translate_text(new_text, source_lang="ru", target_lang="en")
+    await message.answer("Считаю КБЖУ с помощью ИИ, секунду... 🤖")
 
-    try:
-        items, totals = get_nutrition_from_api(translated_query)
-    except Exception as e:
-        print("Nutrition API error during edit:", e)
-        await message.answer("⚠️ Не получилось пересчитать КБЖУ. Попробуй ещё раз чуть позже.")
-        return
+    data = gemini_estimate_kbju(new_text)
 
-    if not items:
+    if not data:
         await message.answer(
-            "Не нашёл продукты в этом описании. Попробуй уточнить количество или состав."
+            "Не удалось пересчитать КБЖУ через ИИ 😔\n"
+            "Попробуй переформулировать описание."
         )
         return
+
+    items = data.get("items") or []
+    total = data.get("total") or {}
+
+    def safe_float(value) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    totals = {
+        "calories": safe_float(total.get("kcal")),
+        "protein_g": safe_float(total.get("protein")),
+        "fat_total_g": safe_float(total.get("fat")),
+        "carbohydrates_total_g": safe_float(total.get("carbs")),
+    }
 
     api_details_lines: list[str] = []
     for item in items:
-        name_en = (item.get("name") or "item").title()
-        name = translate_text(name_en, source_lang="en", target_lang="ru")
-
-        cal = float(item.get("_calories", 0.0))
-        p = float(item.get("_protein_g", 0.0))
-        f = float(item.get("_fat_total_g", 0.0))
-        c = float(item.get("_carbohydrates_total_g", 0.0))
+        name = item.get("name") or "продукт"
+        grams = safe_float(item.get("grams"))
+        cal = safe_float(item.get("kcal"))
+        p = safe_float(item.get("protein"))
+        f = safe_float(item.get("fat"))
+        c = safe_float(item.get("carbs"))
 
         api_details_lines.append(
-            f"• {name} — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+            f"• {name} ({grams:.0f} г) — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
         )
 
-    api_details = "\n".join(api_details_lines)
+    api_details = "\n".join(api_details_lines) if api_details_lines else None
 
     success = update_meal_entry(meal_id, user_id, new_text, totals, api_details=api_details)
     if not success:
@@ -5377,15 +5390,34 @@ async def handle_meal_edit_input(message: Message):
 
     message.bot.meal_edit_context.pop(user_id, None)
 
+    # Получаем настройки КБЖУ для отображения нормы и процентов
+    settings = get_kbju_settings(user_id)
+    
     lines = ["✅ Обновил запись по КБЖУ:\n"]
-    lines.extend(
-        [
-            f"🔥 {float(totals['calories']):.0f} ккал",
-            f"💪 Белки: {float(totals['protein_g']):.1f} г",
-            f"🧈 Жиры: {float(totals['fat_total_g']):.1f} г",
-            f"🍞 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г",
-        ]
-    )
+    
+    if settings:
+        def format_line(label: str, current: float, target: float, unit: str) -> str:
+            percent = 0 if target <= 0 else round((current / target) * 100)
+            return f"{label}: {current:.0f}/{target:.0f} {unit} ({percent}%)"
+        
+        lines.extend(
+            [
+                format_line("🔥 Калории", float(totals['calories']), settings.calories, "ккал"),
+                format_line("💪 Белки", float(totals['protein_g']), settings.protein, "г"),
+                format_line("🥑 Жиры", float(totals['fat_total_g']), settings.fat, "г"),
+                format_line("🍩 Углеводы", float(totals['carbohydrates_total_g']), settings.carbs, "г"),
+            ]
+        )
+    else:
+        # Если настройки не заданы, показываем без нормы
+        lines.extend(
+            [
+                f"🔥 Калории: {float(totals['calories']):.0f} ккал",
+                f"💪 Белки: {float(totals['protein_g']):.1f} г",
+                f"🥑 Жиры: {float(totals['fat_total_g']):.1f} г",
+                f"🍩 Углеводы: {float(totals['carbohydrates_total_g']):.1f} г",
+            ]
+        )
 
     await message.answer("\n".join(lines))
     await show_day_meals(message, user_id, target_date)
