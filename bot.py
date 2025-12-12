@@ -1587,8 +1587,7 @@ main_menu_button = KeyboardButton(text="🏠 Главное меню")
 kbju_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить")],
-        [KeyboardButton(text="📊 Результаты за сегодня")],
-        [KeyboardButton(text="📆 Календарь КБЖУ")],
+        [KeyboardButton(text="📊 Дневной отчёт"), KeyboardButton(text="📆 Календарь КБЖУ")],
         [KeyboardButton(text="🎯 Цель / Норма КБЖУ")],
         [main_menu_button],
     ],
@@ -1661,6 +1660,7 @@ kbju_after_meal_menu = ReplyKeyboardMarkup(
             KeyboardButton(text="➕ Внести ещё приём"),
             KeyboardButton(text="✏️ Редактировать"),
         ],
+        [KeyboardButton(text="📊 Дневной отчёт")],
         [
             KeyboardButton(text="⬅️ Назад"),
             main_menu_button,
@@ -4464,9 +4464,7 @@ async def start_kbju_add_flow(message: Message, entry_date: date):
         "• 📝 Ввести приём пищи (анализ ИИ) — умный анализ на основе типичных значений (рекомендуется)\n"
         "• 📷 Анализ еды по фото — отправь фото еды\n"
         "• 📋 Анализ этикетки — отправь фото этикетки/упаковки\n"
-        "• CalorieNinjas — альтернативный вариант (нужны названия продуктов на латинице)\n\n"
-        "Затем пришли список продуктов одной строкой "
-        "(например: 200 г курицы, 100 г йогурта) или фото."
+        "• CalorieNinjas — альтернативный вариант"
     )
 
     await answer_with_menu(
@@ -4544,7 +4542,7 @@ async def calories_add(message: Message):
     await start_kbju_add_flow(message, date.today())
 
 
-@dp.message(lambda m: m.text == "📊 Результаты за сегодня" and getattr(m.bot, "kbju_menu_open", False))
+@dp.message(lambda m: m.text == "📊 Дневной отчёт" and getattr(m.bot, "kbju_menu_open", False))
 async def calories_today_results(message: Message):
     reset_user_state(message)
     message.bot.kbju_menu_open = True
@@ -4774,9 +4772,6 @@ async def kbju_ai_process(message: Message):
         f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
     )
 
-    lines.append(
-        "\n⚠️ Это оценка на основе ИИ, а не точные лабораторные данные."
-    )
 
     message.bot.expecting_ai_food_input = False
     if hasattr(message.bot, "meal_entry_dates"):
@@ -4896,9 +4891,6 @@ async def kbju_photo_process(message: Message):
             f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г"
         )
 
-        lines.append(
-            "\n⚠️ Это оценка на основе визуального анализа ИИ, а не точные лабораторные данные."
-        )
 
         message.bot.expecting_photo_input = False
         if hasattr(message.bot, "meal_entry_dates"):
