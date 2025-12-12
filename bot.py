@@ -1147,11 +1147,16 @@ def format_progress_block(user_id: str) -> str:
 
     totals = get_daily_meal_totals(user_id, date.today())
 
+    def line(label: str, current: float, target: float, unit: str) -> str:
+        percent = 0 if target <= 0 else round((current / target) * 100)
+        bar = build_progress_bar(current, target)
+        return f"{label}: {current:.0f} {unit}\n{bar}"
+
     lines = ["🍱 <b>КБЖУ</b>"]
-    lines.append(f"🔥 Калории: {totals['calories']:.0f} ккал")
-    lines.append(f"💪 Белки: {totals['protein_g']:.1f} г")
-    lines.append(f"🥑 Жиры: {totals['fat_total_g']:.1f} г")
-    lines.append(f"🍩 Углеводы: {totals['carbohydrates_total_g']:.1f} г")
+    lines.append(line("🔥 Калории", totals["calories"], settings.calories, "ккал"))
+    lines.append(line("💪 Белки", totals["protein_g"], settings.protein, "г"))
+    lines.append(line("🥑 Жиры", totals["fat_total_g"], settings.fat, "г"))
+    lines.append(line("🍩 Углеводы", totals["carbohydrates_total_g"], settings.carbs, "г"))
 
     return "\n".join(lines)
 
