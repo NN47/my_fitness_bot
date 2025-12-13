@@ -675,11 +675,15 @@ def update_meal_entry(
             return False
 
         meal.description = description
+        meal.raw_query = description
         meal.calories = float(totals.get("calories", 0.0))
         meal.protein = float(totals.get("protein_g", 0.0))
         meal.fat = float(totals.get("fat_total_g", 0.0))
         meal.carbs = float(totals.get("carbohydrates_total_g", 0.0))
         meal.api_details = api_details
+        # Обновляем products_json если есть продукты в totals
+        if "products" in totals:
+            meal.products_json = json.dumps(totals["products"])
         session.commit()
         return True
     finally:
@@ -4801,6 +4805,12 @@ async def kbju_ai_process(message: Message):
             f"• {name} ({grams:.0f} г) — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
         )
 
+        # Вычисляем КБЖУ на 100г для удобного пересчета при редактировании
+        calories_per_100g = (cal / grams) * 100 if grams > 0 else 0
+        protein_per_100g = (p / grams) * 100 if grams > 0 else 0
+        fat_per_100g = (f / grams) * 100 if grams > 0 else 0
+        carbs_per_100g = (c / grams) * 100 if grams > 0 else 0
+        
         totals_for_db["products"].append(
             {
                 "name": name,
@@ -4809,6 +4819,10 @@ async def kbju_ai_process(message: Message):
                 "protein_g": p,
                 "fat_total_g": f,
                 "carbohydrates_total_g": c,
+                "calories_per_100g": calories_per_100g,
+                "protein_per_100g": protein_per_100g,
+                "fat_per_100g": fat_per_100g,
+                "carbs_per_100g": carbs_per_100g,
             }
         )
 
@@ -5344,31 +5358,14 @@ async def start_meal_edit(callback: CallbackQuery):
     target_date = date.fromisoformat(parts[2]) if len(parts) > 2 else date.today()
     user_id = str(callback.from_user.id)
 
-    meals_for_day = get_meals_for_date(user_id, target_date)
-    meal = next((m for m in meals_for_day if m.id == meal_id), None)
-    if not meal:
-        await callback.message.answer("Не нашёл запись для изменения.")
-        return
+    session = SessionLocal()
+    try:
+        meal = session.query(Meal).filter_by(id=meal_id, user_id=user_id).first()
+        if not meal:
+            await callback.message.answer("Не нашёл запись для изменения.")
+            return
 
-    ctx = getattr(callback.bot, "meal_edit_context", {})
-    ctx[user_id] = {"meal_id": meal_id, "date": target_date}
-    callback.bot.meal_edit_context = ctx
-    callback.bot.expecting_food_input = False
-
-    position = next(
-        (idx for idx, m in enumerate(meals_for_day, start=1) if m.id == meal_id),
-        meal_id,
-    )
-    
-    # Показываем результат бота (api_details), а не ввод пользователя
-    api_details = getattr(meal, "api_details", None)
-    current_result = None
-    
-    if api_details:
-        # Используем результат от бота
-        current_result = api_details
-    else:
-        # Fallback: пробуем достать продукты из JSON (на случай старых записей)
+        # Извлекаем продукты из products_json
         products = []
         raw_products = getattr(meal, "products_json", None)
         if raw_products:
@@ -5376,38 +5373,76 @@ async def start_meal_edit(callback: CallbackQuery):
                 products = json.loads(raw_products)
             except Exception:
                 pass
-        
-        if products:
-            # Форматируем продукты из JSON
-            result_lines = []
-            for p in products:
-                name = p.get("name_ru") or p.get("name") or "продукт"
-                cal = p.get("calories") or p.get("_calories") or 0
-                prot = p.get("protein_g") or p.get("_protein_g") or 0
-                fat = p.get("fat_total_g") or p.get("_fat_total_g") or 0
-                carb = p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 0
-                result_lines.append(
-                    f"• {name} — {cal:.0f} ккал (Б {prot:.1f} / Ж {fat:.1f} / У {carb:.1f})"
-                )
-            current_result = "\n".join(result_lines)
-        else:
-            # Последний fallback: показываем итоговые КБЖУ
-            current_result = (
-                f"🔥 {meal.calories:.0f} ккал "
-                f"(Б {meal.protein:.1f} / Ж {meal.fat:.1f} / У {meal.carbs:.1f})"
+
+        # Если продуктов нет, пробуем извлечь из api_details
+        if not products and meal.api_details:
+            # Парсим api_details для извлечения продуктов
+            # Формат: "• название (вес г) — ккал (Б ... / Ж ... / У ...)"
+            import re
+            lines = meal.api_details.split("\n")
+            for line in lines:
+                if line.strip().startswith("•"):
+                    # Извлекаем название и вес
+                    match = re.match(r"•\s*(.+?)\s*\((\d+(?:\.\d+)?)\s*г\)", line)
+                    if match:
+                        name = match.group(1).strip()
+                        grams = float(match.group(2))
+                        # Извлекаем КБЖУ
+                        kbju_match = re.search(r"(\d+(?:\.\d+)?)\s*ккал.*?Б\s*(\d+(?:\.\d+)?).*?Ж\s*(\d+(?:\.\d+)?).*?У\s*(\d+(?:\.\d+)?)", line)
+                        if kbju_match:
+                            cal = float(kbju_match.group(1))
+                            prot = float(kbju_match.group(2))
+                            fat = float(kbju_match.group(3))
+                            carbs = float(kbju_match.group(4))
+                            # Вычисляем КБЖУ на 100г
+                            if grams > 0:
+                                products.append({
+                                    "name": name,
+                                    "grams": grams,
+                                    "calories": cal,
+                                    "protein_g": prot,
+                                    "fat_total_g": fat,
+                                    "carbohydrates_total_g": carbs,
+                                    "calories_per_100g": (cal / grams) * 100,
+                                    "protein_per_100g": (prot / grams) * 100,
+                                    "fat_per_100g": (fat / grams) * 100,
+                                    "carbs_per_100g": (carbs / grams) * 100,
+                                })
+
+        if not products:
+            await callback.message.answer(
+                "❌ Не удалось извлечь список продуктов из этой записи.\n"
+                "Попробуй удалить и создать запись заново."
             )
-    
-    await callback.message.answer(
-        "\n".join(
-            [
-                f"✏️ Введи новый состав для позиции №{position}:",
-                f"Сейчас записано:",
-                current_result,
-                "",
-                "Я пересчитаю КБЖУ автоматически.",
-            ]
-        )
-    )
+            return
+
+        # Сохраняем продукты в контекст для пересчета
+        ctx = getattr(callback.bot, "meal_edit_context", {})
+        ctx[user_id] = {
+            "meal_id": meal_id,
+            "date": target_date,
+            "products": products  # Сохраняем продукты с КБЖУ на 100г
+        }
+        callback.bot.meal_edit_context = ctx
+
+        # Формируем список продуктов для редактирования (только название и вес)
+        edit_lines = ["✏️ Редактирование приёма пищи\n\nТекущий состав:"]
+        for i, p in enumerate(products, 1):
+            name = p.get("name") or "продукт"
+            grams = p.get("grams", 0)
+            edit_lines.append(f"{i}. {name}, {grams:.0f} г")
+        
+        edit_lines.append("\nВведи новый состав в формате:")
+        edit_lines.append("название, вес г")
+        edit_lines.append("название, вес г")
+        edit_lines.append("\nПример:")
+        edit_lines.append("курица, 200 г")
+        edit_lines.append("рис, 150 г")
+        edit_lines.append("\nМожно изменить название и/или вес. КБЖУ пересчитается автоматически.")
+
+        await callback.message.answer("\n".join(edit_lines))
+    finally:
+        session.close()
 
 
 @dp.message(lambda m: getattr(m.bot, "meal_edit_context", {}).get(str(m.from_user.id)))
@@ -5416,6 +5451,7 @@ async def handle_meal_edit_input(message: Message):
     context = message.bot.meal_edit_context.get(user_id) or {}
     meal_id = context.get("meal_id")
     target_date = context.get("date", date.today())
+    saved_products = context.get("products", [])
     new_text = message.text.strip()
 
     if not meal_id:
@@ -5424,53 +5460,97 @@ async def handle_meal_edit_input(message: Message):
         return
 
     if not new_text:
-        await message.answer("Напиши новое описание продуктов, пожалуйста 🙏")
+        await message.answer("Напиши новый состав продуктов в формате: название, вес г")
         return
 
-    await message.answer("Считаю КБЖУ с помощью ИИ, секунду... 🤖")
-
-    data = gemini_estimate_kbju(new_text)
-
-    if not data:
+    if not saved_products:
         await message.answer(
-            "Не удалось пересчитать КБЖУ через ИИ 😔\n"
-            "Попробуй переформулировать описание."
+            "❌ Не удалось найти сохраненные данные продуктов.\n"
+            "Попробуй удалить и создать запись заново."
         )
+        message.bot.meal_edit_context.pop(user_id, None)
         return
 
-    items = data.get("items") or []
-    total = data.get("total") or {}
+    # Парсим ввод пользователя: каждая строка = "название, вес г"
+    import re
+    lines = [line.strip() for line in new_text.split("\n") if line.strip()]
+    edited_products = []
+    
+    for i, line in enumerate(lines):
+        # Парсим формат "название, вес г" или "название, вес"
+        match = re.match(r"(.+?),\s*(\d+(?:[.,]\d+)?)\s*г?", line, re.IGNORECASE)
+        if not match:
+            await message.answer(
+                f"❌ Неверный формат в строке {i+1}: {line}\n"
+                "Используй формат: название, вес г\n"
+                "Пример: курица, 200 г"
+            )
+            return
+        
+        name = match.group(1).strip()
+        grams_str = match.group(2).replace(",", ".")
+        grams = float(grams_str)
+        
+        # Находим соответствующий продукт из сохраненных (по порядку или по названию)
+        if i < len(saved_products):
+            original_product = saved_products[i]
+        else:
+            # Если продуктов больше, чем было, используем последний продукт как шаблон
+            original_product = saved_products[-1] if saved_products else None
+        
+        if not original_product:
+            await message.answer("❌ Ошибка: не найдены исходные данные продукта.")
+            return
+        
+        # Получаем КБЖУ на 100г из сохраненных данных
+        # Если есть сохраненные значения на 100г, используем их
+        calories_per_100g = original_product.get("calories_per_100g")
+        protein_per_100g = original_product.get("protein_per_100g")
+        fat_per_100g = original_product.get("fat_per_100g")
+        carbs_per_100g = original_product.get("carbs_per_100g")
+        
+        # Если нет значений на 100г, вычисляем из сохраненных данных
+        if not calories_per_100g and original_product.get("grams", 0) > 0:
+            orig_grams = original_product.get("grams", 1)
+            calories_per_100g = (original_product.get("calories", 0) / orig_grams) * 100
+            protein_per_100g = (original_product.get("protein_g", 0) / orig_grams) * 100
+            fat_per_100g = (original_product.get("fat_total_g", 0) / orig_grams) * 100
+            carbs_per_100g = (original_product.get("carbohydrates_total_g", 0) / orig_grams) * 100
+        
+        # Пересчитываем КБЖУ для нового веса
+        new_calories = (calories_per_100g * grams) / 100
+        new_protein = (protein_per_100g * grams) / 100
+        new_fat = (fat_per_100g * grams) / 100
+        new_carbs = (carbs_per_100g * grams) / 100
+        
+        edited_products.append({
+            "name": name,
+            "grams": grams,
+            "calories": new_calories,
+            "protein_g": new_protein,
+            "fat_total_g": new_fat,
+            "carbohydrates_total_g": new_carbs,
+        })
 
-    def safe_float(value) -> float:
-        try:
-            if value is None:
-                return 0.0
-            return float(value)
-        except (TypeError, ValueError):
-            return 0.0
-
+    # Суммируем КБЖУ всех продуктов
     totals = {
-        "calories": safe_float(total.get("kcal")),
-        "protein_g": safe_float(total.get("protein")),
-        "fat_total_g": safe_float(total.get("fat")),
-        "carbohydrates_total_g": safe_float(total.get("carbs")),
+        "calories": sum(p["calories"] for p in edited_products),
+        "protein_g": sum(p["protein_g"] for p in edited_products),
+        "fat_total_g": sum(p["fat_total_g"] for p in edited_products),
+        "carbohydrates_total_g": sum(p["carbohydrates_total_g"] for p in edited_products),
+        "products": edited_products,
     }
 
+    # Формируем api_details
     api_details_lines: list[str] = []
-    for item in items:
-        name = item.get("name") or "продукт"
-        grams = safe_float(item.get("grams"))
-        cal = safe_float(item.get("kcal"))
-        p = safe_float(item.get("protein"))
-        f = safe_float(item.get("fat"))
-        c = safe_float(item.get("carbs"))
-
+    for p in edited_products:
         api_details_lines.append(
-            f"• {name} ({grams:.0f} г) — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+            f"• {p['name']} ({p['grams']:.0f} г) — {p['calories']:.0f} ккал "
+            f"(Б {p['protein_g']:.1f} / Ж {p['fat_total_g']:.1f} / У {p['carbohydrates_total_g']:.1f})"
         )
-
     api_details = "\n".join(api_details_lines) if api_details_lines else None
 
+    # Обновляем запись
     success = update_meal_entry(meal_id, user_id, new_text, totals, api_details=api_details)
     if not success:
         message.bot.meal_edit_context.pop(user_id, None)
