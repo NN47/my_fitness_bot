@@ -3033,6 +3033,8 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "expecting_account_deletion_confirm",
         "expecting_procedure_name",
         "expecting_water_amount",
+        "procedures_menu_open",
+        "water_menu_open",
 
     ]:
         if hasattr(message.bot, attr):
@@ -6122,6 +6124,305 @@ async def delete_from_history_start(message: Message):
 
 
 # -------------------- run --------------------
+@dp.message(F.text == "💆 Процедуры")
+async def procedures(message: Message):
+    reset_user_state(message)
+    user_id = str(message.from_user.id)
+    message.bot.procedures_menu_open = True
+    
+    intro_text = (
+        "💆 Раздел «Процедуры»\n\n"
+        "Здесь ты можешь отслеживать любые процедуры для здоровья и красоты:\n"
+        "• Контрастный душ\n"
+        "• Баня и сауна\n"
+        "• СПА-процедуры\n"
+        "• Косметические процедуры\n"
+        "• Массаж\n"
+        "• И любые другие процедуры для ухода за собой\n\n"
+        "Все записи сохраняются в календарь, чтобы ты видел свою активность."
+    )
+    
+    await answer_with_menu(
+        message,
+        intro_text,
+        reply_markup=procedures_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "➕ Добавить процедуру" and getattr(m.bot, "procedures_menu_open", False))
+async def add_procedure(message: Message):
+    reset_user_state(message)
+    message.bot.expecting_procedure_name = True
+    
+    await answer_with_menu(
+        message,
+        "💆 Добавление процедуры\n\n"
+        "Напиши название процедуры (например: контрастный душ, баня, массаж, маска для лица и т.д.)\n\n"
+        "Можешь добавить заметки через запятую после названия.",
+        reply_markup=procedures_menu,
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_procedure_name", False))
+async def process_procedure_name(message: Message):
+    user_id = str(message.from_user.id)
+    text = message.text.strip()
+    
+    if not text:
+        await message.answer("Напиши название процедуры, пожалуйста 🙏")
+        return
+    
+    # Разделяем название и заметки (если есть запятая)
+    parts = text.split(",", 1)
+    name = parts[0].strip()
+    notes = parts[1].strip() if len(parts) > 1 else None
+    
+    entry_date = date.today()
+    save_procedure(user_id, name, entry_date, notes)
+    
+    message.bot.expecting_procedure_name = False
+    
+    result_text = f"✅ Добавил процедуру: {name}"
+    if notes:
+        result_text += f"\n📝 Заметки: {notes}"
+    
+    await answer_with_menu(
+        message,
+        result_text,
+        reply_markup=procedures_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "📊 Сегодня" and getattr(m.bot, "procedures_menu_open", False))
+async def procedures_today(message: Message):
+    reset_user_state(message)
+    user_id = str(message.from_user.id)
+    today = date.today()
+    procedures_list = get_procedures_for_day(user_id, today)
+    
+    if not procedures_list:
+        await answer_with_menu(
+            message,
+            "💆 Сегодня процедур пока нет.\n\nДобавь первую процедуру через кнопку «➕ Добавить процедуру»",
+            reply_markup=procedures_menu,
+        )
+        return
+    
+    lines = [f"💆 Процедуры за {today.strftime('%d.%m.%Y')}:\n"]
+    for i, proc in enumerate(procedures_list, 1):
+        notes_text = f" ({proc.notes})" if proc.notes else ""
+        lines.append(f"{i}. {proc.name}{notes_text}")
+    
+    await answer_with_menu(
+        message,
+        "\n".join(lines),
+        reply_markup=procedures_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "📆 Календарь процедур" and getattr(m.bot, "procedures_menu_open", False))
+async def procedures_calendar(message: Message):
+    reset_user_state(message)
+    user_id = str(message.from_user.id)
+    today = date.today()
+    keyboard = build_procedures_calendar_keyboard(user_id, today.year, today.month)
+    await message.answer(
+        "📆 Выбери день, чтобы посмотреть процедуры:",
+        reply_markup=keyboard,
+    )
+
+
+@dp.callback_query(F.data.startswith("proc_cal_nav:"))
+async def navigate_procedures_calendar(callback: CallbackQuery):
+    await callback.answer()
+    _, date_str = callback.data.split(":", 1)
+    year, month = map(int, date_str.split("-"))
+    user_id = str(callback.from_user.id)
+    keyboard = build_procedures_calendar_keyboard(user_id, year, month)
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+
+@dp.callback_query(F.data.startswith("proc_cal_day:"))
+async def select_procedure_calendar_day(callback: CallbackQuery):
+    await callback.answer()
+    _, date_str = callback.data.split(":", 1)
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    user_id = str(callback.from_user.id)
+    procedures_list = get_procedures_for_day(user_id, target_date)
+    
+    if not procedures_list:
+        await callback.message.answer(
+            f"💆 {target_date.strftime('%d.%m.%Y')}\n\nПроцедур в этот день не было.",
+            reply_markup=procedures_menu,
+        )
+        return
+    
+    lines = [f"💆 Процедуры за {target_date.strftime('%d.%m.%Y')}:\n"]
+    for i, proc in enumerate(procedures_list, 1):
+        notes_text = f" ({proc.notes})" if proc.notes else ""
+        lines.append(f"{i}. {proc.name}{notes_text}")
+    
+    await callback.message.answer(
+        "\n".join(lines),
+        reply_markup=procedures_menu,
+    )
+
+
+@dp.message(F.text == "💧 Контроль воды")
+async def water(message: Message):
+    reset_user_state(message)
+    user_id = str(message.from_user.id)
+    message.bot.water_menu_open = True
+    today = date.today()
+    daily_total = get_daily_water_total(user_id, today)
+    
+    # Рекомендуемая норма: 30-35 мл на 1 кг веса, среднее 2000-2500 мл
+    recommended = 2000  # можно сделать настраиваемым
+    
+    intro_text = (
+        "💧 Контроль воды\n\n"
+        f"Выпито сегодня: {daily_total:.0f} мл\n"
+        f"Рекомендуемая норма: {recommended} мл\n"
+        f"Прогресс: {min(100, int((daily_total / recommended) * 100))}%\n\n"
+        "Отслеживай количество выпитой воды в течение дня."
+    )
+    
+    await answer_with_menu(
+        message,
+        intro_text,
+        reply_markup=water_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "➕ Добавить воду" and getattr(m.bot, "water_menu_open", False))
+async def add_water(message: Message):
+    reset_user_state(message)
+    message.bot.expecting_water_amount = True
+    
+    await answer_with_menu(
+        message,
+        "💧 Добавление воды\n\n"
+        "Напиши количество воды в миллилитрах (мл).\n\n"
+        "Примеры:\n"
+        "• 250 (стакан)\n"
+        "• 500 (бутылка)\n"
+        "• 1000 (литр)",
+        reply_markup=water_menu,
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_water_amount", False))
+async def process_water_amount(message: Message):
+    user_id = str(message.from_user.id)
+    text = message.text.strip()
+    
+    try:
+        amount = float(text.replace(",", "."))
+        if amount <= 0:
+            raise ValueError
+    except (ValueError, AttributeError):
+        await message.answer("Пожалуйста, введи число (количество миллилитров).")
+        return
+    
+    entry_date = date.today()
+    save_water_entry(user_id, amount, entry_date)
+    
+    message.bot.expecting_water_amount = False
+    
+    daily_total = get_daily_water_total(user_id, entry_date)
+    
+    await answer_with_menu(
+        message,
+        f"✅ Добавил {amount:.0f} мл воды\n\n"
+        f"💧 Всего за сегодня: {daily_total:.0f} мл",
+        reply_markup=water_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "📊 Статистика за сегодня" and getattr(m.bot, "water_menu_open", False))
+async def water_today(message: Message):
+    reset_user_state(message)
+    user_id = str(message.from_user.id)
+    today = date.today()
+    entries = get_water_entries_for_day(user_id, today)
+    daily_total = get_daily_water_total(user_id, today)
+    recommended = 2000
+    
+    if not entries:
+        await answer_with_menu(
+            message,
+            "💧 Сегодня воды ещё не добавлено.\n\n"
+            "Используй кнопку «➕ Добавить воду» для записи.",
+            reply_markup=water_menu,
+        )
+        return
+    
+    lines = [f"💧 Вода за {today.strftime('%d.%m.%Y')}:\n"]
+    for i, entry in enumerate(entries, 1):
+        time_str = entry.timestamp.strftime("%H:%M") if entry.timestamp else ""
+        lines.append(f"{i}. {entry.amount:.0f} мл {time_str}")
+    
+    lines.append(f"\n📊 Итого: {daily_total:.0f} мл")
+    lines.append(f"🎯 Норма: {recommended} мл")
+    progress = min(100, int((daily_total / recommended) * 100))
+    lines.append(f"📈 Прогресс: {progress}%")
+    
+    # Визуальный прогресс-бар
+    bar_length = 10
+    filled = int((progress / 100) * bar_length)
+    bar = "🟦" * filled + "⬜" * (bar_length - filled)
+    lines.append(f"\n{bar}")
+    
+    await answer_with_menu(
+        message,
+        "\n".join(lines),
+        reply_markup=water_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "📆 История" and getattr(m.bot, "water_menu_open", False))
+async def water_history(message: Message):
+    reset_user_state(message)
+    user_id = str(message.from_user.id)
+    
+    session = SessionLocal()
+    try:
+        # Получаем последние 7 дней с записями
+        entries = (
+            session.query(WaterEntry)
+            .filter(WaterEntry.user_id == user_id)
+            .order_by(WaterEntry.date.desc())
+            .limit(7)
+            .all()
+        )
+    finally:
+        session.close()
+    
+    if not entries:
+        await answer_with_menu(
+            message,
+            "💧 История пуста.\n\nНачни отслеживать воду прямо сейчас!",
+            reply_markup=water_menu,
+        )
+        return
+    
+    # Группируем по дням
+    daily_totals = defaultdict(float)
+    for entry in entries:
+        daily_totals[entry.date] += entry.amount
+    
+    lines = ["💧 История (последние дни):\n"]
+    for day, total in sorted(daily_totals.items(), reverse=True):
+        day_str = day.strftime("%d.%m.%Y")
+        lines.append(f"{day_str}: {total:.0f} мл")
+    
+    await answer_with_menu(
+        message,
+        "\n".join(lines),
+        reply_markup=water_menu,
+    )
+
+
 @dp.message(F.text == "⚙️ Настройки")
 async def settings(message: Message):
     reset_user_state(message)
