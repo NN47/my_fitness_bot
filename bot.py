@@ -2471,10 +2471,16 @@ async def delete_entry_start(message: Message):
     lambda m: not getattr(m.bot, "expecting_supplement_history_amount", False),
     # не срабатываем, если ожидается ввод веса для этикетки
     lambda m: not getattr(m.bot, "expecting_label_weight_input", False),
+    # не срабатываем, если ожидается ввод количества воды
+    lambda m: not getattr(m.bot, "expecting_water_amount", False),
 )
 async def process_number(message: Message):
     # Проверяем, не ожидается ли ввод веса для этикетки
     if getattr(message.bot, "expecting_label_weight_input", False):
+        return
+    
+    # Проверяем, не ожидается ли ввод количества воды
+    if getattr(message.bot, "expecting_water_amount", False):
         return
 
     # Если пользователь вводит число в процессе отметки добавки, перенаправляем
@@ -2640,6 +2646,10 @@ async def process_number(message: Message):
    
 
     # --- режим добавления подхода ---
+    # Проверяем, не ожидается ли ввод количества воды
+    if getattr(message.bot, "expecting_water_amount", False):
+        return
+    
     if not hasattr(message.bot, "current_exercise"):
         await message.answer("Сначала выбери упражнение из меню.")
         return
@@ -2831,6 +2841,10 @@ async def process_weight_or_number(message: Message):
 
     # 1.5️⃣ Если ожидается ввод веса для этикетки - пропускаем (обработается в kbju_label_weight_input)
     if getattr(message.bot, "expecting_label_weight_input", False):
+        return
+    
+    # 1.6️⃣ Если ожидается ввод количества воды - пропускаем (обработается в process_water_amount)
+    if getattr(message.bot, "expecting_water_amount", False):
         return
 
     # 2️⃣ Если сейчас ждём ввод веса
@@ -3144,6 +3158,9 @@ async def go_back(message: Message):
     # запоминаем, была ли открыта КБЖУ-сессия, чтобы не терять флаг при возврате
     kbju_was_open = getattr(message.bot, "kbju_menu_open", False)
 
+    # Сбрасываем все флаги добавок при нажатии "Назад"
+    reset_supplement_state(message)
+    
     reset_user_state(message, keep_supplements=True)
 
     stack = getattr(message.bot, "menu_stack", [main_menu])
@@ -3846,6 +3863,18 @@ async def supplements_list_view(message: Message):
 
 @dp.message(lambda m: getattr(m.bot, "choosing_supplement_for_view", False))
 async def choose_supplement_for_view(message: Message):
+    # Проверяем, не является ли это кнопкой меню
+    menu_buttons = ["⬅️ Назад", "🍱 КБЖУ", "📆 Календарь", "💆 Процедуры", "💧 Контроль воды", 
+                    "🏋️ Тренировка", "⚖️ Вес / 📏 Замеры", "💊 Добавки", "Анализ деятельности", 
+                    "⚙️ Настройки", "🏠 Главное меню", "📆 Календарь добавок", "✅ Отметить приём",
+                    "➕ Создать добавку", "✏️ Редактировать добавку", "📅 Редактировать дни",
+                    "✏️ Редактировать время"]
+    
+    if message.text in menu_buttons:
+        # Сбрасываем флаг и позволяем другим обработчикам обработать кнопку
+        message.bot.choosing_supplement_for_view = False
+        return
+    
     if message.text == "⬅️ Назад":
         message.bot.choosing_supplement_for_view = False
         await answer_with_menu(
@@ -4408,6 +4437,18 @@ async def edit_supplement_placeholder(message: Message):
 
 @dp.message(lambda m: getattr(m.bot, "choosing_supplement_for_edit", False))
 async def choose_supplement_to_edit(message: Message):
+    # Проверяем, не является ли это кнопкой меню
+    menu_buttons = ["⬅️ Назад", "🍱 КБЖУ", "📆 Календарь", "💆 Процедуры", "💧 Контроль воды", 
+                    "🏋️ Тренировка", "⚖️ Вес / 📏 Замеры", "💊 Добавки", "Анализ деятельности", 
+                    "⚙️ Настройки", "🏠 Главное меню", "📆 Календарь добавок", "✅ Отметить приём",
+                    "➕ Создать добавку", "✏️ Редактировать добавку", "📅 Редактировать дни",
+                    "✏️ Редактировать время"]
+    
+    if message.text in menu_buttons:
+        # Сбрасываем флаг и позволяем другим обработчикам обработать кнопку
+        message.bot.choosing_supplement_for_edit = False
+        return
+    
     supplements_list = get_user_supplements(message)
     target_index = next(
         (idx for idx, item in enumerate(supplements_list) if item["name"].lower() == message.text.lower()),
