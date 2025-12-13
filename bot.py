@@ -702,6 +702,33 @@ def delete_meal_entry(meal_id: int, user_id: str):
         session.close()
 
 
+def delete_user_account(user_id: str) -> bool:
+    """
+    Удаляет все данные пользователя из базы данных.
+    Возвращает True если успешно, False при ошибке.
+    """
+    session = SessionLocal()
+    try:
+        # Удаляем все данные пользователя из всех таблиц
+        session.query(Workout).filter_by(user_id=user_id).delete()
+        session.query(Weight).filter_by(user_id=user_id).delete()
+        session.query(Measurement).filter_by(user_id=user_id).delete()
+        session.query(Meal).filter_by(user_id=user_id).delete()
+        session.query(KbjuSettings).filter_by(user_id=user_id).delete()
+        session.query(SupplementEntry).filter_by(user_id=user_id).delete()
+        session.query(Supplement).filter_by(user_id=user_id).delete()
+        session.query(User).filter_by(user_id=user_id).delete()
+        
+        session.commit()
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка при удалении аккаунта пользователя {user_id}:", repr(e))
+        session.rollback()
+        return False
+    finally:
+        session.close()
+
+
 def get_daily_meal_totals(user_id: str, entry_date: date):
     session = SessionLocal()
     try:
@@ -1599,7 +1626,7 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="📆 Календарь")],
         [KeyboardButton(text="Анализ деятельности")],
-        [KeyboardButton(text="💬 Обратная связь")],
+        [KeyboardButton(text="⚙️ Настройки")],
     ],
     resize_keyboard=True
 )
@@ -1697,6 +1724,24 @@ training_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="➕ Добавить тренировку")],
         [KeyboardButton(text="📆 Календарь тренировок")],
         [KeyboardButton(text="⬅️ Назад")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+settings_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🗑 Удалить аккаунт")],
+        [KeyboardButton(text="💬 Поддержка")],
+        [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+delete_account_confirm_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="✅ Да, удалить аккаунт")],
+        [KeyboardButton(text="❌ Отмена")],
         [main_menu_button],
     ],
     resize_keyboard=True,
@@ -2754,6 +2799,7 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "awaiting_kbju_choice",
         "expecting_kbju_manual_norm",
         "awaiting_kbju_goal_edit",
+        "expecting_account_deletion_confirm",
 
     ]:
         if hasattr(message.bot, attr):
@@ -4966,12 +5012,11 @@ async def kbju_label_photo_process(message: Message):
         if not data or not data.get("kbju_per_100g"):
             await message.answer(
                 "Не удалось найти КБЖУ на этикетке 😔\n"
-                "Убедись, что фото этикетки/упаковки чёткое и видна таблица пищевой ценности. "
+                "Убедись, что фото этикетки/упаковки чёткое и видна таблица пищевой ценности.\n\n"
                 "Попробуй отправить фото ещё раз или используй другие способы добавления КБЖУ."
             )
-            message.bot.expecting_label_photo_input = False
-            if hasattr(message.bot, "meal_entry_dates"):
-                message.bot.meal_entry_dates.pop(user_id, None)
+            # Оставляем флаг активным, чтобы пользователь мог отправить новое фото
+            # message.bot.expecting_label_photo_input остается True
             return
 
         kbju_100g = data.get("kbju_per_100g", {})
@@ -5050,9 +5095,8 @@ async def kbju_label_photo_process(message: Message):
             "Произошла ошибка при обработке фото этикетки 😔\n"
             "Попробуй отправить фото ещё раз или используй другие способы добавления КБЖУ."
         )
-        message.bot.expecting_label_photo_input = False
-        if hasattr(message.bot, "meal_entry_dates"):
-            message.bot.meal_entry_dates.pop(user_id, None)
+        # Оставляем флаг активным, чтобы пользователь мог отправить новое фото
+        # message.bot.expecting_label_photo_input остается True
 
 
 @dp.message(lambda m: getattr(m.bot, "expecting_label_photo_input", False) and m.photo is None)
@@ -5632,11 +5676,6 @@ async def edit_workout(callback: CallbackQuery):
     )
 
 
-@dp.message(F.text == "💬 Обратная связь")
-async def feedback(message: Message):
-    await message.answer("💬 Раздел обратной связи в разработке 💭")
-
-
 @dp.message(F.text.in_(["🏋️ История тренировок", "📆 Календарь тренировок"]))
 async def my_workouts(message: Message):
     user_id = str(message.from_user.id)
@@ -5774,6 +5813,87 @@ async def delete_from_history_start(message: Message):
 
 
 # -------------------- run --------------------
+@dp.message(F.text == "⚙️ Настройки")
+async def settings(message: Message):
+    reset_user_state(message)
+    await answer_with_menu(
+        message,
+        "⚙️ Настройки\n\nВыбери действие:",
+        reply_markup=settings_menu,
+    )
+
+
+@dp.message(F.text == "🗑 Удалить аккаунт")
+async def delete_account_start(message: Message):
+    reset_user_state(message)
+    message.bot.expecting_account_deletion_confirm = True
+    await answer_with_menu(
+        message,
+        "⚠️ <b>ВНИМАНИЕ!</b>\n\n"
+        "Вы уверены, что хотите удалить аккаунт?\n\n"
+        "При удалении аккаунта будут <b>безвозвратно удалены</b> все ваши данные:\n"
+        "• Все тренировки\n"
+        "• Все записи веса и замеров\n"
+        "• Все записи КБЖУ\n"
+        "• Все добавки и их история\n"
+        "• Настройки КБЖУ\n\n"
+        "Это действие нельзя отменить!",
+        reply_markup=delete_account_confirm_menu,
+        parse_mode="HTML",
+    )
+
+
+@dp.message(F.text == "✅ Да, удалить аккаунт")
+async def delete_account_confirm(message: Message):
+    if not getattr(message.bot, "expecting_account_deletion_confirm", False):
+        await message.answer("Что-то пошло не так. Попробуй заново через меню Настройки.")
+        return
+    
+    user_id = str(message.from_user.id)
+    message.bot.expecting_account_deletion_confirm = False
+    
+    success = delete_user_account(user_id)
+    
+    if success:
+        await message.answer(
+            "✅ Аккаунт успешно удалён.\n\n"
+            "Все ваши данные были удалены из базы данных.\n\n"
+            "Если захотите вернуться, просто нажмите /start",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="/start")]],
+                resize_keyboard=True
+            )
+        )
+    else:
+        await message.answer(
+            "❌ Произошла ошибка при удалении аккаунта.\n"
+            "Попробуйте позже или обратитесь в поддержку.",
+            reply_markup=settings_menu,
+        )
+
+
+@dp.message(F.text == "❌ Отмена")
+async def delete_account_cancel(message: Message):
+    if getattr(message.bot, "expecting_account_deletion_confirm", False):
+        message.bot.expecting_account_deletion_confirm = False
+        await answer_with_menu(
+            message,
+            "❌ Удаление аккаунта отменено.",
+            reply_markup=settings_menu,
+        )
+
+
+@dp.message(F.text == "💬 Поддержка")
+async def support(message: Message):
+    reset_user_state(message)
+    await answer_with_menu(
+        message,
+        "💬 Поддержка\n\n"
+        "Эта функция пока в разработке. Скоро здесь можно будет связаться с поддержкой!",
+        reply_markup=settings_menu,
+    )
+
+
 nest_asyncio.apply()
 
 async def main():
