@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
 from aiogram.client.bot import DefaultBotProperties
 import calendar
+from collections import defaultdict
 from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
@@ -506,6 +507,26 @@ class SupplementEntry(Base):
     amount = Column(Float, nullable=True)
 
 
+class Procedure(Base):
+    __tablename__ = "procedures"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)  # название процедуры
+    date = Column(Date, default=date.today)
+    notes = Column(String, nullable=True)  # дополнительные заметки
+
+
+class WaterEntry(Base):
+    __tablename__ = "water_entries"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    amount = Column(Float, nullable=False)  # количество воды в мл
+    date = Column(Date, default=date.today)
+    timestamp = Column(DateTime, default=datetime.utcnow)  # время записи
+
+
 Base.metadata.create_all(engine)
 
 # Простая миграция для добавления столбцов
@@ -721,6 +742,8 @@ def delete_user_account(user_id: str) -> bool:
         session.query(KbjuSettings).filter_by(user_id=user_id).delete()
         session.query(SupplementEntry).filter_by(user_id=user_id).delete()
         session.query(Supplement).filter_by(user_id=user_id).delete()
+        session.query(Procedure).filter_by(user_id=user_id).delete()
+        session.query(WaterEntry).filter_by(user_id=user_id).delete()
         session.query(User).filter_by(user_id=user_id).delete()
         
         session.commit()
@@ -1290,6 +1313,97 @@ def get_workouts_for_day(user_id: str, target_date: date):
         session.close()
 
 
+def get_procedures_for_day(user_id: str, target_date: date):
+    session = SessionLocal()
+    try:
+        return (
+            session.query(Procedure)
+            .filter(Procedure.user_id == user_id, Procedure.date == target_date)
+            .order_by(Procedure.id)
+            .all()
+        )
+    finally:
+        session.close()
+
+
+def get_month_procedure_days(user_id: str, year: int, month: int):
+    first_day = date(year, month, 1)
+    _, days_in_month = calendar.monthrange(year, month)
+    last_day = date(year, month, days_in_month)
+
+    session = SessionLocal()
+    try:
+        procedures = (
+            session.query(Procedure.date)
+            .filter(
+                Procedure.user_id == user_id,
+                Procedure.date >= first_day,
+                Procedure.date <= last_day,
+            )
+            .all()
+        )
+        return {p.date.day for p in procedures}
+    finally:
+        session.close()
+
+
+def save_procedure(user_id: str, name: str, entry_date: date, notes: str | None = None):
+    session = SessionLocal()
+    try:
+        procedure = Procedure(
+            user_id=str(user_id),
+            name=name,
+            date=entry_date,
+            notes=notes,
+        )
+        session.add(procedure)
+        session.commit()
+        return procedure.id
+    finally:
+        session.close()
+
+
+def get_daily_water_total(user_id: str, entry_date: date) -> float:
+    session = SessionLocal()
+    try:
+        total = (
+            session.query(func.sum(WaterEntry.amount))
+            .filter(WaterEntry.user_id == user_id, WaterEntry.date == entry_date)
+            .scalar()
+        )
+        return float(total) if total else 0.0
+    finally:
+        session.close()
+
+
+def save_water_entry(user_id: str, amount: float, entry_date: date):
+    session = SessionLocal()
+    try:
+        water_entry = WaterEntry(
+            user_id=str(user_id),
+            amount=amount,
+            date=entry_date,
+        )
+        session.add(water_entry)
+        session.commit()
+        return water_entry.id
+    finally:
+        session.close()
+
+
+def get_water_entries_for_day(user_id: str, target_date: date):
+    session = SessionLocal()
+    try:
+        return (
+            session.query(WaterEntry)
+            .filter(WaterEntry.user_id == user_id, WaterEntry.date == target_date)
+            .order_by(WaterEntry.timestamp)
+            .all()
+        )
+    finally:
+        session.close()
+
+
 def get_month_workout_days(user_id: str, year: int, month: int):
     first_day = date(year, month, 1)
     _, days_in_month = calendar.monthrange(year, month)
@@ -1417,6 +1531,98 @@ def build_kbju_calendar_keyboard(user_id: str, year: int, month: int) -> InlineK
             InlineKeyboardButton(text="Закрыть", callback_data="cal_close"),
             InlineKeyboardButton(
                 text="▶️", callback_data=f"meal_cal_nav:{next_year}-{next_month:02d}"
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def build_procedures_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    procedure_days = get_month_procedure_days(user_id, year, month)
+    keyboard: list[list[InlineKeyboardButton]] = []
+
+    header = InlineKeyboardButton(text=f"{MONTH_NAMES[month]} {year}", callback_data="noop")
+    keyboard.append([header])
+
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([InlineKeyboardButton(text=d, callback_data="noop") for d in week_days])
+
+    month_calendar = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
+    for week in month_calendar:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
+            else:
+                marker = "💆" if day in procedure_days else ""
+                row.append(
+                    InlineKeyboardButton(
+                        text=f"{day}{marker}",
+                        callback_data=f"proc_cal_day:{year}-{month:02d}-{day:02d}",
+                    )
+                )
+        keyboard.append(row)
+
+    prev_month = month - 1 or 12
+    prev_year = year - 1 if month == 1 else year
+    next_month = month % 12 + 1
+    next_year = year + 1 if month == 12 else year
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="◀️", callback_data=f"proc_cal_nav:{prev_year}-{prev_month:02d}"
+            ),
+            InlineKeyboardButton(text="Закрыть", callback_data="cal_close"),
+            InlineKeyboardButton(
+                text="▶️", callback_data=f"proc_cal_nav:{next_year}-{next_month:02d}"
+            ),
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def build_procedures_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    procedure_days = get_month_procedure_days(user_id, year, month)
+    keyboard: list[list[InlineKeyboardButton]] = []
+
+    header = InlineKeyboardButton(text=f"{MONTH_NAMES[month]} {year}", callback_data="noop")
+    keyboard.append([header])
+
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([InlineKeyboardButton(text=d, callback_data="noop") for d in week_days])
+
+    month_calendar = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
+    for week in month_calendar:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
+            else:
+                marker = "💆" if day in procedure_days else ""
+                row.append(
+                    InlineKeyboardButton(
+                        text=f"{day}{marker}",
+                        callback_data=f"proc_cal_day:{year}-{month:02d}-{day:02d}",
+                    )
+                )
+        keyboard.append(row)
+
+    prev_month = month - 1 or 12
+    prev_year = year - 1 if month == 1 else year
+    next_month = month % 12 + 1
+    next_year = year + 1 if month == 12 else year
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="◀️", callback_data=f"proc_cal_nav:{prev_year}-{prev_month:02d}"
+            ),
+            InlineKeyboardButton(text="Закрыть", callback_data="cal_close"),
+            InlineKeyboardButton(
+                text="▶️", callback_data=f"proc_cal_nav:{next_year}-{next_month:02d}"
             ),
         ]
     )
@@ -1628,6 +1834,7 @@ main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
+        [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💧 Контроль воды")],
         [KeyboardButton(text="📆 Календарь")],
         [KeyboardButton(text="Анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки")],
@@ -1747,6 +1954,26 @@ delete_account_confirm_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="✅ Да, удалить аккаунт")],
         [KeyboardButton(text="❌ Отмена")],
         [main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+procedures_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="➕ Добавить процедуру")],
+        [KeyboardButton(text="📆 Календарь процедур")],
+        [KeyboardButton(text="📊 Сегодня")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+water_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="➕ Добавить воду")],
+        [KeyboardButton(text="📊 Статистика за сегодня")],
+        [KeyboardButton(text="📆 История")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
 )
@@ -2804,6 +3031,8 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "expecting_kbju_manual_norm",
         "awaiting_kbju_goal_edit",
         "expecting_account_deletion_confirm",
+        "expecting_procedure_name",
+        "expecting_water_amount",
 
     ]:
         if hasattr(message.bot, attr):
