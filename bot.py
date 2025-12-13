@@ -2462,6 +2462,39 @@ async def delete_entry_start(message: Message):
     await message.answer("Введи номер записи, которую хочешь удалить:")
 
 
+@dp.message(lambda m: getattr(m.bot, "expecting_water_amount", False))
+async def process_water_amount(message: Message):
+    user_id = str(message.from_user.id)
+    text = message.text.strip()
+    
+    # Проверяем, не является ли это кнопкой меню
+    if text in ["⬅️ Назад", "🏠 Главное меню", "📊 Статистика за сегодня", "📆 История", "➕ Добавить воду"]:
+        message.bot.expecting_water_amount = False
+        return
+    
+    try:
+        amount = float(text.replace(",", "."))
+        if amount <= 0:
+            raise ValueError
+    except (ValueError, AttributeError):
+        await message.answer("Пожалуйста, введи число (количество миллилитров).")
+        return
+    
+    entry_date = date.today()
+    save_water_entry(user_id, amount, entry_date)
+    
+    message.bot.expecting_water_amount = False
+    
+    daily_total = get_daily_water_total(user_id, entry_date)
+    
+    await answer_with_menu(
+        message,
+        f"✅ Добавил {amount:.0f} мл воды\n\n"
+        f"💧 Всего за сегодня: {daily_total:.0f} мл",
+        reply_markup=water_menu,
+    )
+
+
 @dp.message(
     F.text.regexp(r"^\d+$"),
     # не срабатываем, если ждём ввод веса
@@ -6193,6 +6226,7 @@ async def procedures(message: Message):
 @dp.message(lambda m: m.text == "➕ Добавить процедуру" and getattr(m.bot, "procedures_menu_open", False))
 async def add_procedure(message: Message):
     reset_user_state(message)
+    message.bot.procedures_menu_open = True  # Восстанавливаем флаг после reset_user_state
     message.bot.expecting_procedure_name = True
     
     await answer_with_menu(
@@ -6222,6 +6256,7 @@ async def process_procedure_name(message: Message):
     save_procedure(user_id, name, entry_date, notes)
     
     message.bot.expecting_procedure_name = False
+    message.bot.procedures_menu_open = True  # Восстанавливаем флаг после добавления процедуры
     
     result_text = f"✅ Добавил процедуру: {name}"
     if notes:
@@ -6237,6 +6272,7 @@ async def process_procedure_name(message: Message):
 @dp.message(lambda m: m.text == "📊 Сегодня" and getattr(m.bot, "procedures_menu_open", False))
 async def procedures_today(message: Message):
     reset_user_state(message)
+    message.bot.procedures_menu_open = True  # Восстанавливаем флаг после reset_user_state
     user_id = str(message.from_user.id)
     today = date.today()
     procedures_list = get_procedures_for_day(user_id, today)
@@ -6264,6 +6300,7 @@ async def procedures_today(message: Message):
 @dp.message(lambda m: m.text == "📆 Календарь процедур" and getattr(m.bot, "procedures_menu_open", False))
 async def procedures_calendar(message: Message):
     reset_user_state(message)
+    message.bot.procedures_menu_open = True  # Восстанавливаем флаг после reset_user_state
     user_id = str(message.from_user.id)
     today = date.today()
     keyboard = build_procedures_calendar_keyboard(user_id, today.year, today.month)
@@ -6337,7 +6374,9 @@ async def water(message: Message):
 
 @dp.message(lambda m: m.text == "➕ Добавить воду" and getattr(m.bot, "water_menu_open", False))
 async def add_water(message: Message):
+    # Сбрасываем состояние, но сохраняем флаг water_menu_open
     reset_user_state(message)
+    message.bot.water_menu_open = True
     message.bot.expecting_water_amount = True
     
     await answer_with_menu(
@@ -6348,34 +6387,6 @@ async def add_water(message: Message):
         "• 250 (стакан)\n"
         "• 500 (бутылка)\n"
         "• 1000 (литр)",
-        reply_markup=water_menu,
-    )
-
-
-@dp.message(lambda m: getattr(m.bot, "expecting_water_amount", False))
-async def process_water_amount(message: Message):
-    user_id = str(message.from_user.id)
-    text = message.text.strip()
-    
-    try:
-        amount = float(text.replace(",", "."))
-        if amount <= 0:
-            raise ValueError
-    except (ValueError, AttributeError):
-        await message.answer("Пожалуйста, введи число (количество миллилитров).")
-        return
-    
-    entry_date = date.today()
-    save_water_entry(user_id, amount, entry_date)
-    
-    message.bot.expecting_water_amount = False
-    
-    daily_total = get_daily_water_total(user_id, entry_date)
-    
-    await answer_with_menu(
-        message,
-        f"✅ Добавил {amount:.0f} мл воды\n\n"
-        f"💧 Всего за сегодня: {daily_total:.0f} мл",
         reply_markup=water_menu,
     )
 
