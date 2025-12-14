@@ -1,36 +1,39 @@
 import asyncio
-import nest_asyncio
-from aiogram import Bot, Dispatcher, F
-from aiogram.enums import ParseMode
-from aiogram.client.bot import DefaultBotProperties
 import calendar
-from collections import defaultdict
-from aiogram.types import (
-    Message,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    CallbackQuery,
-    PhotoSize,
-)
-from aiogram.filters import Command
-import os
-import json
 import html
-from datetime import date
-from dotenv import load_dotenv
+import io
+import json
+import os
+import random
+import re
 import threading
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 import http.server
 import socketserver
-from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func, DateTime, Text, inspect, text
-from datetime import timedelta
-import random
-from datetime import datetime
+
+import httpx
+import nest_asyncio
 import requests
-import re
+from aiogram import Bot, Dispatcher, F
+from aiogram.client.bot import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.filters import Command
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    PhotoSize,
+    ReplyKeyboardMarkup,
+)
+from dotenv import load_dotenv
 from google import genai
+from PIL import Image
+from pyzbar.pyzbar import decode as zbar_decode
+from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Text, create_engine, func, inspect, text
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
 
@@ -386,6 +389,60 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
             print("⚠️ Ошибка резервного перевода через Google:", repr(e))
 
     return translated or text
+
+
+
+def decode_barcode_from_image(image_bytes: bytes) -> str | None:
+    """Извлекает цифры штрих-кода (EAN/UPC) из байтов изображения."""
+
+    try:
+        image = Image.open(io.BytesIO(image_bytes))
+    except Exception:
+        return None
+
+    try:
+        codes = zbar_decode(image)
+    except Exception:
+        return None
+
+    for code in codes:
+        value = code.data.decode("utf-8", errors="ignore")
+        if value.isdigit() and len(value) in (12, 13, 14):
+            return value
+
+    return None
+
+
+async def lookup_open_food_facts(barcode: str) -> dict | None:
+    """Возвращает информацию о продукте из Open Food Facts по штрих-коду."""
+
+    url = f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json"
+    headers = {"User-Agent": "IronDiaryBot/1.0 (Telegram bot)"}
+
+    try:
+        async with httpx.AsyncClient(timeout=10, headers=headers) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except Exception as e:
+        print("❌ Ошибка запроса к Open Food Facts:", repr(e))
+        return None
+
+    data = response.json()
+    if data.get("status") != 1:
+        return None
+
+    product = data.get("product", {}) or {}
+    nutriments = product.get("nutriments", {}) or {}
+
+    return {
+        "name": product.get("product_name_ru") or product.get("product_name") or "Без названия",
+        "brands": product.get("brands") or "",
+        "image": product.get("image_url"),
+        "kcal_100g": nutriments.get("energy-kcal_100g"),
+        "p_100g": nutriments.get("proteins_100g"),
+        "f_100g": nutriments.get("fat_100g"),
+        "c_100g": nutriments.get("carbohydrates_100g"),
+    }
 
 
 
@@ -1906,6 +1963,7 @@ kbju_add_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="📝 Ввести приём пищи (анализ ИИ)")],
         [KeyboardButton(text="📷 Анализ еды по фото")],
         [KeyboardButton(text="📋 Анализ этикетки")],
+        [KeyboardButton(text="🏷️ Продукт по штрих-коду")],
         [KeyboardButton(text="➕ Через CalorieNinjas")],
         [KeyboardButton(text="⬅️ Назад")],
         [main_menu_button],
@@ -3071,6 +3129,7 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "expecting_photo_input",
         "expecting_label_photo_input",
         "expecting_label_weight_input",
+        "expecting_barcode_photo_input",
         "expecting_food_input",
         "expecting_ai_food_input",
         "kbju_menu_open",
@@ -4830,6 +4889,7 @@ async def start_kbju_add_flow(message: Message, entry_date: date):
     message.bot.expecting_food_input = False
     message.bot.expecting_ai_food_input = False
     message.bot.expecting_photo_input = False
+    message.bot.expecting_barcode_photo_input = False
 
     if not hasattr(message.bot, "meal_entry_dates"):
         message.bot.meal_entry_dates = {}
@@ -4841,6 +4901,7 @@ async def start_kbju_add_flow(message: Message, entry_date: date):
         "• 📝 Ввести приём пищи (анализ ИИ) — умный анализ на основе типичных значений (рекомендуется)\n"
         "• 📷 Анализ еды по фото — отправь фото еды\n"
         "• 📋 Анализ этикетки — отправь фото этикетки/упаковки\n"
+        "• 🏷️ Продукт по штрих-коду — сфотографируй штрих-код и получи карточку из Open Food Facts\n"
         "• CalorieNinjas — альтернативный вариант"
     )
 
@@ -5017,6 +5078,27 @@ async def kbju_add_via_label(message: Message):
     )
 
 
+@dp.message(lambda m: m.text == "🏷️ Продукт по штрих-коду" and getattr(m.bot, "kbju_menu_open", False))
+async def kbju_add_via_barcode(message: Message):
+    """Обработчик кнопки «🏷️ Продукт по штрих-коду» в меню КБЖУ."""
+    reset_user_state(message)
+    message.bot.kbju_menu_open = True
+    message.bot.expecting_barcode_photo_input = True
+
+    text = (
+        "🍱 Раздел КБЖУ\n\n"
+        "🏷️ Продукт по штрих-коду\n\n"
+        "Сфотографируй штрих-код продукта, а я найду его в Open Food Facts и покажу карточку.\n\n"
+        "Советы: делай фото без бликов, держи камеру ровно и чтобы код занимал 30–60% кадра."
+    )
+
+    await answer_with_menu(
+        message,
+        text,
+        reply_markup=kbju_add_menu,
+    )
+
+
 @dp.message(lambda m: m.text == "📆 Календарь КБЖУ" and getattr(m.bot, "kbju_menu_open", False))
 async def calories_calendar(message: Message):
     reset_user_state(message)
@@ -5168,6 +5250,69 @@ async def kbju_ai_process(message: Message):
         message,
         "\n".join(lines),
         reply_markup=kbju_after_meal_menu,
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_barcode_photo_input", False) and m.photo is not None)
+async def kbju_barcode_photo_process(message: Message):
+    """Обработчик распознавания штрих-кода по фото"""
+
+    await message.answer("🏷️ Сканирую штрих-код, секунду...")
+
+    try:
+        photo = message.photo[-1]
+        file_info = await message.bot.get_file(photo.file_id)
+        image_bytes = await message.bot.download_file(file_info.file_path)
+        image_data = image_bytes.read()
+
+        barcode = decode_barcode_from_image(image_data)
+        if not barcode:
+            await message.answer(
+                "Не смог распознать штрих-код 😕\n"
+                "Попробуй сделать фото ближе, без бликов и ровно, чтобы код занимал 30–60% кадра."
+            )
+            return
+
+        product = await lookup_open_food_facts(barcode)
+        if not product:
+            await message.answer(
+                f"Штрих-код распознан: {barcode}\n"
+                "Но в Open Food Facts товара нет. Попробуй другой продукт или введи цифры вручную."
+            )
+            return
+
+        text = (
+            f"🔎 Штрих-код: {barcode}\n"
+            f"📦 {product['name']}\n"
+            f"{('🏷️ ' + product['brands'] + '\n') if product['brands'] else ''}"
+            "КБЖУ на 100 г:\n"
+            f"• 🔥 {product['kcal_100g'] if product['kcal_100g'] is not None else 'нет данных'} ккал\n"
+            f"• 🥩 Б: {product['p_100g'] if product['p_100g'] is not None else 'нет'} г\n"
+            f"• 🧈 Ж: {product['f_100g'] if product['f_100g'] is not None else 'нет'} г\n"
+            f"• 🥖 У: {product['c_100g'] if product['c_100g'] is not None else 'нет'} г"
+        ).strip()
+
+        if product["image"]:
+            await message.answer_photo(product["image"], caption=text)
+        else:
+            await message.answer(text)
+
+    except Exception as e:
+        print("❌ Ошибка при обработке штрих-кода:", repr(e))
+        await message.answer(
+            "Произошла ошибка при чтении штрих-кода 😔\n"
+            "Попробуй отправить фото ещё раз."
+        )
+    finally:
+        message.bot.expecting_barcode_photo_input = False
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_barcode_photo_input", False) and m.photo is None)
+async def kbju_barcode_photo_expected_but_text_received(message: Message):
+    """Обработчик случая, когда ожидается фото штрих-кода, но пришёл текст"""
+    await message.answer(
+        "🏷️ Я жду фото штрих-кода!\n\n"
+        "Пожалуйста, отправь снимок штрих-кода крупным планом, без бликов и с фокусом."
     )
 
 

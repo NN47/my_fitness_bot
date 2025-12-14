@@ -13,6 +13,11 @@ uvicorn
 
 # HTTP-запросы
 requests
+httpx
+
+# Barcode recognition
+pyzbar
+Pillow
 
 # Gemini NEW API client
 google-genai>=0.3.0
