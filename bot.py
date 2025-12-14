@@ -1349,6 +1349,34 @@ def build_progress_bar(current: float, target: float, length: int = 10) -> str:
         return "🟩" * filled_blocks + "⬜" * empty_blocks
 
 
+def build_water_progress_bar(current: float, target: float, length: int = 10) -> str:
+    """
+    Строит индикатор прогресса по воде (аналогично build_progress_bar, но с синими кубиками):
+    - ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ - Пустое значение (target <= 0 или current == 0)
+    - 🟦🟦🟦🟦⬜⬜⬜⬜⬜⬜ - Обычный прогресс (0-101%)
+    - 🟦🟦🟦🟦🟦🟦🟦🟦🟦🟦 - 101% (ровно)
+    - 🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨 - 102-135%
+    - 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 - >135%
+    """
+    if target <= 0 or current <= 0:
+        # Пустое значение
+        return "⬜" * length
+    
+    percent = (current / target) * 100
+    
+    if percent > 135:
+        # >135% - все красные
+        return "🟥" * length
+    elif percent > 101:
+        # 102-135% - все желтые
+        return "🟨" * length
+    else:
+        # 0-101% - синие пропорционально + пустые
+        filled_blocks = min(int(round((current / target) * length)), length)
+        empty_blocks = max(length - filled_blocks, 0)
+        return "🟦" * filled_blocks + "⬜" * empty_blocks
+
+
 def format_progress_block(user_id: str) -> str:
     settings = get_kbju_settings(user_id)
     if not settings:
@@ -1408,6 +1436,25 @@ def format_progress_block(user_id: str) -> str:
     lines.append(line("🥑 Жиры", totals["fat_total_g"], adjusted_fat_target, "г"))
     lines.append(line("🍩 Углеводы", totals["carbohydrates_total_g"], adjusted_carbs_target, "г"))
 
+    return "\n".join(lines)
+
+
+def format_water_progress_block(user_id: str) -> str:
+    """
+    Форматирует блок прогресса воды аналогично format_progress_block для КБЖУ.
+    """
+    today = date.today()
+    daily_total = get_daily_water_total(user_id, today)
+    recommended = get_water_recommended(user_id)
+    
+    def line(label: str, current: float, target: float, unit: str) -> str:
+        percent = 0 if target <= 0 else round((current / target) * 100)
+        bar = build_water_progress_bar(current, target)
+        return f"{label}: {current:.0f}/{target:.0f} {unit} ({percent}%)\n{bar}"
+    
+    lines = ["💧 <b>Вода</b>"]
+    lines.append(line("💧 Вода", daily_total, recommended, "мл"))
+    
     return "\n".join(lines)
 
 
@@ -1504,6 +1551,23 @@ def save_procedure(user_id: str, name: str, entry_date: date, notes: str | None 
         return procedure.id
     finally:
         session.close()
+
+
+def get_water_recommended(user_id: str) -> float:
+    """
+    Рассчитывает рекомендуемую норму воды для пользователя.
+    Использует формулу: 30-35 мл на 1 кг веса.
+    Если вес не указан, возвращает среднее значение 2000 мл.
+    """
+    weight = get_last_weight_kg(user_id)
+    if weight and weight > 0:
+        # Используем 32.5 мл на кг (середина между 30 и 35)
+        recommended = weight * 32.5
+        # Округляем до ближайших 50 мл для удобства
+        return round(recommended / 50) * 50
+    else:
+        # Если вес не указан, используем среднее значение
+        return 2000
 
 
 def get_daily_water_total(user_id: str, entry_date: date) -> float:
@@ -2328,10 +2392,11 @@ measurements_menu = ReplyKeyboardMarkup(
 async def start(message: Message):
     user_id = str(message.from_user.id)
     progress_text = format_progress_block(user_id)
+    water_progress_text = format_water_progress_block(user_id)
     workouts_text = format_today_workouts_block(user_id, include_date=False)
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     
-    welcome = f"{today_line}\n\n{progress_text}\n\n{workouts_text}"
+    welcome = f"{today_line}\n\n{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
     await answer_with_menu(message, welcome, reply_markup=main_menu, parse_mode="HTML")
 
 
@@ -2952,7 +3017,7 @@ async def kbju_label_weight_input(message: Message):
     user_id = str(message.from_user.id)
     
     if not hasattr(message.bot, "label_kbju_cache") or user_id not in message.bot.label_kbju_cache:
-        await message.answer("Что-то пошло не так. Начни заново с отправки фото этикетки.")
+        await message.answer("Что-то пошло не так. Начни заново с отправки фото этикетки или штрих-кода.")
         message.bot.expecting_label_weight_input = False
         return
 
@@ -2979,8 +3044,17 @@ async def kbju_label_weight_input(message: Message):
     }
 
     product_name = cache.get("product_name", "Продукт")
+    source = cache.get("source", "label")  # По умолчанию этикетка
 
-    lines = [f"📋 Анализ этикетки: {product_name}\n"]
+    # Формируем заголовок в зависимости от источника
+    if source == "barcode":
+        barcode = cache.get("barcode", "")
+        lines = [f"📷 Сканирование штрих-кода: {product_name}\n"]
+        raw_query = f"[Штрих-код: {barcode}]"
+    else:
+        lines = [f"📋 Анализ этикетки: {product_name}\n"]
+        raw_query = f"[Этикетка: {product_name}]"
+    
     lines.append(f"📦 Вес: {weight:.0f} г\n")
     lines.append("КБЖУ:")
     lines.append(
@@ -2994,7 +3068,7 @@ async def kbju_label_weight_input(message: Message):
 
     save_meal_entry(
         user_id=user_id,
-        raw_query=f"[Этикетка: {product_name}]",
+        raw_query=raw_query,
         totals=totals_for_db,
         entry_date=entry_date,
         api_details=api_details,
@@ -3336,10 +3410,11 @@ async def go_main_menu(message: Message):
     
     # Главное меню
     progress_text = format_progress_block(str(message.from_user.id))
+    water_progress_text = format_water_progress_block(str(message.from_user.id))
     workouts_text = format_today_workouts_block(str(message.from_user.id), include_date=False)
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     
-    main_menu_text = f"{today_line}\n\n{progress_text}\n\n{workouts_text}"
+    main_menu_text = f"{today_line}\n\n{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
     await answer_with_menu(
         message,
         main_menu_text,
@@ -5549,7 +5624,7 @@ async def kbju_label_photo_process(message: Message):
         # Всегда спрашиваем у пользователя, сколько он съел
         message.bot.expecting_label_photo_input = False
         message.bot.expecting_label_weight_input = True
-        # Сохраняем данные КБЖУ на 100г для пересчёта
+        # Сохраняем данные КБЖУ на 100г для пересчёта (используем тот же кэш, что и для этикетки)
         if not hasattr(message.bot, "label_kbju_cache"):
             message.bot.label_kbju_cache = {}
         message.bot.label_kbju_cache[user_id] = {
@@ -5558,7 +5633,9 @@ async def kbju_label_photo_process(message: Message):
             "fat_100g": fat_100g,
             "carbs_100g": carbs_100g,
             "product_name": product_name,
-            "entry_date": entry_date
+            "entry_date": entry_date,
+            "source": "barcode",  # Указываем источник - штрих-код
+            "barcode": barcode  # Сохраняем штрих-код для raw_query
         }
 
         # Формируем сообщение в зависимости от того, найден ли вес
@@ -5671,117 +5748,75 @@ async def kbju_barcode_photo_process(message: Message):
         nutriments = product_data.get("nutriments", {})
         weight = product_data.get("weight")
         
-        # Формируем сообщение с фактами
-        lines = [f"📦 <b>{product_name}</b>\n"]
-        
-        if brand:
-            lines.append(f"🏷 Бренд: {brand}\n")
-        
-        lines.append(f"🔢 Штрих-код: {barcode}\n")
+        def safe_float(value) -> float:
+            try:
+                if value is None:
+                    return 0.0
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
         
         # КБЖУ на 100г
-        kcal_100g = nutriments.get("kcal", 0)
-        protein_100g = nutriments.get("protein", 0)
-        fat_100g = nutriments.get("fat", 0)
-        carbs_100g = nutriments.get("carbs", 0)
+        kcal_100g = safe_float(nutriments.get("kcal", 0))
+        protein_100g = safe_float(nutriments.get("protein", 0))
+        fat_100g = safe_float(nutriments.get("fat", 0))
+        carbs_100g = safe_float(nutriments.get("carbs", 0))
         
-        if kcal_100g or protein_100g or fat_100g or carbs_100g:
-            lines.append("\n📊 КБЖУ на 100 г:")
-            if kcal_100g:
-                lines.append(f"🔥 Калории: {kcal_100g:.0f} ккал")
-            if protein_100g:
-                lines.append(f"💪 Белки: {protein_100g:.1f} г")
-            if fat_100g:
-                lines.append(f"🥑 Жиры: {fat_100g:.1f} г")
-            if carbs_100g:
-                lines.append(f"🍩 Углеводы: {carbs_100g:.1f} г")
+        # Проверяем, есть ли хотя бы какое-то КБЖУ
+        if not (kcal_100g or protein_100g or fat_100g or carbs_100g):
+            await message.answer(
+                f"❌ В базе Open Food Facts нет информации о КБЖУ для продукта со штрих-кодом {barcode}.\n\n"
+                "Попробуй использовать фото этикетки или другие способы добавления КБЖУ."
+            )
+            message.bot.expecting_barcode_photo_input = False
+            if hasattr(message.bot, "meal_entry_dates"):
+                message.bot.meal_entry_dates.pop(user_id, None)
+            return
         
-        # Дополнительная информация
-        ingredients = product_data.get("ingredients", "")
-        if ingredients:
-            # Обрезаем длинный список ингредиентов
-            ingredients_short = ingredients[:200] + "..." if len(ingredients) > 200 else ingredients
-            lines.append(f"\n📝 Ингредиенты: {ingredients_short}")
+        # Всегда показываем КБЖУ на 100г и спрашиваем вес (как при анализе этикетки)
+        message.bot.expecting_barcode_photo_input = False
+        message.bot.expecting_label_weight_input = True
         
-        categories = product_data.get("categories", "")
-        if categories:
-            # Берем первые несколько категорий
-            categories_list = categories.split(",")[:3]
-            lines.append(f"\n🏷 Категории: {', '.join(categories_list)}")
+        # Сохраняем данные КБЖУ на 100г для пересчёта (используем тот же кэш, что и для этикетки)
+        if not hasattr(message.bot, "label_kbju_cache"):
+            message.bot.label_kbju_cache = {}
+        message.bot.label_kbju_cache[user_id] = {
+            "kcal_100g": kcal_100g,
+            "protein_100g": protein_100g,
+            "fat_100g": fat_100g,
+            "carbs_100g": carbs_100g,
+            "product_name": product_name,
+            "entry_date": entry_date,
+            "source": "barcode",  # Указываем источник - штрих-код
+            "barcode": barcode  # Сохраняем штрих-код для raw_query
+        }
         
-        # Если есть вес упаковки, используем его
+        # Формируем сообщение с информацией о продукте
+        text_parts = [f"✅ Нашёл продукт в базе Open Food Facts!\n\n"]
+        text_parts.append(f"📦 Продукт: <b>{product_name}</b>\n")
+        
+        if brand:
+            text_parts.append(f"🏷 Бренд: {brand}\n")
+        
+        text_parts.append(f"🔢 Штрих-код: {barcode}\n")
+        text_parts.append(f"\n📊 КБЖУ на 100 г:\n")
+        text_parts.append(f"🔥 Калории: {kcal_100g:.0f} ккал\n")
+        text_parts.append(f"💪 Белки: {protein_100g:.1f} г\n")
+        text_parts.append(f"🥑 Жиры: {fat_100g:.1f} г\n")
+        text_parts.append(f"🍩 Углеводы: {carbs_100g:.1f} г\n")
+        
+        # Если есть вес упаковки в базе, упоминаем его, но все равно спрашиваем
         if weight:
-            # Рассчитываем КБЖУ для всего продукта
-            multiplier = weight / 100.0
-            total_kcal = kcal_100g * multiplier
-            total_protein = protein_100g * multiplier
-            total_fat = fat_100g * multiplier
-            total_carbs = carbs_100g * multiplier
-            
-            lines.append(f"\n📦 Вес упаковки: {weight} г")
-            lines.append(f"\n📊 КБЖУ на всю упаковку:")
-            lines.append(f"🔥 Калории: {total_kcal:.0f} ккал")
-            lines.append(f"💪 Белки: {total_protein:.1f} г")
-            lines.append(f"🥑 Жиры: {total_fat:.1f} г")
-            lines.append(f"🍩 Углеводы: {total_carbs:.1f} г")
-            
-            # Сохраняем в базу
-            totals_for_db = {
-                "calories": total_kcal,
-                "protein_g": total_protein,
-                "fat_total_g": total_fat,
-                "carbohydrates_total_g": total_carbs,
-                "products": [{
-                    "name": product_name,
-                    "grams": weight,
-                    "calories": total_kcal,
-                    "protein_g": total_protein,
-                    "fat_total_g": total_fat,
-                    "carbohydrates_total_g": total_carbs,
-                }],
-            }
-            
-            api_details = f"📦 {product_name} ({weight} г) — {total_kcal:.0f} ккал (Б {total_protein:.1f} / Ж {total_fat:.1f} / У {total_carbs:.1f})"
-            
-            save_meal_entry(
-                user_id=user_id,
-                raw_query=f"[Штрих-код: {barcode}]",
-                totals=totals_for_db,
-                entry_date=entry_date,
-                api_details=api_details,
-            )
-            
-            daily_totals = get_daily_meal_totals(user_id, entry_date)
-            lines.append("\n\n✅ Продукт добавлен в дневной отчёт!")
-            lines.append("\n📊 СУММА ЗА СЕГОДНЯ:")
-            lines.append(f"🔥 Калории: {daily_totals['calories']:.0f} ккал")
-            lines.append(f"💪 Белки: {daily_totals['protein_g']:.1f} г")
-            lines.append(f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г")
-            lines.append(f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г")
-            
-            message.bot.expecting_barcode_photo_input = False
-            if hasattr(message.bot, "meal_entry_dates"):
-                message.bot.meal_entry_dates.pop(user_id, None)
-            
-            await answer_with_menu(
-                message,
-                "\n".join(lines),
-                reply_markup=kbju_after_meal_menu,
-            )
+            text_parts.append(f"\n📦 В базе указан вес упаковки: {weight} г\n")
+            text_parts.append(f"Сколько грамм вы съели? (можно ввести {weight} или другое значение)")
         else:
-            # Вес не найден, показываем только информацию на 100г
-            lines.append("\n\n❓ Вес упаковки не указан в базе.")
-            lines.append("Если хочешь добавить продукт в дневной отчёт, используй другие способы добавления КБЖУ.")
-            
-            message.bot.expecting_barcode_photo_input = False
-            if hasattr(message.bot, "meal_entry_dates"):
-                message.bot.meal_entry_dates.pop(user_id, None)
-            
-            await answer_with_menu(
-                message,
-                "\n".join(lines),
-                reply_markup=kbju_add_menu,
-            )
+            text_parts.append(f"\n❓ Сколько грамм вы съели?")
+        
+        await answer_with_menu(
+            message,
+            "".join(text_parts),
+            reply_markup=kbju_add_menu,
+        )
         
     except Exception as e:
         print("❌ Ошибка при обработке фото штрих-кода:", repr(e))
@@ -6729,15 +6764,28 @@ async def water(message: Message):
     message.bot.water_menu_open = True
     today = date.today()
     daily_total = get_daily_water_total(user_id, today)
+    recommended = get_water_recommended(user_id)
     
-    # Рекомендуемая норма: 30-35 мл на 1 кг веса, среднее 2000-2500 мл
-    recommended = 2000  # можно сделать настраиваемым
+    # Получаем вес для уведомления
+    weight = get_last_weight_kg(user_id)
+    
+    progress = min(100, int((daily_total / recommended) * 100)) if recommended > 0 else 0
+    bar = build_water_progress_bar(daily_total, recommended)
+    
+    # Формируем текст с информацией о расчете нормы
+    norm_info = ""
+    if weight and weight > 0:
+        norm_info = f"\n📊 Норма рассчитана по твоему весу ({weight:.1f} кг): {weight:.1f} × 32.5 мл = {recommended:.0f} мл"
+    else:
+        norm_info = "\n📊 Норма рассчитана по среднему значению (2000 мл). Укажи свой вес в разделе «⚖️ Вес и замеры», чтобы получить персональную норму."
     
     intro_text = (
         "💧 Контроль воды\n\n"
         f"Выпито сегодня: {daily_total:.0f} мл\n"
-        f"Рекомендуемая норма: {recommended} мл\n"
-        f"Прогресс: {min(100, int((daily_total / recommended) * 100))}%\n\n"
+        f"Рекомендуемая норма: {recommended:.0f} мл\n"
+        f"Прогресс: {progress}%\n"
+        f"{bar}"
+        f"{norm_info}\n\n"
         "Отслеживай количество выпитой воды в течение дня."
     )
     
@@ -6771,7 +6819,7 @@ async def water_today(message: Message):
     today = date.today()
     entries = get_water_entries_for_day(user_id, today)
     daily_total = get_daily_water_total(user_id, today)
-    recommended = 2000
+    recommended = get_water_recommended(user_id)
     
     if not entries:
         await answer_with_menu(
@@ -6792,10 +6840,8 @@ async def water_today(message: Message):
     progress = min(100, int((daily_total / recommended) * 100))
     lines.append(f"📈 Прогресс: {progress}%")
     
-    # Визуальный прогресс-бар
-    bar_length = 10
-    filled = int((progress / 100) * bar_length)
-    bar = "🟦" * filled + "⬜" * (bar_length - filled)
+    # Визуальный прогресс-бар (используем build_water_progress_bar)
+    bar = build_water_progress_bar(daily_total, recommended)
     lines.append(f"\n{bar}")
     
     await answer_with_menu(
