@@ -7,6 +7,8 @@ import os
 import random
 import re
 import threading
+import cv2
+import numpy as np
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 import http.server
@@ -21,6 +23,7 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
+    Document,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
@@ -398,26 +401,38 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
 
 
 def decode_barcode_from_image(image_bytes: bytes) -> str | None:
-    """Извлекает цифры штрих-кода (EAN/UPC) из байтов изображения."""
+    """Извлекает цифры штрих-кода (EAN/UPC) из байтов изображения с предобработкой."""
 
     if zbar_decode is None:
         print(f"⚠️ Штрих-коды недоступны: {ZBAR_IMPORT_ERROR}")
         return None
 
-    try:
-        image = Image.open(io.BytesIO(image_bytes))
-    except Exception:
+    # Читаем изображение через OpenCV
+    np_data = np.frombuffer(image_bytes, dtype=np.uint8)
+    img = cv2.imdecode(np_data, cv2.IMREAD_COLOR)
+    if img is None:
         return None
 
-    try:
-        codes = zbar_decode(image)
-    except Exception:
-        return None
+    # Увеличиваем контраст и убираем цвет
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    for code in codes:
-        value = code.data.decode("utf-8", errors="ignore")
-        if value.isdigit() and len(value) in (12, 13, 14):
-            return value
+    # Увеличиваем изображение — так полосы становятся чётче
+    gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+
+    # Бинаризация для более контрастных полос
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    # Пробуем несколько вариантов предобработанных изображений
+    for candidate in (gray, thresh):
+        try:
+            codes = zbar_decode(candidate)
+        except Exception:
+            continue
+
+        for code in codes:
+            value = code.data.decode("utf-8", errors="ignore")
+            if value.isdigit() and len(value) in (12, 13, 14):
+                return value
 
     return None
 
@@ -5098,7 +5113,8 @@ async def kbju_add_via_barcode(message: Message):
         "🍱 Раздел КБЖУ\n\n"
         "🏷️ Продукт по штрих-коду\n\n"
         "Сфотографируй штрих-код продукта, а я найду его в Open Food Facts и покажу карточку.\n\n"
-        "Советы: делай фото без бликов, держи камеру ровно и чтобы код занимал 30–60% кадра."
+        "Советы: делай фото без бликов, держи камеру ровно и чтобы код занимал 30–60% кадра.\n"
+        "Если не выходит — отправь снимок штрих-кода как файл (Document), так без сжатия получается лучше."
     )
 
     await answer_with_menu(
@@ -5106,6 +5122,44 @@ async def kbju_add_via_barcode(message: Message):
         text,
         reply_markup=kbju_add_menu,
     )
+
+
+async def process_barcode_image(message: Message, image_data: bytes):
+    barcode = decode_barcode_from_image(image_data)
+    if not barcode:
+        await message.answer(
+            "Не смог распознать штрих-код 😕\n"
+            "Попробуй:\n"
+            "• отправить фото как файл\n"
+            "• или просто напиши цифры под штрих-кодом"
+        )
+        return
+
+    product = await lookup_open_food_facts(barcode)
+    if not product:
+        await message.answer(
+            f"Штрих-код распознан: {barcode}\n"
+            "Но в Open Food Facts товара нет. Попробуй другой продукт или введи цифры вручную."
+        )
+        return
+
+    brand_line = f"🏷️ {product['brands']}\n" if product["brands"] else ""
+
+    text = (
+        f"🔎 Штрих-код: {barcode}\n"
+        f"📦 {product['name']}\n"
+        f"{brand_line}"
+        "КБЖУ на 100 г:\n"
+        f"• 🔥 {product['kcal_100g'] if product['kcal_100g'] is not None else 'нет данных'} ккал\n"
+        f"• 🥩 Б: {product['p_100g'] if product['p_100g'] is not None else 'нет'} г\n"
+        f"• 🧈 Ж: {product['f_100g'] if product['f_100g'] is not None else 'нет'} г\n"
+        f"• 🥖 У: {product['c_100g'] if product['c_100g'] is not None else 'нет'} г"
+    ).strip()
+
+    if product["image"]:
+        await message.answer_photo(product["image"], caption=text)
+    else:
+        await message.answer(text)
 
 
 @dp.message(lambda m: m.text == "📆 Календарь КБЖУ" and getattr(m.bot, "kbju_menu_open", False))
@@ -5274,45 +5328,42 @@ async def kbju_barcode_photo_process(message: Message):
         image_bytes = await message.bot.download_file(file_info.file_path)
         image_data = image_bytes.read()
 
-        barcode = decode_barcode_from_image(image_data)
-        if not barcode:
-            await message.answer(
-                "Не смог распознать штрих-код 😕\n"
-                "Попробуй сделать фото ближе, без бликов и ровно, чтобы код занимал 30–60% кадра."
-            )
-            return
-
-        product = await lookup_open_food_facts(barcode)
-        if not product:
-            await message.answer(
-                f"Штрих-код распознан: {barcode}\n"
-                "Но в Open Food Facts товара нет. Попробуй другой продукт или введи цифры вручную."
-            )
-            return
-
-        brand_line = f"🏷️ {product['brands']}\n" if product["brands"] else ""
-
-        text = (
-            f"🔎 Штрих-код: {barcode}\n"
-            f"📦 {product['name']}\n"
-            f"{brand_line}"
-            "КБЖУ на 100 г:\n"
-            f"• 🔥 {product['kcal_100g'] if product['kcal_100g'] is not None else 'нет данных'} ккал\n"
-            f"• 🥩 Б: {product['p_100g'] if product['p_100g'] is not None else 'нет'} г\n"
-            f"• 🧈 Ж: {product['f_100g'] if product['f_100g'] is not None else 'нет'} г\n"
-            f"• 🥖 У: {product['c_100g'] if product['c_100g'] is not None else 'нет'} г"
-        ).strip()
-
-        if product["image"]:
-            await message.answer_photo(product["image"], caption=text)
-        else:
-            await message.answer(text)
+        await process_barcode_image(message, image_data)
 
     except Exception as e:
         print("❌ Ошибка при обработке штрих-кода:", repr(e))
         await message.answer(
             "Произошла ошибка при чтении штрих-кода 😔\n"
             "Попробуй отправить фото ещё раз."
+        )
+    finally:
+        message.bot.expecting_barcode_photo_input = False
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_barcode_photo_input", False) and m.document is not None)
+async def kbju_barcode_document_handler(message: Message):
+    """Обработчик штрих-кода, отправленного как документ (без сжатия)."""
+
+    document: Document = message.document
+    if not document.mime_type or not document.mime_type.startswith("image/"):
+        await message.answer(
+            "Отправь, пожалуйста, файл со штрих-кодом в формате изображения (JPEG/PNG)."
+        )
+        return
+
+    await message.answer("🏷️ Сканирую штрих-код без сжатия, секунду...")
+
+    try:
+        file_info = await message.bot.get_file(document.file_id)
+        image_bytes = await message.bot.download_file(file_info.file_path)
+        image_data = image_bytes.read()
+
+        await process_barcode_image(message, image_data)
+    except Exception as e:
+        print("❌ Ошибка при обработке штрих-кода из файла:", repr(e))
+        await message.answer(
+            "Произошла ошибка при чтении штрих-кода 😔\n"
+            "Попробуй отправить файл ещё раз."
         )
     finally:
         message.bot.expecting_barcode_photo_input = False

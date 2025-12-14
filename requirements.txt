@@ -16,6 +16,7 @@ requests
 httpx
 
 # Barcode recognition
+opencv-python-headless
 pyzbar
 Pillow
 
