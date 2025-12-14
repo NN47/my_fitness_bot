@@ -24,7 +24,7 @@ import threading
 import http.server
 import socketserver
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func, DateTime, Text, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Date, Float, func, DateTime, Text, inspect, text, Boolean
 from datetime import timedelta
 import random
 from datetime import datetime
@@ -638,6 +638,7 @@ class Supplement(Base):
     times_json = Column(Text, default="[]")
     days_json = Column(Text, default="[]")
     duration = Column(String, default="постоянно")
+    notifications_enabled = Column(Boolean, default=True)
 
 
 class SupplementEntry(Base):
@@ -1441,21 +1442,16 @@ def format_progress_block(user_id: str) -> str:
 
 def format_water_progress_block(user_id: str) -> str:
     """
-    Форматирует блок прогресса воды аналогично format_progress_block для КБЖУ.
+    Форматирует блок прогресса воды для главного меню.
     """
     today = date.today()
     daily_total = get_daily_water_total(user_id, today)
     recommended = get_water_recommended(user_id)
     
-    def line(label: str, current: float, target: float, unit: str) -> str:
-        percent = 0 if target <= 0 else round((current / target) * 100)
-        bar = build_water_progress_bar(current, target)
-        return f"{label}: {current:.0f}/{target:.0f} {unit} ({percent}%)\n{bar}"
+    percent = 0 if recommended <= 0 else round((daily_total / recommended) * 100)
+    bar = build_water_progress_bar(daily_total, recommended)
     
-    lines = ["💧 <b>Вода</b>"]
-    lines.append(line("💧 Вода", daily_total, recommended, "мл"))
-    
-    return "\n".join(lines)
+    return f"💧 <b>Вода</b>: {daily_total:.0f}/{recommended:.0f} мл ({percent}%)\n{bar}"
 
 
 def add_weight(user_id, value, entry_date):
@@ -3531,16 +3527,17 @@ def load_supplements_from_db(user_id: str) -> list[dict]:
         result: list[dict] = []
         for sup in supplements:
             result.append(
-                {
-                    "id": sup.id,
-                    "name": sup.name,
-                    "times": json.loads(sup.times_json or "[]"),
-                    "days": json.loads(sup.days_json or "[]"),
-                    "duration": sup.duration or "постоянно",
-                    "history": entries_map.get(sup.id, []).copy(),
-                    "ready": True,
-                }
-            )
+            {
+                "id": sup.id,
+                "name": sup.name,
+                "times": json.loads(sup.times_json or "[]"),
+                "days": json.loads(sup.days_json or "[]"),
+                "duration": sup.duration or "постоянно",
+                "history": entries_map.get(sup.id, []).copy(),
+                "ready": True,
+                "notifications_enabled": getattr(sup, "notifications_enabled", True),
+            }
+        )
 
         return result
     finally:
@@ -3567,6 +3564,7 @@ def persist_supplement_record(user_id: str, payload: dict, supplement_id: int | 
         sup.times_json = json.dumps(payload.get("times", []), ensure_ascii=False)
         sup.days_json = json.dumps(payload.get("days", []), ensure_ascii=False)
         sup.duration = payload.get("duration", sup.duration or "постоянно")
+        sup.notifications_enabled = payload.get("notifications_enabled", True)
 
         session.add(sup)
         session.commit()
@@ -3638,6 +3636,7 @@ def get_active_supplement(message: Message) -> dict:
             "duration": "постоянно",
             "history": [],
             "ready": False,
+            "notifications_enabled": True,
         },
     )
 
@@ -4143,6 +4142,7 @@ async def choose_supplement_for_view(message: Message):
     if message.text in menu_buttons:
         # Сбрасываем флаг и позволяем другим обработчикам обработать кнопку
         message.bot.choosing_supplement_for_view = False
+        # Не обрабатываем сообщение здесь, позволяем другим обработчикам обработать его
         return
     
     if message.text == "⬅️ Назад":
@@ -4161,6 +4161,8 @@ async def choose_supplement_for_view(message: Message):
     )
 
     if target_index is None:
+        # Сбрасываем флаг, если добавка не найдена, чтобы не блокировать другие действия
+        message.bot.choosing_supplement_for_view = False
         await message.answer("Не нашёл такую добавку. Выбери название из списка.")
         return
 
@@ -4209,8 +4211,8 @@ async def handle_supplement_name(message: Message):
     message.bot.expecting_supplement_name = False
     await answer_with_menu(
         message,
-        "Выберите время, дни и длительность приема добавки:",
-        reply_markup=supplement_edit_menu(show_save=False),
+        "Выберите время, дни, длительность приема добавки и уведомления (по желанию):",
+        reply_markup=supplement_edit_menu(show_save=True),
     )
 
 
@@ -4363,6 +4365,19 @@ async def set_supplement_amount(message: Message):
 
 @dp.message(lambda m: getattr(m.bot, "expecting_supplement_history_choice", False))
 async def choose_supplement_for_history(message: Message):
+    # Проверяем, не является ли это кнопкой меню
+    menu_buttons = ["⬅️ Назад", "🍱 КБЖУ", "📆 Календарь", "💆 Процедуры", "💧 Контроль воды", 
+                    "🏋️ Тренировка", "⚖️ Вес / 📏 Замеры", "💊 Добавки", "Анализ деятельности", 
+                    "⚙️ Настройки", "🏠 Главное меню", "📆 Календарь добавок", "✅ Отметить приём",
+                    "➕ Создать добавку", "✏️ Редактировать добавку", "📅 Редактировать дни",
+                    "✏️ Редактировать время"]
+    
+    if message.text in menu_buttons:
+        # Сбрасываем флаг и позволяем другим обработчикам обработать кнопку
+        message.bot.expecting_supplement_history_choice = False
+        # Не обрабатываем сообщение здесь, позволяем другим обработчикам обработать его
+        return
+    
     user_id = str(message.from_user.id)
     action = getattr(message.bot, "supplement_history_action", {}).get(user_id)
     supplements_list = get_user_supplements(message)
@@ -4372,10 +4387,13 @@ async def choose_supplement_for_history(message: Message):
     )
 
     if not action:
+        message.bot.expecting_supplement_history_choice = False
         await message.answer("Не получилось определить запрошенное действие.")
         return
 
     if not target:
+        # Сбрасываем флаг, если добавка не найдена, чтобы не блокировать другие действия
+        message.bot.expecting_supplement_history_choice = False
         await message.answer("Не нашёл такую добавку. Выбери название из списка.")
         return
 
@@ -4544,6 +4562,12 @@ async def delete_time(message: Message):
 @dp.message(F.text == "💾 Сохранить")
 async def save_time_or_supplement(message: Message):
     sup = get_active_supplement(message)
+    
+    # Проверяем, что есть хотя бы название
+    if not sup.get("name") or not sup["name"].strip():
+        await message.answer("Пожалуйста, укажите название добавки перед сохранением.")
+        return
+    
     if getattr(message.bot, "expecting_supplement_time", False):
         message.bot.expecting_supplement_time = False
 
@@ -4571,6 +4595,7 @@ async def save_time_or_supplement(message: Message):
         "days": sup["days"].copy(),
         "duration": sup["duration"],
         "history": sup.get("history", []).copy(),
+        "notifications_enabled": sup.get("notifications_enabled", True),
     }
 
     user_id = str(message.from_user.id)
@@ -4591,13 +4616,15 @@ async def save_time_or_supplement(message: Message):
 
     reset_supplement_state(message)
 
+    notifications_status = "включены" if supplement_payload.get("notifications_enabled", True) else "выключены"
     await answer_with_menu(
         message,
         "Мои добавки\n\n"
         f"💊 {supplement_payload['name']} \n"
         f"⏰ Время приема: {', '.join(supplement_payload['times']) or 'не выбрано'}\n"
         f"📅 Дни приема: {', '.join(supplement_payload['days']) or 'не выбрано'}\n"
-        f"⏳ Длительность: {supplement_payload['duration']}",
+        f"⏳ Длительность: {supplement_payload['duration']}\n"
+        f"🔔 Уведомления: {notifications_status}",
         reply_markup=supplements_main_menu(has_items=True),
     )
 
@@ -4651,6 +4678,22 @@ async def set_duration(message: Message):
     )
 
 
+@dp.message(F.text == "🔔 Уведомления")
+async def toggle_notifications(message: Message):
+    sup = get_active_supplement(message)
+    current_status = sup.get("notifications_enabled", True)
+    sup["notifications_enabled"] = not current_status
+    sup["ready"] = False
+    
+    status_text = "включены" if sup["notifications_enabled"] else "выключены"
+    await answer_with_menu(
+        message,
+        f"🔔 Уведомления {status_text}\n\n"
+        f"Уведомления будут приходить в указанное время приема добавки.",
+        reply_markup=supplement_edit_menu(show_save=True),
+    )
+
+
 @dp.message(F.text == "⬅️ Отменить")
 async def cancel_supplement(message: Message):
     reset_supplement_state(message)
@@ -4675,6 +4718,7 @@ async def start_editing_supplement(message: Message, target_index: int):
         "duration": selected.get("duration", "постоянно"),
         "history": [dict(entry) for entry in selected.get("history", [])],
         "ready": True,
+        "notifications_enabled": selected.get("notifications_enabled", True),
     })
 
     await answer_with_menu(
@@ -4717,6 +4761,7 @@ async def choose_supplement_to_edit(message: Message):
     if message.text in menu_buttons:
         # Сбрасываем флаг и позволяем другим обработчикам обработать кнопку
         message.bot.choosing_supplement_for_edit = False
+        # Не обрабатываем сообщение здесь, позволяем другим обработчикам обработать его
         return
     
     supplements_list = get_user_supplements(message)
@@ -4726,6 +4771,8 @@ async def choose_supplement_to_edit(message: Message):
     )
 
     if target_index is None:
+        # Сбрасываем флаг, если добавка не найдена, чтобы не блокировать другие действия
+        message.bot.choosing_supplement_for_edit = False
         await message.answer("Не нашёл такую добавку. Выбери название из списка.")
         return
 
@@ -4783,6 +4830,14 @@ async def mark_supplement_from_details(message: Message):
 
 @dp.message(F.text == "📅 Календарь добавок")
 async def supplements_history(message: Message):
+    # Сбрасываем флаги выбора добавки, если они были установлены
+    if getattr(message.bot, "choosing_supplement_for_view", False):
+        message.bot.choosing_supplement_for_view = False
+    if getattr(message.bot, "choosing_supplement_for_edit", False):
+        message.bot.choosing_supplement_for_edit = False
+    if getattr(message.bot, "expecting_supplement_history_choice", False):
+        message.bot.expecting_supplement_history_choice = False
+    
     supplements_list = get_user_supplements(message)
     if not supplements_list:
         await answer_with_menu(
@@ -4798,12 +4853,14 @@ async def supplements_history(message: Message):
 def supplement_schedule_prompt(sup: dict) -> str:
     times = ", ".join(sup["times"]) if sup["times"] else "не выбрано"
     days = ", ".join(sup["days"]) if sup["days"] else "не выбрано"
+    notifications_status = "включены" if sup.get("notifications_enabled", True) else "выключены"
     return (
         f"💊 {sup['name']}\n\n"
         f"⏰ Время приема: {times}\n"
         f"📅 Дни приема: {days}\n"
-        f"⏳ Длительность: {sup['duration']}\n\n"
-        "ℹ️ Выберите время и дни приема для сохранения"
+        f"⏳ Длительность: {sup['duration']}\n"
+        f"🔔 Уведомления: {notifications_status}\n\n"
+        "ℹ️ Можно сохранить добавку в любой момент"
     )
 
 
@@ -4811,6 +4868,7 @@ def supplement_edit_menu(show_save: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="✏️ Редактировать время"), KeyboardButton(text="📅 Редактировать дни")],
         [KeyboardButton(text="⏳ Длительность приема"), KeyboardButton(text="✏️ Изменить название")],
+        [KeyboardButton(text="🔔 Уведомления")],
     ]
     if show_save:
         buttons.append([KeyboardButton(text="💾 Сохранить")])
@@ -4988,6 +5046,14 @@ async def send_today_results(message: Message, user_id: str):
 
 @dp.message(F.text == "🍱 КБЖУ")
 async def calories(message: Message):
+    # Сбрасываем флаги выбора добавки, если они были установлены
+    if getattr(message.bot, "choosing_supplement_for_view", False):
+        message.bot.choosing_supplement_for_view = False
+    if getattr(message.bot, "choosing_supplement_for_edit", False):
+        message.bot.choosing_supplement_for_edit = False
+    if getattr(message.bot, "expecting_supplement_history_choice", False):
+        message.bot.expecting_supplement_history_choice = False
+    
     reset_user_state(message, keep_supplements=True)
     user_id = str(message.from_user.id)
 
