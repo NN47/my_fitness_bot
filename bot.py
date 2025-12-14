@@ -638,7 +638,7 @@ class Supplement(Base):
     times_json = Column(Text, default="[]")
     days_json = Column(Text, default="[]")
     duration = Column(String, default="постоянно")
-    notifications_enabled = Column(Boolean, default=True)
+    notifications_enabled = Column(Boolean, default=True, nullable=True)
 
 
 class SupplementEntry(Base):
@@ -3526,8 +3526,21 @@ def load_supplements_from_db(user_id: str) -> list[dict]:
 
         result: list[dict] = []
         for sup in supplements:
-            result.append(
-            {
+            # Безопасно получаем notifications_enabled, если поле не существует в БД
+            notifications_enabled = True
+            try:
+                # Проверяем наличие атрибута в объекте модели
+                if hasattr(sup, 'notifications_enabled'):
+                    try:
+                        notifications_enabled = sup.notifications_enabled
+                    except (AttributeError, KeyError):
+                        # Если поле есть в модели, но не в БД, используем значение по умолчанию
+                        notifications_enabled = True
+            except Exception:
+                # В случае любой ошибки используем значение по умолчанию
+                notifications_enabled = True
+            
+            result.append({
                 "id": sup.id,
                 "name": sup.name,
                 "times": json.loads(sup.times_json or "[]"),
@@ -3535,11 +3548,13 @@ def load_supplements_from_db(user_id: str) -> list[dict]:
                 "duration": sup.duration or "постоянно",
                 "history": entries_map.get(sup.id, []).copy(),
                 "ready": True,
-                "notifications_enabled": getattr(sup, "notifications_enabled", True),
-            }
-        )
+                "notifications_enabled": notifications_enabled,
+            })
 
         return result
+    except Exception as e:
+        print(f"❌ Ошибка при загрузке добавок из БД: {repr(e)}")
+        return []
     finally:
         session.close()
 
@@ -3564,7 +3579,9 @@ def persist_supplement_record(user_id: str, payload: dict, supplement_id: int | 
         sup.times_json = json.dumps(payload.get("times", []), ensure_ascii=False)
         sup.days_json = json.dumps(payload.get("days", []), ensure_ascii=False)
         sup.duration = payload.get("duration", sup.duration or "постоянно")
-        sup.notifications_enabled = payload.get("notifications_enabled", True)
+        # Безопасно устанавливаем notifications_enabled, если поле существует в модели
+        if hasattr(sup, 'notifications_enabled'):
+            sup.notifications_enabled = payload.get("notifications_enabled", True)
 
         session.add(sup)
         session.commit()
@@ -4085,7 +4102,12 @@ async def edit_supplement_entry(callback: CallbackQuery):
 
 @dp.message(F.text == "💊 Добавки")
 async def supplements(message: Message):
-    supplements_list = get_user_supplements(message)
+    try:
+        supplements_list = get_user_supplements(message)
+    except Exception as e:
+        print(f"❌ Ошибка при загрузке добавок: {repr(e)}")
+        await message.answer("Произошла ошибка при загрузке добавок. Попробуйте позже.")
+        return
     
     # Описание раздела от робота Дайри
     dairi_description = (
