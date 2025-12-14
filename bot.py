@@ -338,6 +338,149 @@ def gemini_extract_kbju_from_label(image_bytes: bytes) -> dict | None:
         return None
 
 
+def gemini_scan_barcode(image_bytes: bytes) -> str | None:
+    """
+    Распознаёт штрих-код на фото через Gemini Vision API.
+    
+    Возвращает строку с номером штрих-кода (EAN-13, UPC и т.д.) или None при ошибке.
+    """
+    prompt = """
+Ты видишь фото со штрих-кодом. Твоя задача — прочитать номер штрих-кода.
+
+ВАЖНО:
+1. Найди штрих-код на изображении (обычно это вертикальные полоски с цифрами под ними)
+2. Прочитай все цифры, которые видны под штрих-кодом
+3. Верни ТОЛЬКО номер штрих-кода (цифры), БЕЗ пробелов, дефисов и других символов
+4. Если штрих-код не виден или нечитаем, верни "NOT_FOUND"
+
+Примеры правильных ответов:
+- 4607025392134
+- 3017620422003
+- 5449000000996
+
+Ответь ТОЛЬКО номером штрих-кода, без дополнительных объяснений.
+"""
+
+    try:
+        from google.genai import types
+        
+        mime_type = "image/jpeg"
+        if image_bytes.startswith(b'\x89PNG'):
+            mime_type = "image/png"
+        elif image_bytes.startswith(b'GIF'):
+            mime_type = "image/gif"
+        elif image_bytes.startswith(b'WEBP'):
+            mime_type = "image/webp"
+        
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=mime_type
+                ),
+                prompt
+            ]
+        )
+        
+        raw = response.text.strip()
+        print("Gemini raw barcode response:", raw)
+        
+        # Очищаем ответ от лишних символов
+        barcode = raw.replace(" ", "").replace("-", "").replace("_", "")
+        
+        # Проверяем, что это похоже на штрих-код (обычно 8-13 цифр)
+        if barcode.isdigit() and 8 <= len(barcode) <= 14:
+            return barcode
+        elif barcode.upper() == "NOT_FOUND":
+            return None
+        else:
+            # Пробуем извлечь только цифры
+            digits = ''.join(filter(str.isdigit, barcode))
+            if 8 <= len(digits) <= 14:
+                return digits
+            return None
+
+    except Exception as e:
+        print("❌ Ошибка Gemini (распознавание штрих-кода):", repr(e))
+        return None
+
+
+def get_product_from_openfoodfacts(barcode: str) -> dict | None:
+    """
+    Получает информацию о продукте из Open Food Facts API по штрих-коду.
+    
+    Возвращает dict с информацией о продукте или None при ошибке.
+    """
+    url = f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json"
+    
+    try:
+        resp = requests.get(url, timeout=10)
+        
+        if resp.status_code != 200:
+            print(f"Open Food Facts API error: HTTP {resp.status_code}")
+            return None
+        
+        data = resp.json()
+        
+        if data.get("status") != 1:
+            print(f"Product not found in Open Food Facts: {barcode}")
+            return None
+        
+        product = data.get("product", {})
+        
+        # Извлекаем основную информацию
+        result = {
+            "name": product.get("product_name") or product.get("product_name_ru") or product.get("product_name_en") or "Неизвестный продукт",
+            "brand": product.get("brands") or "",
+            "barcode": barcode,
+            "nutriments": {}
+        }
+        
+        # Извлекаем КБЖУ (на 100г)
+        nutriments = product.get("nutriments", {})
+        
+        # Калории
+        kcal = nutriments.get("energy-kcal_100g") or nutriments.get("energy-kcal") or nutriments.get("energy_100g")
+        if kcal:
+            result["nutriments"]["kcal"] = float(kcal)
+        
+        # Белки
+        protein = nutriments.get("proteins_100g") or nutriments.get("proteins")
+        if protein:
+            result["nutriments"]["protein"] = float(protein)
+        
+        # Жиры
+        fat = nutriments.get("fat_100g") or nutriments.get("fat")
+        if fat:
+            result["nutriments"]["fat"] = float(fat)
+        
+        # Углеводы
+        carbs = nutriments.get("carbohydrates_100g") or nutriments.get("carbohydrates")
+        if carbs:
+            result["nutriments"]["carbs"] = float(carbs)
+        
+        # Вес продукта (если указан)
+        weight = product.get("quantity") or product.get("product_quantity")
+        if weight:
+            # Пробуем извлечь число из строки типа "200g" или "200 г"
+            import re
+            weight_match = re.search(r'(\d+)', str(weight))
+            if weight_match:
+                result["weight"] = int(weight_match.group(1))
+        
+        # Дополнительная информация
+        result["ingredients"] = product.get("ingredients_text") or product.get("ingredients_text_ru") or ""
+        result["categories"] = product.get("categories") or ""
+        result["image_url"] = product.get("image_url") or product.get("image_front_url") or ""
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Ошибка при запросе к Open Food Facts: {repr(e)}")
+        return None
+
+
 def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") -> str:
     """Переводит текст через публичное API MyMemory.
 
@@ -1181,15 +1324,15 @@ def format_today_workouts_block(user_id: str, include_date: bool = True) -> str:
 def build_progress_bar(current: float, target: float, length: int = 10) -> str:
     """
     Строит индикатор прогресса по КБЖУ:
-    - ◾️◾️◾️◾️◾️◾️◾️◾️◾️◾️ - Пустое значение (target <= 0 или current == 0)
-    - 🟩🟩🟩🟩◾️◾️◾️◾️◾️◾️ - Обычный прогресс (0-101%)
+    - ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ - Пустое значение (target <= 0 или current == 0)
+    - 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ - Обычный прогресс (0-101%)
     - 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 - 101% (ровно)
     - 🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨 - 102-135%
     - 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 - >135%
     """
     if target <= 0 or current <= 0:
         # Пустое значение
-        return "◾️" * length
+        return "⬜" * length
     
     percent = (current / target) * 100
     
@@ -1203,7 +1346,7 @@ def build_progress_bar(current: float, target: float, length: int = 10) -> str:
         # 0-101% - зеленые пропорционально + пустые
         filled_blocks = min(int(round((current / target) * length)), length)
         empty_blocks = max(length - filled_blocks, 0)
-        return "🟩" * filled_blocks + "◾️" * empty_blocks
+        return "🟩" * filled_blocks + "⬜" * empty_blocks
 
 
 def format_progress_block(user_id: str) -> str:
@@ -1906,6 +2049,7 @@ kbju_add_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="📝 Ввести приём пищи (анализ ИИ)")],
         [KeyboardButton(text="📷 Анализ еды по фото")],
         [KeyboardButton(text="📋 Анализ этикетки")],
+        [KeyboardButton(text="📷 Сканировать штрих-код")],
         [KeyboardButton(text="➕ Через CalorieNinjas")],
         [KeyboardButton(text="⬅️ Назад")],
         [main_menu_button],
@@ -1974,6 +2118,16 @@ water_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="📊 Статистика за сегодня")],
         [KeyboardButton(text="📆 История")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+water_amount_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="250"), KeyboardButton(text="300"), KeyboardButton(text="330")],
+        [KeyboardButton(text="500"), KeyboardButton(text="550"), KeyboardButton(text="600")],
+        [KeyboardButton(text="650"), KeyboardButton(text="750"), KeyboardButton(text="1000")],
+        [KeyboardButton(text="⬅️ Назад")],
     ],
     resize_keyboard=True,
 )
@@ -2470,6 +2624,9 @@ async def process_water_amount(message: Message):
     # Проверяем, не является ли это кнопкой меню
     if text in ["⬅️ Назад", "🏠 Главное меню", "📊 Статистика за сегодня", "📆 История", "➕ Добавить воду"]:
         message.bot.expecting_water_amount = False
+        if text == "⬅️ Назад":
+            # Возвращаемся в меню воды
+            await water(message)
         return
     
     try:
@@ -2477,7 +2634,11 @@ async def process_water_amount(message: Message):
         if amount <= 0:
             raise ValueError
     except (ValueError, AttributeError):
-        await message.answer("Пожалуйста, введи число (количество миллилитров).")
+        await answer_with_menu(
+            message,
+            "Пожалуйста, введи число (количество миллилитров) или выбери из предложенных.",
+            reply_markup=water_amount_menu,
+        )
         return
     
     entry_date = date.today()
@@ -3070,6 +3231,7 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
         "expecting_supplement_history_time",
         "expecting_photo_input",
         "expecting_label_photo_input",
+        "expecting_barcode_photo_input",
         "expecting_label_weight_input",
         "expecting_food_input",
         "expecting_ai_food_input",
@@ -4830,6 +4992,8 @@ async def start_kbju_add_flow(message: Message, entry_date: date):
     message.bot.expecting_food_input = False
     message.bot.expecting_ai_food_input = False
     message.bot.expecting_photo_input = False
+    message.bot.expecting_label_photo_input = False
+    message.bot.expecting_barcode_photo_input = False
 
     if not hasattr(message.bot, "meal_entry_dates"):
         message.bot.meal_entry_dates = {}
@@ -4841,7 +5005,8 @@ async def start_kbju_add_flow(message: Message, entry_date: date):
         "• 📝 Ввести приём пищи (анализ ИИ) — умный анализ на основе типичных значений (рекомендуется)\n"
         "• 📷 Анализ еды по фото — отправь фото еды\n"
         "• 📋 Анализ этикетки — отправь фото этикетки/упаковки\n"
-        "• CalorieNinjas — альтернативный вариант"
+        "• 📷 Сканировать штрих-код — отправь фото штрих-кода\n"
+        "• ➕ Через CalorieNinjas — альтернативный вариант"
     )
 
     await answer_with_menu(
@@ -5008,6 +5173,31 @@ async def kbju_add_via_label(message: Message):
         "Я прочитаю информацию о пищевой ценности и извлеку точные данные о калориях, белках, жирах и углеводах.\n\n"
         "Если на этикетке указан вес упаковки — использую его автоматически. "
         "Если нет — спрошу у тебя, сколько грамм ты съел(а)."
+    )
+    
+    await answer_with_menu(
+        message,
+        text,
+        reply_markup=kbju_add_menu,
+    )
+
+
+@dp.message(lambda m: m.text == "📷 Сканировать штрих-код" and getattr(m.bot, "kbju_menu_open", False))
+async def kbju_add_via_barcode(message: Message):
+    """Обработчик кнопки сканирования штрих-кода"""
+    reset_user_state(message)
+    message.bot.kbju_menu_open = True
+    message.bot.expecting_food_input = False
+    message.bot.expecting_ai_food_input = False
+    message.bot.expecting_photo_input = False
+    message.bot.expecting_label_photo_input = False
+    message.bot.expecting_barcode_photo_input = True
+    
+    text = (
+        "🍱 Раздел КБЖУ\n\n"
+        "📷 Сканирование штрих-кода\n\n"
+        "Отправь мне фото штрих-кода продукта, и я найду информацию о нём в базе Open Food Facts! 📸\n\n"
+        "Я распознаю штрих-код с помощью ИИ и получу точные данные о продукте: название, КБЖУ и другие факты."
     )
     
     await answer_with_menu(
@@ -5425,6 +5615,192 @@ async def kbju_label_photo_expected_but_text_received(message: Message):
         "📋 Я ожидаю фото этикетки или упаковки продукта!\n\n"
         "Пожалуйста, отправь фото этикетки, где видна таблица пищевой ценности. "
         "Убедись, что текст хорошо читается.\n\n"
+        "Если хочешь добавить КБЖУ другим способом, используй кнопки меню."
+    )
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_barcode_photo_input", False) and m.photo is not None)
+async def kbju_barcode_photo_process(message: Message):
+    """Обработчик сканирования штрих-кода"""
+    user_id = str(message.from_user.id)
+    entry_date = getattr(message.bot, "meal_entry_dates", {}).get(user_id, date.today())
+
+    photo = message.photo[-1]
+    
+    await message.answer("📷 Распознаю штрих-код, секунду... 🤖")
+    
+    try:
+        # Скачиваем фото
+        file_info = await message.bot.get_file(photo.file_id)
+        image_bytes = await message.bot.download_file(file_info.file_path)
+        image_data = image_bytes.read()
+        
+        # Распознаём штрих-код через Gemini
+        barcode = gemini_scan_barcode(image_data)
+        
+        if not barcode:
+            await message.answer(
+                "Не удалось распознать штрих-код на фото 😔\n\n"
+                "Попробуй сделать фото ещё раз:\n"
+                "• Убедись, что штрих-код хорошо виден\n"
+                "• Сделай фото при хорошем освещении\n"
+                "• Штрих-код должен быть в фокусе\n\n"
+                "Или используй другие способы добавления КБЖУ."
+            )
+            # Оставляем флаг активным для повторной попытки
+            return
+        
+        await message.answer(f"✅ Штрих-код распознан: {barcode}\n\n🔍 Ищу информацию о продукте...")
+        
+        # Получаем данные из Open Food Facts
+        product_data = get_product_from_openfoodfacts(barcode)
+        
+        if not product_data:
+            await message.answer(
+                f"❌ Продукт со штрих-кодом {barcode} не найден в базе Open Food Facts.\n\n"
+                "Попробуй другой способ добавления КБЖУ или используй фото этикетки."
+            )
+            message.bot.expecting_barcode_photo_input = False
+            if hasattr(message.bot, "meal_entry_dates"):
+                message.bot.meal_entry_dates.pop(user_id, None)
+            return
+        
+        # Формируем информацию о продукте
+        product_name = product_data.get("name", "Неизвестный продукт")
+        brand = product_data.get("brand", "")
+        nutriments = product_data.get("nutriments", {})
+        weight = product_data.get("weight")
+        
+        # Формируем сообщение с фактами
+        lines = [f"📦 <b>{product_name}</b>\n"]
+        
+        if brand:
+            lines.append(f"🏷 Бренд: {brand}\n")
+        
+        lines.append(f"🔢 Штрих-код: {barcode}\n")
+        
+        # КБЖУ на 100г
+        kcal_100g = nutriments.get("kcal", 0)
+        protein_100g = nutriments.get("protein", 0)
+        fat_100g = nutriments.get("fat", 0)
+        carbs_100g = nutriments.get("carbs", 0)
+        
+        if kcal_100g or protein_100g or fat_100g or carbs_100g:
+            lines.append("\n📊 КБЖУ на 100 г:")
+            if kcal_100g:
+                lines.append(f"🔥 Калории: {kcal_100g:.0f} ккал")
+            if protein_100g:
+                lines.append(f"💪 Белки: {protein_100g:.1f} г")
+            if fat_100g:
+                lines.append(f"🥑 Жиры: {fat_100g:.1f} г")
+            if carbs_100g:
+                lines.append(f"🍩 Углеводы: {carbs_100g:.1f} г")
+        
+        # Дополнительная информация
+        ingredients = product_data.get("ingredients", "")
+        if ingredients:
+            # Обрезаем длинный список ингредиентов
+            ingredients_short = ingredients[:200] + "..." if len(ingredients) > 200 else ingredients
+            lines.append(f"\n📝 Ингредиенты: {ingredients_short}")
+        
+        categories = product_data.get("categories", "")
+        if categories:
+            # Берем первые несколько категорий
+            categories_list = categories.split(",")[:3]
+            lines.append(f"\n🏷 Категории: {', '.join(categories_list)}")
+        
+        # Если есть вес упаковки, используем его
+        if weight:
+            # Рассчитываем КБЖУ для всего продукта
+            multiplier = weight / 100.0
+            total_kcal = kcal_100g * multiplier
+            total_protein = protein_100g * multiplier
+            total_fat = fat_100g * multiplier
+            total_carbs = carbs_100g * multiplier
+            
+            lines.append(f"\n📦 Вес упаковки: {weight} г")
+            lines.append(f"\n📊 КБЖУ на всю упаковку:")
+            lines.append(f"🔥 Калории: {total_kcal:.0f} ккал")
+            lines.append(f"💪 Белки: {total_protein:.1f} г")
+            lines.append(f"🥑 Жиры: {total_fat:.1f} г")
+            lines.append(f"🍩 Углеводы: {total_carbs:.1f} г")
+            
+            # Сохраняем в базу
+            totals_for_db = {
+                "calories": total_kcal,
+                "protein_g": total_protein,
+                "fat_total_g": total_fat,
+                "carbohydrates_total_g": total_carbs,
+                "products": [{
+                    "name": product_name,
+                    "grams": weight,
+                    "calories": total_kcal,
+                    "protein_g": total_protein,
+                    "fat_total_g": total_fat,
+                    "carbohydrates_total_g": total_carbs,
+                }],
+            }
+            
+            api_details = f"📦 {product_name} ({weight} г) — {total_kcal:.0f} ккал (Б {total_protein:.1f} / Ж {total_fat:.1f} / У {total_carbs:.1f})"
+            
+            save_meal_entry(
+                user_id=user_id,
+                raw_query=f"[Штрих-код: {barcode}]",
+                totals=totals_for_db,
+                entry_date=entry_date,
+                api_details=api_details,
+            )
+            
+            daily_totals = get_daily_meal_totals(user_id, entry_date)
+            lines.append("\n\n✅ Продукт добавлен в дневной отчёт!")
+            lines.append("\n📊 СУММА ЗА СЕГОДНЯ:")
+            lines.append(f"🔥 Калории: {daily_totals['calories']:.0f} ккал")
+            lines.append(f"💪 Белки: {daily_totals['protein_g']:.1f} г")
+            lines.append(f"🥑 Жиры: {daily_totals['fat_total_g']:.1f} г")
+            lines.append(f"🍩 Углеводы: {daily_totals['carbohydrates_total_g']:.1f} г")
+            
+            message.bot.expecting_barcode_photo_input = False
+            if hasattr(message.bot, "meal_entry_dates"):
+                message.bot.meal_entry_dates.pop(user_id, None)
+            
+            await answer_with_menu(
+                message,
+                "\n".join(lines),
+                reply_markup=kbju_after_meal_menu,
+            )
+        else:
+            # Вес не найден, показываем только информацию на 100г
+            lines.append("\n\n❓ Вес упаковки не указан в базе.")
+            lines.append("Если хочешь добавить продукт в дневной отчёт, используй другие способы добавления КБЖУ.")
+            
+            message.bot.expecting_barcode_photo_input = False
+            if hasattr(message.bot, "meal_entry_dates"):
+                message.bot.meal_entry_dates.pop(user_id, None)
+            
+            await answer_with_menu(
+                message,
+                "\n".join(lines),
+                reply_markup=kbju_add_menu,
+            )
+        
+    except Exception as e:
+        print("❌ Ошибка при обработке фото штрих-кода:", repr(e))
+        await message.answer(
+            "Произошла ошибка при обработке фото штрих-кода 😔\n"
+            "Попробуй отправить фото ещё раз или используй другие способы добавления КБЖУ."
+        )
+        message.bot.expecting_barcode_photo_input = False
+        if hasattr(message.bot, "meal_entry_dates"):
+            message.bot.meal_entry_dates.pop(user_id, None)
+
+
+@dp.message(lambda m: getattr(m.bot, "expecting_barcode_photo_input", False) and m.photo is None)
+async def kbju_barcode_photo_expected_but_text_received(message: Message):
+    """Обработчик случая, когда ожидается фото штрих-кода, но получен текст"""
+    await message.answer(
+        "📷 Я ожидаю фото штрих-кода!\n\n"
+        "Пожалуйста, отправь фото штрих-кода продукта. "
+        "Убедись, что штрих-код хорошо виден и в фокусе.\n\n"
         "Если хочешь добавить КБЖУ другим способом, используй кнопки меню."
     )
 
@@ -6382,18 +6758,15 @@ async def add_water(message: Message):
     await answer_with_menu(
         message,
         "💧 Добавление воды\n\n"
-        "Напиши количество воды в миллилитрах (мл).\n\n"
-        "Примеры:\n"
-        "• 250 (стакан)\n"
-        "• 500 (бутылка)\n"
-        "• 1000 (литр)",
-        reply_markup=water_menu,
+        "Напиши количество воды в миллилитрах или выбери из предложенных.",
+        reply_markup=water_amount_menu,
     )
 
 
 @dp.message(lambda m: m.text == "📊 Статистика за сегодня" and getattr(m.bot, "water_menu_open", False))
 async def water_today(message: Message):
     reset_user_state(message)
+    message.bot.water_menu_open = True  # Восстанавливаем флаг после reset_user_state
     user_id = str(message.from_user.id)
     today = date.today()
     entries = get_water_entries_for_day(user_id, today)
@@ -6435,6 +6808,7 @@ async def water_today(message: Message):
 @dp.message(lambda m: m.text == "📆 История" and getattr(m.bot, "water_menu_open", False))
 async def water_history(message: Message):
     reset_user_state(message)
+    message.bot.water_menu_open = True  # Восстанавливаем флаг после reset_user_state
     user_id = str(message.from_user.id)
     
     session = SessionLocal()
