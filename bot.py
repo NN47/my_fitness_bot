@@ -31,7 +31,12 @@ from aiogram.types import (
 from dotenv import load_dotenv
 from google import genai
 from PIL import Image
-from pyzbar.pyzbar import decode as zbar_decode
+try:
+    from pyzbar.pyzbar import decode as zbar_decode
+    ZBAR_IMPORT_ERROR = None
+except Exception as import_error:  # pyzbar may require libzbar which is missing on some hosts
+    zbar_decode = None
+    ZBAR_IMPORT_ERROR = import_error
 from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Text, create_engine, func, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -394,6 +399,10 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
 
 def decode_barcode_from_image(image_bytes: bytes) -> str | None:
     """Извлекает цифры штрих-кода (EAN/UPC) из байтов изображения."""
+
+    if zbar_decode is None:
+        print(f"⚠️ Штрих-коды недоступны: {ZBAR_IMPORT_ERROR}")
+        return None
 
     try:
         image = Image.open(io.BytesIO(image_bytes))
@@ -5281,10 +5290,12 @@ async def kbju_barcode_photo_process(message: Message):
             )
             return
 
+        brand_line = f"🏷️ {product['brands']}\n" if product["brands"] else ""
+
         text = (
             f"🔎 Штрих-код: {barcode}\n"
             f"📦 {product['name']}\n"
-            f"{('🏷️ ' + product['brands'] + '\n') if product['brands'] else ''}"
+            f"{brand_line}"
             "КБЖУ на 100 г:\n"
             f"• 🔥 {product['kcal_100g'] if product['kcal_100g'] is not None else 'нет данных'} ккал\n"
             f"• 🥩 Б: {product['p_100g'] if product['p_100g'] is not None else 'нет'} г\n"
