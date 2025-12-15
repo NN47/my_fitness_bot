@@ -4,11 +4,12 @@ from aiogram.fsm.state import State, StatesGroup
 
 class MealEntryStates(StatesGroup):
     """Состояния для добавления приёма пищи."""
-    waiting_for_food_input = State()
-    waiting_for_photo = State()
-    waiting_for_label_photo = State()
-    waiting_for_barcode_photo = State()
-    waiting_for_weight_input = State()
+    waiting_for_food_input = State()  # CalorieNinjas
+    waiting_for_ai_food_input = State()  # Gemini AI
+    waiting_for_photo = State()  # Фото еды
+    waiting_for_label_photo = State()  # Фото этикетки
+    waiting_for_barcode_photo = State()  # Фото штрих-кода
+    waiting_for_weight_input = State()  # Вес продукта (для этикетки)
     editing_meal = State()
 
 

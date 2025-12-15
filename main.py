@@ -10,6 +10,7 @@ import socketserver
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.bot import DefaultBotProperties
+from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import API_TOKEN, KEEPALIVE_PORT
 from database.session import init_db
@@ -51,9 +52,10 @@ async def main():
     logger.info("Инициализация базы данных...")
     init_db()
     
-    # Создаём бота и диспетчер
+    # Создаём бота и диспетчер с FSM storage
     bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher()
+    storage = MemoryStorage()
+    dp = Dispatcher(storage=storage)
     
     # Регистрируем обработчики
     logger.info("Регистрация обработчиков...")
