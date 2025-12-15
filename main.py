@@ -25,6 +25,7 @@ from handlers import (
     register_water_handlers,
     register_settings_handlers,
     register_activity_handlers,
+    register_kbju_test_handlers,
 )
 
 # Настраиваем логирование
@@ -69,6 +70,7 @@ async def main():
     register_water_handlers(dp)
     register_settings_handlers(dp)
     register_activity_handlers(dp)
+    register_kbju_test_handlers(dp)
     from handlers.calendar import register_calendar_handlers
     register_calendar_handlers(dp)
     from handlers.procedures import register_procedure_handlers

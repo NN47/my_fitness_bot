@@ -57,3 +57,4 @@ def format_count_with_unit(count: int | float, variant: str | None) -> str:
         return f"{count} м"
     else:
         return str(count)
+

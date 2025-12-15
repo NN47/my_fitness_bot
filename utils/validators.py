@@ -35,3 +35,4 @@ def parse_date(date_str: str) -> datetime | None:
         return datetime.strptime(date_str, "%d.%m.%Y")
     except ValueError:
         return None
+

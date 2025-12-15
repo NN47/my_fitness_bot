@@ -69,3 +69,4 @@ def get_db_session():
         raise
     finally:
         session.close()
+

@@ -3,8 +3,8 @@ import logging
 from io import BytesIO
 from typing import Optional
 from datetime import date
-import matplotlib
-matplotlib.use('Agg')  # Используем backend без GUI
+    import matplotlib
+    matplotlib.use('Agg')  # Используем backend без GUI
 
 try:
     import matplotlib.pyplot as plt

@@ -231,3 +231,4 @@ class NutritionService:
 
 # Глобальный экземпляр сервиса
 nutrition_service = NutritionService()
+

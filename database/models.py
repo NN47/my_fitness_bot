@@ -126,3 +126,4 @@ class WaterEntry(Base):
     amount = Column(Float, nullable=False)  # количество воды в мл
     date = Column(Date, default=date.today)
     timestamp = Column(DateTime, default=datetime.utcnow)
+

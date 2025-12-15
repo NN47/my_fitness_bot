@@ -351,3 +351,4 @@ class GeminiService:
 
 # Глобальный экземпляр сервиса
 gemini_service = GeminiService()
+
