@@ -27,6 +27,19 @@ training_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+count_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text=str(n)) for n in range(1, 6)],
+        [KeyboardButton(text=str(n)) for n in range(6, 11)],
+        [KeyboardButton(text=str(n)) for n in range(11, 16)],
+        [KeyboardButton(text=str(n)) for n in range(16, 21)],
+        [KeyboardButton(text=str(n)) for n in [25, 30, 35, 40, 50]],
+        [KeyboardButton(text="✏️ Ввести вручную")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 # Меню выбора даты тренировки
 training_date_menu = ReplyKeyboardMarkup(
     keyboard=[

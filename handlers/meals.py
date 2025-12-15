@@ -5,6 +5,7 @@ import re
 from datetime import date
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
+from typing import Optional
 from aiogram.fsm.context import FSMContext
 from states.user_states import MealEntryStates
 from utils.keyboards import (
@@ -647,6 +648,126 @@ async def handle_weight_input(message: Message, state: FSMContext):
         f"🍩 Углеводы: {carbs:.0f} г",
         reply_markup=kbju_after_meal_menu,
     )
+
+
+@router.message(lambda m: m.text == "📊 Дневной отчёт" and getattr(m.bot, "kbju_menu_open", False))
+async def calories_today_results(message: Message):
+    """Показывает дневной отчёт по КБЖУ."""
+    reset_user_state(message)
+    message.bot.kbju_menu_open = True
+    user_id = str(message.from_user.id)
+    await send_today_results(message, user_id)
+
+
+async def send_today_results(message: Message, user_id: str):
+    """Отправляет результаты за сегодня."""
+    today = date.today()
+    meals = MealRepository.get_meals_for_date(user_id, today)
+    
+    if not meals:
+        from utils.keyboards import kbju_menu
+        push_menu_stack(message.bot, kbju_menu)
+        await message.answer(
+            "Пока нет записей за сегодня. Добавь приём пищи, и я посчитаю КБЖУ!",
+            reply_markup=kbju_menu,
+        )
+        return
+    
+    daily_totals = MealRepository.get_daily_totals(user_id, today)
+    day_str = today.strftime("%d.%m.%Y")
+    
+    from utils.meal_formatters import format_today_meals, build_meals_actions_keyboard
+    text = format_today_meals(meals, daily_totals, day_str)
+    keyboard = build_meals_actions_keyboard(meals, today)
+    
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.message(lambda m: m.text == "📆 Календарь КБЖУ" and getattr(m.bot, "kbju_menu_open", False))
+async def calories_calendar(message: Message):
+    """Показывает календарь КБЖУ."""
+    reset_user_state(message)
+    message.bot.kbju_menu_open = True
+    user_id = str(message.from_user.id)
+    await show_kbju_calendar(message, user_id)
+
+
+async def show_kbju_calendar(message: Message, user_id: str, year: Optional[int] = None, month: Optional[int] = None):
+    """Показывает календарь КБЖУ."""
+    today = date.today()
+    if year is None:
+        year = today.year
+    if month is None:
+        month = today.month
+    
+    from utils.calendar_utils import build_kbju_calendar_keyboard
+    keyboard = build_kbju_calendar_keyboard(user_id, year, month)
+    
+    await message.answer(
+        f"📆 Календарь КБЖУ\n\nВыбери день:",
+        reply_markup=keyboard,
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("meal_cal_nav:"))
+async def navigate_kbju_calendar(callback: CallbackQuery):
+    """Навигация по календарю КБЖУ."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_kbju_calendar(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("meal_cal_back:"))
+async def back_to_kbju_calendar(callback: CallbackQuery):
+    """Возврат к календарю КБЖУ."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_kbju_calendar(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("meal_cal_day:"))
+async def select_kbju_calendar_day(callback: CallbackQuery):
+    """Выбор дня в календаре КБЖУ."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+    await show_day_meals(callback.message, user_id, target_date)
+
+
+async def show_day_meals(message: Message, user_id: str, target_date: date):
+    """Показывает приёмы пищи за день."""
+    meals = MealRepository.get_meals_for_date(user_id, target_date)
+    
+    if not meals:
+        from utils.meal_formatters import build_kbju_day_actions_keyboard
+        await message.answer(
+            f"{target_date.strftime('%d.%m.%Y')}: нет записей по КБЖУ.",
+            reply_markup=build_kbju_day_actions_keyboard(target_date),
+        )
+        return
+    
+    daily_totals = MealRepository.get_daily_totals(user_id, target_date)
+    day_str = target_date.strftime("%d.%m.%Y")
+    
+    from utils.meal_formatters import format_today_meals, build_meals_actions_keyboard
+    text = format_today_meals(meals, daily_totals, day_str)
+    keyboard = build_meals_actions_keyboard(meals, target_date, include_back=True)
+    
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@router.callback_query(lambda c: c.data.startswith("meal_cal_add:"))
+async def add_meal_from_calendar(callback: CallbackQuery, state: FSMContext):
+    """Добавляет приём пищи из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    await start_kbju_add_flow(callback.message, target_date, state)
 
 
 @router.message(F.text == "➕ Внести ещё приём")

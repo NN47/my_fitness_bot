@@ -1,7 +1,7 @@
 """Общие обработчики (назад, главное меню и т.д.)."""
 import logging
 from aiogram import Router
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from utils.keyboards import main_menu, push_menu_stack
 
@@ -31,6 +31,19 @@ async def go_back(message: Message):
     else:
         push_menu_stack(message.bot, main_menu)
         await message.answer("🏠 Главное меню", reply_markup=main_menu)
+
+
+@router.callback_query(lambda c: c.data == "cal_close")
+async def close_calendar(callback: CallbackQuery):
+    """Закрывает календарь."""
+    await callback.answer()
+    await callback.message.delete()
+
+
+@router.callback_query(lambda c: c.data == "noop")
+async def ignore_callback(callback: CallbackQuery):
+    """Игнорирует callback без действия."""
+    await callback.answer()
 
 
 def register_common_handlers(dp):

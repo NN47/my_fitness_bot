@@ -1,0 +1,133 @@
+"""Утилиты для работы с календарями."""
+import calendar
+import logging
+from datetime import date
+from typing import set
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from config import MONTH_NAMES
+from database.repositories import WorkoutRepository, MealRepository
+
+logger = logging.getLogger(__name__)
+
+
+def get_month_workout_days(user_id: str, year: int, month: int) -> set[int]:
+    """Получает дни месяца, в которые были тренировки."""
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year + 1, 1, 1)
+    else:
+        end_date = date(year, month + 1, 1)
+    
+    workouts = WorkoutRepository.get_workouts_for_period(user_id, start_date, end_date)
+    return {w.date.day for w in workouts if w.date.month == month}
+
+
+def get_month_meal_days(user_id: str, year: int, month: int) -> set[int]:
+    """Получает дни месяца, в которые были приёмы пищи."""
+    start_date = date(year, month, 1)
+    if month == 12:
+        end_date = date(year + 1, 1, 1)
+    else:
+        end_date = date(year, month + 1, 1)
+    
+    # TODO: Добавить метод в MealRepository для получения дней
+    # Пока упрощённая версия
+    days = set()
+    for day in range(1, calendar.monthrange(year, month)[1] + 1):
+        check_date = date(year, month, day)
+        meals = MealRepository.get_meals_for_date(user_id, check_date)
+        if meals:
+            days.add(day)
+    return days
+
+
+def build_calendar_keyboard(
+    user_id: str,
+    year: int,
+    month: int,
+    callback_prefix: str = "cal",
+    marker: str = "💪",
+    get_days_func=None,
+) -> InlineKeyboardMarkup:
+    """
+    Строит календарную клавиатуру.
+    
+    Args:
+        user_id: ID пользователя
+        year: Год
+        month: Месяц
+        callback_prefix: Префикс для callback_data
+        marker: Маркер для дней с данными
+        get_days_func: Функция для получения дней с данными
+    """
+    if get_days_func:
+        marked_days = get_days_func(user_id, year, month)
+    else:
+        marked_days = set()
+    
+    keyboard: list[list[InlineKeyboardButton]] = []
+    
+    header = InlineKeyboardButton(text=f"{MONTH_NAMES[month]} {year}", callback_data="noop")
+    keyboard.append([header])
+    
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([InlineKeyboardButton(text=d, callback_data="noop") for d in week_days])
+    
+    month_calendar = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
+    for week in month_calendar:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
+            else:
+                day_marker = marker if day in marked_days else ""
+                row.append(
+                    InlineKeyboardButton(
+                        text=f"{day}{day_marker}",
+                        callback_data=f"{callback_prefix}_day:{year}-{month:02d}-{day:02d}",
+                    )
+                )
+        keyboard.append(row)
+    
+    prev_month = month - 1 or 12
+    prev_year = year - 1 if month == 1 else year
+    next_month = month % 12 + 1
+    next_year = year + 1 if month == 12 else year
+    
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="◀️", callback_data=f"{callback_prefix}_nav:{prev_year}-{prev_month:02d}"
+            ),
+            InlineKeyboardButton(text="Закрыть", callback_data="cal_close"),
+            InlineKeyboardButton(
+                text="▶️", callback_data=f"{callback_prefix}_nav:{next_year}-{next_month:02d}"
+            ),
+        ]
+    )
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def build_workout_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    """Строит календарь тренировок."""
+    return build_calendar_keyboard(
+        user_id=user_id,
+        year=year,
+        month=month,
+        callback_prefix="cal",
+        marker="💪",
+        get_days_func=get_month_workout_days,
+    )
+
+
+def build_kbju_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    """Строит календарь КБЖУ."""
+    return build_calendar_keyboard(
+        user_id=user_id,
+        year=year,
+        month=month,
+        callback_prefix="meal_cal",
+        marker="🍱",
+        get_days_func=get_month_meal_days,
+    )
