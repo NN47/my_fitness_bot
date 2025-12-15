@@ -50,7 +50,18 @@ load_dotenv()
 
 
 # Создаём клиента Gemini (новый API)
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+if not gemini_api_key:
+    print("⚠️ ВНИМАНИЕ: GEMINI_API_KEY не установлен в переменных окружения!")
+    print("   Функции анализа через ИИ не будут работать.")
+    client = None
+else:
+    try:
+        client = genai.Client(api_key=gemini_api_key)
+        print("✅ Gemini API клиент инициализирован")
+    except Exception as e:
+        print(f"❌ Ошибка при инициализации Gemini клиента: {repr(e)}")
+        client = None
 
 # Функция анализа данных через Gemini
 def gemini_analyze(text: str) -> str:
@@ -59,6 +70,9 @@ def gemini_analyze(text: str) -> str:
             model="gemini-2.5-flash",  # новая рабочая модель
             contents=text
         )
+        if not response or not response.text:
+            print("❌ Gemini вернул пустой ответ")
+            return "Сервис анализа временно недоступен, попробуй позже 🙏"
         return response.text
     except Exception as e:
         print("❌ Ошибка Gemini:", repr(e))
@@ -78,6 +92,10 @@ def gemini_estimate_kbju(food_text: str) -> dict | None:
     }
     или None при ошибке.
     """
+    if not client:
+        print("❌ Gemini клиент не инициализирован (отсутствует API ключ)")
+        return None
+    
     prompt = f"""
 Ты нутрициолог. Твоя задача — ОЦЕНИТЬ калории, белки, жиры и углеводы для списка продуктов.
 
@@ -126,6 +144,9 @@ def gemini_estimate_kbju(food_text: str) -> dict | None:
             model="gemini-2.5-flash",
             contents=prompt,
         )
+        if not response or not response.text:
+            print("❌ Gemini вернул пустой ответ")
+            return None
         raw = response.text.strip()
         print("Gemini raw KBJU response:", raw)  # ← увидим в логах, что он реально вернул
 
@@ -145,6 +166,8 @@ def gemini_estimate_kbju(food_text: str) -> dict | None:
 
     except Exception as e:
         print("❌ Ошибка Gemini (КБЖУ):", repr(e))
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -161,6 +184,10 @@ def gemini_estimate_kbju_from_photo(image_bytes: bytes) -> dict | None:
     }
     или None при ошибке.
     """
+    if not client:
+        print("❌ Gemini клиент не инициализирован (отсутствует API ключ)")
+        return None
+    
     prompt = """
 Ты нутрициолог. Твоя задача — ОЦЕНИТЬ калории, белки, жиры и углеводы для еды на фотографии.
 
@@ -246,6 +273,9 @@ def gemini_estimate_kbju_from_photo(image_bytes: bytes) -> dict | None:
             except Exception:
                 raise Exception("Не удалось обработать изображение. Убедитесь, что установлен google-genai с поддержкой Vision API")
         
+        if not response or not response.text:
+            print("❌ Gemini вернул пустой ответ для фото еды")
+            return None
         raw = response.text.strip()
         print("Gemini raw KBJU response from photo:", raw[:500])  # первые 500 символов для логов
 
@@ -263,6 +293,8 @@ def gemini_estimate_kbju_from_photo(image_bytes: bytes) -> dict | None:
 
     except Exception as e:
         print("❌ Ошибка Gemini (КБЖУ по фото):", repr(e))
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -284,6 +316,10 @@ def gemini_extract_kbju_from_label(image_bytes: bytes) -> dict | None:
     }
     или None при ошибке.
     """
+    if not client:
+        print("❌ Gemini клиент не инициализирован (отсутствует API ключ)")
+        return None
+    
     prompt = """
 Ты анализируешь фото этикетки или упаковки продукта. Твоя задача — найти в тексте информацию о КБЖУ (калориях, белках, жирах, углеводах).
 
@@ -333,6 +369,9 @@ def gemini_extract_kbju_from_label(image_bytes: bytes) -> dict | None:
             ]
         )
         
+        if not response or not response.text:
+            print("❌ Gemini вернул пустой ответ для этикетки")
+            return None
         raw = response.text.strip()
         print("Gemini raw label KBJU response:", raw[:500])
 
@@ -348,6 +387,8 @@ def gemini_extract_kbju_from_label(image_bytes: bytes) -> dict | None:
 
     except Exception as e:
         print("❌ Ошибка Gemini (КБЖУ с этикетки):", repr(e))
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -357,6 +398,10 @@ def gemini_scan_barcode(image_bytes: bytes) -> str | None:
     
     Возвращает строку с номером штрих-кода (EAN-13, UPC и т.д.) или None при ошибке.
     """
+    if not client:
+        print("❌ Gemini клиент не инициализирован (отсутствует API ключ)")
+        return None
+    
     prompt = """
 Ты видишь фото со штрих-кодом. Твоя задача — прочитать номер штрих-кода.
 
@@ -396,6 +441,9 @@ def gemini_scan_barcode(image_bytes: bytes) -> str | None:
             ]
         )
         
+        if not response or not response.text:
+            print("❌ Gemini вернул пустой ответ для штрих-кода")
+            return None
         raw = response.text.strip()
         print("Gemini raw barcode response:", raw)
         
@@ -416,6 +464,8 @@ def gemini_scan_barcode(image_bytes: bytes) -> str | None:
 
     except Exception as e:
         print("❌ Ошибка Gemini (распознавание штрих-кода):", repr(e))
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -6151,8 +6201,7 @@ async def kbju_label_photo_process(message: Message):
             "carbs_100g": carbs_100g,
             "product_name": product_name,
             "entry_date": entry_date,
-            "source": "barcode",  # Указываем источник - штрих-код
-            "barcode": barcode  # Сохраняем штрих-код для raw_query
+            "source": "label",  # Указываем источник - этикетка
         }
 
         # Формируем сообщение в зависимости от того, найден ли вес
