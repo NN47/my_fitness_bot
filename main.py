@@ -19,6 +19,10 @@ from handlers import (
     register_start_handlers,
     register_workout_handlers,
     register_meal_handlers,
+    register_weight_handlers,
+    register_supplement_handlers,
+    register_water_handlers,
+    register_settings_handlers,
 )
 
 # Настраиваем логирование
@@ -57,12 +61,10 @@ async def main():
     register_start_handlers(dp)
     register_workout_handlers(dp)
     register_meal_handlers(dp)
-    
-    # TODO: Добавить остальные обработчики
-    # register_weight_handlers(dp)
-    # register_supplement_handlers(dp)
-    # register_water_handlers(dp)
-    # register_settings_handlers(dp)
+    register_weight_handlers(dp)
+    register_supplement_handlers(dp)
+    register_water_handlers(dp)
+    register_settings_handlers(dp)
     
     # Запускаем keep-alive сервер
     threading.Thread(target=start_keepalive_server, daemon=True).start()
