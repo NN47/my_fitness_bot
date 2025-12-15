@@ -440,37 +440,114 @@ def get_product_from_openfoodfacts(barcode: str) -> dict | None:
         # Извлекаем КБЖУ (на 100г)
         nutriments = product.get("nutriments", {})
         
-        # Калории
-        kcal = nutriments.get("energy-kcal_100g") or nutriments.get("energy-kcal") or nutriments.get("energy_100g")
-        if kcal:
-            result["nutriments"]["kcal"] = float(kcal)
+        # Логируем для отладки - выводим все ключи nutriments
+        print(f"DEBUG: Open Food Facts barcode {barcode}")
+        print(f"DEBUG: Product name: {result['name']}")
+        print(f"DEBUG: All nutriments keys ({len(nutriments)}): {list(nutriments.keys())[:50]}")  # Первые 50 ключей
         
-        # Белки
-        protein = nutriments.get("proteins_100g") or nutriments.get("proteins")
-        if protein:
-            result["nutriments"]["protein"] = float(protein)
+        # Функция для безопасного извлечения числа из разных форматов
+        def safe_float(value):
+            if value is None:
+                return None
+            try:
+                if isinstance(value, (int, float)):
+                    return float(value)
+                if isinstance(value, str):
+                    # Убираем пробелы и пробуем распарсить
+                    cleaned = value.strip().replace(',', '.')
+                    return float(cleaned)
+                return None
+            except (ValueError, TypeError):
+                return None
         
-        # Жиры
-        fat = nutriments.get("fat_100g") or nutriments.get("fat")
-        if fat:
-            result["nutriments"]["fat"] = float(fat)
+        # Калории - проверяем все возможные варианты
+        kcal = None
+        # Приоритет: сначала ищем на 100г, потом общее значение
+        for key in ["energy-kcal_100g", "energy-kcal", "energy_100g", "energy-kcal_value", 
+                    "energy-kcal_serving", "energy_serving", "energy"]:
+            if key in nutriments:
+                kcal = safe_float(nutriments[key])
+                if kcal is not None and kcal > 0:
+                    print(f"DEBUG: Found kcal from key '{key}': {kcal}")
+                    break
         
-        # Углеводы
-        carbs = nutriments.get("carbohydrates_100g") or nutriments.get("carbohydrates")
-        if carbs:
-            result["nutriments"]["carbs"] = float(carbs)
+        # Если не нашли в ккал, пробуем конвертировать из кДж (1 ккал = 4.184 кДж)
+        if not kcal or kcal <= 0:
+            energy_kj = None
+            for key in ["energy-kj_100g", "energy-kj", "energy-kj_value", "energy-kj_serving"]:
+                if key in nutriments:
+                    energy_kj = safe_float(nutriments[key])
+                    if energy_kj is not None and energy_kj > 0:
+                        print(f"DEBUG: Found energy in kJ from key '{key}': {energy_kj}")
+                        break
+            
+            if energy_kj and energy_kj > 0:
+                try:
+                    kcal = energy_kj / 4.184
+                    print(f"DEBUG: Converted energy from kJ to kcal: {energy_kj} kJ = {kcal:.2f} kcal")
+                except (ValueError, TypeError):
+                    pass
+        
+        if kcal and kcal > 0:
+            result["nutriments"]["kcal"] = kcal
+        
+        # Белки - проверяем все возможные варианты
+        protein = None
+        for key in ["proteins_100g", "proteins", "protein_100g", "protein", 
+                    "proteins_value", "proteins_serving", "protein_serving"]:
+            if key in nutriments:
+                protein = safe_float(nutriments[key])
+                if protein is not None and protein >= 0:
+                    print(f"DEBUG: Found protein from key '{key}': {protein}")
+                    break
+        
+        if protein is not None and protein >= 0:
+            result["nutriments"]["protein"] = protein
+        
+        # Жиры - проверяем все возможные варианты
+        fat = None
+        for key in ["fat_100g", "fat", "fats_100g", "fats", 
+                    "fat_value", "fat_serving", "fats_serving"]:
+            if key in nutriments:
+                fat = safe_float(nutriments[key])
+                if fat is not None and fat >= 0:
+                    print(f"DEBUG: Found fat from key '{key}': {fat}")
+                    break
+        
+        if fat is not None and fat >= 0:
+            result["nutriments"]["fat"] = fat
+        
+        # Углеводы - проверяем все возможные варианты
+        carbs = None
+        for key in ["carbohydrates_100g", "carbohydrates", "carbohydrate_100g", "carbohydrate",
+                    "carbohydrates_value", "carbohydrates_serving", "carbohydrate_serving", "carbs_100g", "carbs"]:
+            if key in nutriments:
+                carbs = safe_float(nutriments[key])
+                if carbs is not None and carbs >= 0:
+                    print(f"DEBUG: Found carbs from key '{key}': {carbs}")
+                    break
+        
+        if carbs is not None and carbs >= 0:
+            result["nutriments"]["carbs"] = carbs
+        
+        # Логируем итоговый результат
+        print(f"DEBUG: Final extracted KBJU - kcal: {result['nutriments'].get('kcal')}, "
+              f"protein: {result['nutriments'].get('protein')}, "
+              f"fat: {result['nutriments'].get('fat')}, "
+              f"carbs: {result['nutriments'].get('carbs')}")
         
         # Вес продукта (если указан)
-        weight = product.get("quantity") or product.get("product_quantity")
+        weight = product.get("quantity") or product.get("product_quantity") or product.get("net_weight") or product.get("weight")
         if weight:
             # Пробуем извлечь число из строки типа "200g" или "200 г"
             import re
             weight_match = re.search(r'(\d+)', str(weight))
             if weight_match:
                 result["weight"] = int(weight_match.group(1))
+                print(f"DEBUG: Found product weight: {result['weight']} g")
         
         # Дополнительная информация
-        result["ingredients"] = product.get("ingredients_text") or product.get("ingredients_text_ru") or ""
+        result["ingredients"] = product.get("ingredients_text") or product.get("ingredients_text_ru") or product.get("ingredients_text_en") or ""
         result["categories"] = product.get("categories") or ""
         result["image_url"] = product.get("image_url") or product.get("image_front_url") or ""
         
@@ -478,6 +555,8 @@ def get_product_from_openfoodfacts(barcode: str) -> dict | None:
         
     except Exception as e:
         print(f"❌ Ошибка при запросе к Open Food Facts: {repr(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -2138,8 +2217,7 @@ training_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить тренировку")],
         [KeyboardButton(text="📆 Календарь тренировок")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
 )
@@ -2336,8 +2414,7 @@ my_workouts_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Сегодня")],
         [KeyboardButton(text="В другие дни")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button]
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -2345,8 +2422,7 @@ my_workouts_menu = ReplyKeyboardMarkup(
 today_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Удалить запись")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button]
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -2364,8 +2440,7 @@ weight_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить вес")],
         [KeyboardButton(text="🗑 Удалить вес")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button]
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -2375,8 +2450,7 @@ measurements_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить замеры")],
         [KeyboardButton(text="🗑 Удалить замеры")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button]
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -2550,8 +2624,10 @@ async def show_training_menu(message: Message):
 
 @dp.message(F.text == "➕ Добавить тренировку")
 async def add_training_entry(message: Message):
-    start_date_selection(message.bot, "training")
-    await answer_with_menu(message, get_date_prompt("training"), reply_markup=training_date_menu)
+    # Для тренировок всегда используем сегодняшнюю дату
+    # Другой день можно выбрать только через календарь
+    message.bot.selected_date = date.today()
+    await proceed_after_date_selection(message)
 
 @dp.message(F.text == "Со своим весом")
 async def choose_bodyweight_category(message: Message):
@@ -3703,14 +3779,13 @@ def supplements_main_menu(has_items: bool = False) -> ReplyKeyboardMarkup:
 
 def supplements_choice_menu(supplements: list[dict]) -> ReplyKeyboardMarkup:
     rows = [[KeyboardButton(text=item["name"])] for item in supplements]
-    rows.append([KeyboardButton(text="⬅️ Назад")])
+    rows.append([KeyboardButton(text="⬅️ Назад"), main_menu_button])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def supplements_view_menu(supplements: list[dict]) -> ReplyKeyboardMarkup:
     rows = [[KeyboardButton(text=item["name"])] for item in supplements]
-    rows.append([KeyboardButton(text="⬅️ Назад")])
-    rows.append([main_menu_button])
+    rows.append([KeyboardButton(text="⬅️ Назад"), main_menu_button])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
@@ -4267,7 +4342,11 @@ async def ask_time_value(message: Message):
     if getattr(message.bot, "selecting_days", False):
         return
     sup = get_active_supplement(message)
+    if not sup.get("name"):
+        await message.answer("Ошибка: добавка не найдена. Начните создание заново.")
+        return
     sup["ready"] = False
+    # Явно устанавливаем флаг ожидания времени
     message.bot.expecting_supplement_time = True
     await message.answer("Введите время приема в формате ЧЧ:ММ\nНапример: 09:00")
 
@@ -4278,11 +4357,23 @@ async def handle_time_value(message: Message):
     text = message.text.strip()
     import re
 
+    # Проверяем, не является ли это кнопкой меню
+    menu_buttons = ["⬅️ Назад", "💾 Сохранить", "➕ Добавить", "❌"]
+    if any(text.startswith(btn) for btn in menu_buttons):
+        # Если это кнопка меню, не обрабатываем как время
+        return
+
     if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", text):
         await message.answer("Пожалуйста, укажите время в формате ЧЧ:ММ. Например: 09:00")
+        # Флаг остается установленным, чтобы пользователь мог попробовать снова
         return
 
     sup = get_active_supplement(message)
+    if not sup.get("name"):
+        message.bot.expecting_supplement_time = False
+        await message.answer("Ошибка: добавка не найдена. Начните создание заново.")
+        return
+    
     sup["ready"] = False
     if text not in sup["times"]:
         sup["times"].append(text)
@@ -4567,6 +4658,9 @@ async def delete_time(message: Message):
     time_value = message.text.replace("❌ ", "").strip()
     if time_value in sup["times"]:
         sup["times"].remove(time_value)
+    
+    # Сбрасываем флаг ожидания времени, чтобы пользователь мог добавить новое время
+    message.bot.expecting_supplement_time = False
 
     if sup["times"]:
         await message.answer(
