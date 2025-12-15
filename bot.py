@@ -31,6 +31,11 @@ from datetime import datetime
 import requests
 import re
 from google import genai
+import matplotlib
+matplotlib.use('Agg')  # Используем backend без GUI
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from io import BytesIO
 
 load_dotenv()
 
@@ -2270,6 +2275,17 @@ water_amount_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+activity_analysis_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📅 Анализ за день")],
+        [KeyboardButton(text="📆 Анализ за неделю")],
+        [KeyboardButton(text="📊 Анализ за месяц")],
+        [KeyboardButton(text="📈 Анализ за все время")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 
 def push_menu_stack(bot, reply_markup):
     if not isinstance(reply_markup, ReplyKeyboardMarkup):
@@ -2404,7 +2420,7 @@ my_data_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="⚖️ Вес")],
         [KeyboardButton(text="📏 Замеры")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -2440,7 +2456,19 @@ weight_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить вес")],
         [KeyboardButton(text="🗑 Удалить вес")],
+        [KeyboardButton(text="📊 График")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button]
+    ],
+    resize_keyboard=True
+)
+
+weight_chart_period_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📅 Неделя")],
+        [KeyboardButton(text="📅 Месяц")],
+        [KeyboardButton(text="📅 Полгода")],
+        [KeyboardButton(text="📅 Все время")],
+        [KeyboardButton(text="⬅️ Назад")],
     ],
     resize_keyboard=True
 )
@@ -2470,18 +2498,18 @@ async def start(message: Message):
     await answer_with_menu(message, welcome, reply_markup=main_menu, parse_mode="HTML")
 
 
-@dp.message(F.text == "Анализ деятельности")
-async def analyze_activity(message: Message):
-    user_id = str(message.from_user.id)
-    today = date.today()
-    today_str = today.strftime("%d.%m.%Y")
-
+async def generate_activity_analysis(user_id: str, start_date: date, end_date: date, period_name: str):
+    """Генерирует анализ активности за указанный период"""
     session = SessionLocal()
     try:
-        # 🔹 Тренировки за сегодня
+        # 🔹 Тренировки за период
         workouts = (
             session.query(Workout)
-            .filter(Workout.user_id == user_id, Workout.date == today)
+            .filter(
+                Workout.user_id == user_id,
+                Workout.date >= start_date,
+                Workout.date <= end_date
+            )
             .all()
         )
 
@@ -2512,27 +2540,42 @@ async def analyze_activity(message: Message):
                 )
             workout_summary = "\n".join(workout_lines)
         else:
-            workout_summary = "Сегодня тренировки не записаны."
+            workout_summary = f"За {period_name.lower()} тренировки не записаны."
 
-        # 🔹 КБЖУ за сегодня
-        meal_totals = get_daily_meal_totals(user_id, today)
+        # 🔹 КБЖУ за период
+        meals = (
+            session.query(Meal)
+            .filter(
+                Meal.user_id == user_id,
+                Meal.date >= start_date,
+                Meal.date <= end_date
+            )
+            .all()
+        )
+
+        total_calories = sum(m.calories or 0 for m in meals)
+        total_protein = sum(m.protein or 0 for m in meals)
+        total_fat = sum(m.fat or 0 for m in meals)
+        total_carbs = sum(m.carbs or 0 for m in meals)
+
         meals_summary = (
-            f"Калории: {meal_totals['calories']:.0f} ккал, "
-            f"Белки: {meal_totals['protein_g']:.1f} г, "
-            f"Жиры: {meal_totals['fat_total_g']:.1f} г, "
-            f"Углеводы: {meal_totals['carbohydrates_total_g']:.1f} г."
+            f"Калории: {total_calories:.0f} ккал, "
+            f"Белки: {total_protein:.1f} г, "
+            f"Жиры: {total_fat:.1f} г, "
+            f"Углеводы: {total_carbs:.1f} г."
         )
 
         # 🔹 Цель / норма КБЖУ
         settings = get_kbju_settings(user_id)
         if settings:
             goal_label = get_kbju_goal_label(settings.goal)
+            days_count = (end_date - start_date).days + 1
             kbju_goal_summary = (
                 f"Цель: {goal_label}. "
-                f"Норма — {settings.calories:.0f} ккал, "
-                f"Б {settings.protein:.0f} г, "
-                f"Ж {settings.fat:.0f} г, "
-                f"У {settings.carbs:.0f} г."
+                f"Норма за период: {settings.calories * days_count:.0f} ккал, "
+                f"Б {settings.protein * days_count:.0f} г, "
+                f"Ж {settings.fat * days_count:.0f} г, "
+                f"У {settings.carbs * days_count:.0f} г."
             )
         else:
             kbju_goal_summary = "Цель по КБЖУ ещё не настроена."
@@ -2540,38 +2583,59 @@ async def analyze_activity(message: Message):
         # 🔹 Вес и история веса
         weights = (
             session.query(Weight)
-            .filter(Weight.user_id == user_id)
+            .filter(
+                Weight.user_id == user_id,
+                Weight.date >= start_date,
+                Weight.date <= end_date
+            )
             .order_by(Weight.date.desc(), Weight.id.desc())
-            .limit(7)
             .all()
         )
 
         if weights:
             current_weight = weights[0]
+            if len(weights) > 1:
+                first_weight = weights[-1]
+                change = current_weight.value - first_weight.value
+                change_text = f" ({'+' if change >= 0 else ''}{change:.1f} кг)"
+            else:
+                change_text = ""
             history_lines = [
                 f"{w.date.strftime('%d.%m')}: {w.value} кг"
-                for w in weights
+                for w in weights[:10]
             ]
             weight_summary = (
-                f"Текущий вес: {current_weight.value} кг (от {current_weight.date.strftime('%d.%m.%Y')}). "
-                "История последних измерений: "
-                + "; ".join(history_lines)
+                f"Текущий вес: {current_weight.value} кг (от {current_weight.date.strftime('%d.%m.%Y')}){change_text}. "
+                f"История измерений: " + "; ".join(history_lines)
             )
         else:
-            weight_summary = "Записей по весу ещё нет."
+            # Если нет веса за период, показываем последний известный вес
+            all_weights = (
+                session.query(Weight)
+                .filter(Weight.user_id == user_id)
+                .order_by(Weight.date.desc(), Weight.id.desc())
+                .limit(1)
+                .all()
+            )
+            if all_weights:
+                w = all_weights[0]
+                weight_summary = f"Последний зафиксированный вес: {w.value} кг (от {w.date.strftime('%d.%m.%Y')}). За {period_name.lower()} новых измерений не было."
+            else:
+                weight_summary = "Записей по весу ещё нет."
 
     finally:
         session.close()
 
     # 🔹 Собираем summary для Gemini
+    date_range_str = f"{start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}"
     summary = f"""
-Дата: {today_str}.
+Период: {period_name} ({date_range_str}).
 
-Тренировки за сегодня:
+Тренировки за период:
 {workout_summary}
 Всего ориентировочно израсходовано: ~{total_workout_calories:.0f} ккал.
 
-Питание (КБЖУ) за сегодня:
+Питание (КБЖУ) за период:
 {meals_summary}
 
 Норма / цель КБЖУ:
@@ -2590,11 +2654,12 @@ async def analyze_activity(message: Message):
 - Не считай количество записей тренировок, я уже дал тебе готовый текст по объёму и видам упражнений.
 - Цель по КБЖУ уже указана в данных, не используй формулировки вроде "если твоя цель...".
 - История веса может включать несколько измерений — используй её для оценки тенденции, не говори, что измерение одно, если в данных есть история.
+- Используй HTML-теги <b>текст</b> для выделения важных цифр и фактов жирным шрифтом.
 
 Всегда начинай анализ с приветствия:
-"Привет, это Дайри на связи! Вот твой отчёт за сегодня👇"
+"Привет, это Дайри на связи! Вот твой отчёт {period_name.lower()}👇"
 
-Данные пользователя на сегодня:
+Данные пользователя за период:
 {summary}
 
 Сделай краткий отчёт по 4 блокам:
@@ -2603,11 +2668,75 @@ async def analyze_activity(message: Message):
 3) Вес
 4) Общий прогресс и мотивация
 
-Пиши структурированно, но компактно.
+Пиши структурированно, но компактно. Используй <b>жирный шрифт</b> для выделения важных цифр и фактов.
 """
 
     result = gemini_analyze(prompt)
-    await message.answer(result)
+    return result
+
+
+@dp.message(F.text == "Анализ деятельности")
+async def analyze_activity(message: Message):
+    """Показывает меню выбора периода для анализа"""
+    await answer_with_menu(
+        message,
+        "📊 <b>Анализ деятельности</b>\n\nВыбери период для анализа:",
+        reply_markup=activity_analysis_menu,
+        parse_mode="HTML",
+    )
+
+
+@dp.message(F.text == "📅 Анализ за день")
+async def analyze_activity_day(message: Message):
+    """Анализ активности за сегодня"""
+    user_id = str(message.from_user.id)
+    today = date.today()
+    result = await generate_activity_analysis(user_id, today, today, "за день")
+    await message.answer(result, parse_mode="HTML")
+
+
+@dp.message(F.text == "📆 Анализ за неделю")
+async def analyze_activity_week(message: Message):
+    """Анализ активности за последние 7 дней"""
+    user_id = str(message.from_user.id)
+    today = date.today()
+    week_ago = today - timedelta(days=6)
+    result = await generate_activity_analysis(user_id, week_ago, today, "за неделю")
+    await message.answer(result, parse_mode="HTML")
+
+
+@dp.message(F.text == "📊 Анализ за месяц")
+async def analyze_activity_month(message: Message):
+    """Анализ активности за последние 30 дней"""
+    user_id = str(message.from_user.id)
+    today = date.today()
+    month_ago = today - timedelta(days=29)
+    result = await generate_activity_analysis(user_id, month_ago, today, "за месяц")
+    await message.answer(result, parse_mode="HTML")
+
+
+@dp.message(F.text == "📈 Анализ за все время")
+async def analyze_activity_all_time(message: Message):
+    """Анализ активности за все время"""
+    user_id = str(message.from_user.id)
+    session = SessionLocal()
+    try:
+        # Находим самую раннюю дату с данными
+        first_workout = session.query(func.min(Workout.date)).filter(Workout.user_id == user_id).scalar()
+        first_meal = session.query(func.min(Meal.date)).filter(Meal.user_id == user_id).scalar()
+        first_weight = session.query(func.min(Weight.date)).filter(Weight.user_id == user_id).scalar()
+        
+        dates = [d for d in [first_workout, first_meal, first_weight] if d is not None]
+        if dates:
+            start_date = min(dates)
+        else:
+            start_date = date.today()
+        
+        today = date.today()
+        result = await generate_activity_analysis(user_id, start_date, today, "за все время")
+        await message.answer(result, parse_mode="HTML")
+    finally:
+        session.close()
 
 
 @dp.message(F.text == "🏋️ Тренировка")
@@ -3055,6 +3184,189 @@ async def my_weight(message: Message):
 async def add_weight_start(message: Message):
     start_date_selection(message.bot, "weight")
     await answer_with_menu(message, get_date_prompt("weight"), reply_markup=training_date_menu)
+
+
+def get_weights_for_period(user_id: str, period: str) -> list:
+    """Получает веса пользователя за указанный период."""
+    session = SessionLocal()
+    try:
+        today = date.today()
+        
+        if period == "week":
+            start_date = today - timedelta(days=7)
+        elif period == "month":
+            start_date = today - timedelta(days=30)
+        elif period == "half_year":
+            start_date = today - timedelta(days=180)
+        else:  # all_time
+            start_date = date(2000, 1, 1)  # Очень старая дата
+        
+        weights = (
+            session.query(Weight)
+            .filter_by(user_id=user_id)
+            .filter(Weight.date >= start_date)
+            .order_by(Weight.date.asc())
+            .all()
+        )
+        
+        result = []
+        for w in weights:
+            try:
+                value = float(str(w.value).replace(",", "."))
+                result.append({"date": w.date, "value": value})
+            except (ValueError, TypeError):
+                continue
+        
+        return result
+    finally:
+        session.close()
+
+
+def create_weight_chart(weights: list, period: str) -> BytesIO:
+    """Создает график веса и возвращает его как BytesIO."""
+    if not weights:
+        return None
+    
+    # Подготовка данных
+    dates = [w["date"] for w in weights]
+    values = [w["value"] for w in weights]
+    
+    # Создание графика
+    plt.figure(figsize=(12, 6))
+    plt.plot(dates, values, marker='o', linestyle='-', linewidth=2, markersize=6, color='#2E86AB')
+    plt.fill_between(dates, values, alpha=0.3, color='#2E86AB')
+    
+    # Настройка осей
+    plt.xlabel('Дата', fontsize=12, fontweight='bold')
+    plt.ylabel('Вес (кг)', fontsize=12, fontweight='bold')
+    
+    # Название периода
+    period_names = {
+        "week": "За неделю",
+        "month": "За месяц",
+        "half_year": "За полгода",
+        "all_time": "За все время"
+    }
+    plt.title(f'📊 График веса - {period_names.get(period, "За все время")}', fontsize=14, fontweight='bold', pad=20)
+    
+    # Настройка формата дат на оси X
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+    plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates) // 10)))
+    plt.xticks(rotation=45, ha='right')
+    
+    # Сетка
+    plt.grid(True, alpha=0.3, linestyle='--')
+    
+    # Минимальные и максимальные значения с небольшим отступом
+    if values:
+        min_val = min(values)
+        max_val = max(values)
+        range_val = max_val - min_val
+        plt.ylim(max(0, min_val - range_val * 0.1), max_val + range_val * 0.1)
+    
+    # Добавляем значения на точки
+    for i, (d, v) in enumerate(zip(dates, values)):
+        if i == 0 or i == len(dates) - 1 or i % max(1, len(dates) // 5) == 0:
+            plt.annotate(f'{v:.1f}', (d, v), textcoords="offset points", xytext=(0,10), ha='center', fontsize=9)
+    
+    plt.tight_layout()
+    
+    # Сохранение в BytesIO
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+    buf.seek(0)
+    plt.close()
+    
+    return buf
+
+
+@dp.message(F.text == "📊 График")
+async def show_weight_chart_menu(message: Message):
+    user_id = str(message.from_user.id)
+    session = SessionLocal()
+    try:
+        weights_count = session.query(Weight).filter_by(user_id=user_id).count()
+        session.close()
+        
+        if weights_count == 0:
+            await answer_with_menu(message, "⚖️ У тебя пока нет записей веса для графика.", reply_markup=weight_menu)
+            return
+        
+        # Сохраняем текущее меню в стек
+        push_menu_stack(message.bot, weight_menu)
+        
+        await answer_with_menu(
+            message,
+            "📊 Выбери период для графика веса:",
+            reply_markup=weight_chart_period_menu
+        )
+    except Exception as e:
+        session.close()
+        print(f"❌ Ошибка при проверке весов: {repr(e)}")
+        await answer_with_menu(message, "Произошла ошибка. Попробуйте позже.", reply_markup=weight_menu)
+
+
+@dp.message(F.text == "📅 Неделя")
+async def show_weight_chart_week(message: Message):
+    await show_weight_chart(message, "week")
+
+
+@dp.message(F.text == "📅 Месяц")
+async def show_weight_chart_month(message: Message):
+    await show_weight_chart(message, "month")
+
+
+@dp.message(F.text == "📅 Полгода")
+async def show_weight_chart_half_year(message: Message):
+    await show_weight_chart(message, "half_year")
+
+
+@dp.message(F.text == "📅 Все время")
+async def show_weight_chart_all_time(message: Message):
+    await show_weight_chart(message, "all_time")
+
+
+async def show_weight_chart(message: Message, period: str):
+    user_id = str(message.from_user.id)
+    
+    try:
+        weights = get_weights_for_period(user_id, period)
+        
+        if not weights:
+            period_names = {
+                "week": "неделю",
+                "month": "месяц",
+                "half_year": "полгода",
+                "all_time": "все время"
+            }
+            await answer_with_menu(
+                message,
+                f"⚖️ Нет записей веса за {period_names.get(period, 'этот период')}.",
+                reply_markup=weight_menu
+            )
+            return
+        
+        # Создаем график
+        chart_buffer = create_weight_chart(weights, period)
+        
+        if chart_buffer:
+            # Отправляем график
+            chart_buffer.name = "weight_chart.png"
+            await message.answer_photo(
+                photo=chart_buffer,
+                caption=f"📊 График веса ({len(weights)} записей)",
+                reply_markup=weight_menu
+            )
+            chart_buffer.close()
+        else:
+            await answer_with_menu(message, "Не удалось создать график.", reply_markup=weight_menu)
+            
+    except Exception as e:
+        print(f"❌ Ошибка при создании графика веса: {repr(e)}")
+        import traceback
+        traceback.print_exc()
+        await answer_with_menu(message, "Произошла ошибка при создании графика. Попробуйте позже.", reply_markup=weight_menu)
+
 
 @dp.message(F.text == "🗑 Удалить вес")
 async def delete_weight_start(message: Message):
