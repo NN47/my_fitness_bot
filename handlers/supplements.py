@@ -19,6 +19,10 @@ from utils.supplement_keyboards import (
     duration_menu,
     time_first_menu,
 )
+from utils.calendar_utils import (
+    build_supplement_calendar_keyboard,
+    build_supplement_day_actions_keyboard,
+)
 from database.repositories import SupplementRepository
 from states.user_states import SupplementStates
 from utils.validators import parse_date
@@ -265,6 +269,7 @@ async def handle_history_amount(message: Message, state: FSMContext):
     supplement_id = data.get("supplement_id")
     supplement_name = data.get("supplement_name")
     timestamp_str = data.get("timestamp")
+    entry_date_str = data.get("entry_date")
     
     if not supplement_id or not timestamp_str:
         await message.answer("Ошибка: не найдены данные о добавке или времени.")
@@ -282,6 +287,16 @@ async def handle_history_amount(message: Message, state: FSMContext):
     entry_id = SupplementRepository.save_entry(user_id, supplement_id, timestamp, amount)
     
     if entry_id:
+        # Если это редактирование из календаря, показываем обновлённый день
+        if entry_date_str:
+            try:
+                entry_date = date.fromisoformat(entry_date_str)
+                await state.clear()
+                await show_supplement_day_entries(message, user_id, entry_date)
+                return
+            except (ValueError, TypeError):
+                pass
+        
         await state.clear()
         push_menu_stack(message.bot, supplements_main_menu(has_items=True))
         await message.answer(
@@ -727,6 +742,217 @@ async def cancel_supplement(message: Message, state: FSMContext):
     """Отменяет создание/редактирование добавки."""
     await state.clear()
     await supplements(message)
+
+
+@router.message(lambda m: m.text == "📅 Календарь добавок")
+async def show_supplement_calendar_menu(message: Message):
+    """Показывает календарь добавок."""
+    user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} opened supplement calendar")
+    await show_supplement_calendar(message, user_id)
+
+
+async def show_supplement_calendar(message: Message, user_id: str, year: Optional[int] = None, month: Optional[int] = None):
+    """Показывает календарь добавок."""
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    keyboard = build_supplement_calendar_keyboard(user_id, year, month)
+    await message.answer(
+        "📅 Календарь добавок. Выберите день, чтобы посмотреть, добавить или изменить приёмы:",
+        reply_markup=keyboard,
+    )
+
+
+async def show_supplement_day_entries(message: Message, user_id: str, target_date: date):
+    """Показывает записи приёма добавок за день."""
+    entries = SupplementRepository.get_entries_for_day(user_id, target_date)
+    
+    if not entries:
+        await message.answer(
+            f"{target_date.strftime('%d.%m.%Y')}: приёмы не найдены. Можно добавить новый приём.",
+            reply_markup=build_supplement_day_actions_keyboard([], target_date),
+        )
+        return
+    
+    lines = [
+        f"📅 {target_date.strftime('%d.%m.%Y')} — приёмы добавок:",
+        "Можно изменить, удалить или добавить ещё приём.",
+    ]
+    for entry in entries:
+        amount_text = f" — {entry['amount']}" if entry.get("amount") is not None else ""
+        lines.append(f"• {entry['supplement_name']} в {entry['time_text']}{amount_text}")
+    
+    await message.answer(
+        "\n".join(lines),
+        reply_markup=build_supplement_day_actions_keyboard(entries, target_date),
+    )
+
+
+@router.callback_query(lambda c: c.data == "supcal_close")
+async def close_supplement_calendar(callback: CallbackQuery):
+    """Закрывает календарь добавок."""
+    await callback.answer("Календарь закрыт")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+@router.callback_query(lambda c: c.data.startswith("supcal_nav:"))
+async def navigate_supplement_calendar(callback: CallbackQuery):
+    """Навигация по календарю добавок."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    keyboard = build_supplement_calendar_keyboard(user_id, year, month)
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+
+@router.callback_query(lambda c: c.data.startswith("supcal_back:"))
+async def back_to_supplement_calendar(callback: CallbackQuery):
+    """Возврат к календарю добавок."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_supplement_calendar(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("supcal_day:"))
+async def open_supplement_day(callback: CallbackQuery):
+    """Открывает день в календаре добавок."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    date_str = parts[1]
+    target_date = date.fromisoformat(date_str)
+    user_id = str(callback.from_user.id)
+    await show_supplement_day_entries(callback.message, user_id, target_date)
+
+
+@router.callback_query(lambda c: c.data.startswith("supcal_add:"))
+async def add_supplement_from_calendar(callback: CallbackQuery, state: FSMContext):
+    """Добавляет приём добавки из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+    
+    supplements_list = SupplementRepository.get_supplements(user_id)
+    if not supplements_list:
+        await callback.message.answer("Сначала создай добавку, чтобы отмечать приём.")
+        return
+    
+    await state.update_data(entry_date=target_date.isoformat())
+    await state.set_state(SupplementStates.logging_intake)
+    
+    push_menu_stack(callback.message.bot, supplements_choice_menu(supplements_list))
+    await callback.message.answer(
+        f"Выбери добавку для отметки на {target_date.strftime('%d.%m.%Y')}:",
+        reply_markup=supplements_choice_menu(supplements_list),
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("supcal_del:"))
+async def delete_supplement_entry(callback: CallbackQuery):
+    """Удаляет запись приёма добавки."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    sup_idx = int(parts[2]) if len(parts) > 2 else None
+    entry_idx = int(parts[3]) if len(parts) > 3 else None
+    user_id = str(callback.from_user.id)
+    
+    if sup_idx is None or entry_idx is None:
+        await callback.message.answer("❌ Не найдена запись для удаления")
+        await show_supplement_day_entries(callback.message, user_id, target_date)
+        return
+    
+    supplements_list = SupplementRepository.get_supplements(user_id)
+    if sup_idx >= len(supplements_list):
+        await callback.message.answer("❌ Не нашёл запись для удаления")
+        await show_supplement_day_entries(callback.message, user_id, target_date)
+        return
+    
+    history = supplements_list[sup_idx].get("history", [])
+    if entry_idx >= len(history):
+        await callback.message.answer("❌ Не нашёл запись для удаления")
+        await show_supplement_day_entries(callback.message, user_id, target_date)
+        return
+    
+    removed = history[entry_idx]
+    entry_id = removed.get("id") if isinstance(removed, dict) else None
+    
+    if entry_id:
+        success = SupplementRepository.delete_entry(user_id, entry_id)
+        if success:
+            await callback.message.answer("✅ Приём удалён")
+        else:
+            await callback.message.answer("❌ Не удалось удалить запись")
+    else:
+        await callback.message.answer("❌ Не найдена запись для удаления")
+    
+    await show_supplement_day_entries(callback.message, user_id, target_date)
+
+
+@router.callback_query(lambda c: c.data.startswith("supcal_edit:"))
+async def edit_supplement_entry(callback: CallbackQuery, state: FSMContext):
+    """Редактирует запись приёма добавки."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    sup_idx = int(parts[2]) if len(parts) > 2 else None
+    entry_idx = int(parts[3]) if len(parts) > 3 else None
+    user_id = str(callback.from_user.id)
+    
+    if sup_idx is None or entry_idx is None:
+        await callback.message.answer("❌ Не найдена запись для редактирования")
+        return
+    
+    supplements_list = SupplementRepository.get_supplements(user_id)
+    if sup_idx >= len(supplements_list):
+        await callback.message.answer("❌ Не нашёл запись для редактирования")
+        return
+    
+    history = supplements_list[sup_idx].get("history", [])
+    if entry_idx >= len(history):
+        await callback.message.answer("❌ Не нашёл запись для редактирования")
+        return
+    
+    entry = history[entry_idx]
+    entry_id = entry.get("id")
+    original_amount = entry.get("amount")
+    original_timestamp = entry.get("timestamp")
+    
+    if isinstance(original_timestamp, str):
+        try:
+            original_timestamp = datetime.fromisoformat(original_timestamp)
+        except (ValueError, TypeError):
+            original_timestamp = datetime.combine(target_date, datetime.now().time())
+    elif not isinstance(original_timestamp, datetime):
+        original_timestamp = datetime.combine(target_date, datetime.now().time())
+    
+    # Удаляем старую запись
+    if entry_id:
+        SupplementRepository.delete_entry(user_id, entry_id)
+    
+    # Начинаем процесс добавления новой записи
+    await state.update_data(
+        supplement_name=supplements_list[sup_idx].get("name", ""),
+        supplement_id=supplements_list[sup_idx].get("id"),
+        entry_date=target_date.isoformat(),
+        original_amount=original_amount,
+        original_timestamp=original_timestamp.isoformat(),
+    )
+    await state.set_state(SupplementStates.entering_history_time)
+    
+    await callback.message.answer(
+        f"Редактирование записи на {target_date.strftime('%d.%m.%Y')}.\n\n"
+        f"Текущее время: {original_timestamp.strftime('%H:%M')}\n"
+        f"Текущее количество: {original_amount or 'не указано'}\n\n"
+        "Укажи новое время приёма в формате ЧЧ:ММ:"
+    )
 
 
 def register_supplement_handlers(dp):

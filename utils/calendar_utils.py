@@ -5,7 +5,7 @@ from datetime import date
 from typing import set
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import MONTH_NAMES
-from database.repositories import WorkoutRepository, MealRepository
+from database.repositories import WorkoutRepository, MealRepository, SupplementRepository
 
 logger = logging.getLogger(__name__)
 
@@ -131,3 +131,66 @@ def build_kbju_calendar_keyboard(user_id: str, year: int, month: int) -> InlineK
         marker="🍱",
         get_days_func=get_month_meal_days,
     )
+
+
+def get_month_supplement_days(user_id: str, year: int, month: int) -> set[int]:
+    """Получает дни месяца, в которые были приёмы добавок."""
+    return SupplementRepository.get_history_days(user_id, year, month)
+
+
+def build_supplement_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    """Строит клавиатуру календаря добавок."""
+    return build_calendar_keyboard(
+        user_id=user_id,
+        year=year,
+        month=month,
+        callback_prefix="supcal",
+        marker="💊",
+        get_days_func=get_month_supplement_days,
+    )
+
+
+def build_supplement_day_actions_keyboard(entries: list[dict], target_date: date) -> InlineKeyboardMarkup:
+    """Строит клавиатуру действий для дня в календаре добавок."""
+    from aiogram.types import InlineKeyboardButton
+    
+    rows: list[list[InlineKeyboardButton]] = []
+    
+    for entry in entries:
+        amount_text = f" — {entry['amount']}" if entry.get("amount") is not None else ""
+        label = f"{entry['supplement_name']} ({entry['time_text']}{amount_text})"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"✏️ {label}",
+                    callback_data=(
+                        f"supcal_edit:{target_date.isoformat()}:{entry['supplement_index']}:{entry['entry_index']}"
+                    ),
+                ),
+                InlineKeyboardButton(
+                    text=f"🗑 {label}",
+                    callback_data=(
+                        f"supcal_del:{target_date.isoformat()}:{entry['supplement_index']}:{entry['entry_index']}"
+                    ),
+                ),
+            ]
+        )
+    
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить ещё" if entries else "➕ Добавить приём",
+                callback_data=f"supcal_add:{target_date.isoformat()}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к календарю",
+                callback_data=f"supcal_back:{target_date.year}-{target_date.month:02d}",
+            )
+        ]
+    )
+    
+    return InlineKeyboardMarkup(inline_keyboard=rows)
