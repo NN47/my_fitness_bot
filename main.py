@@ -71,6 +71,8 @@ async def main():
     register_activity_handlers(dp)
     from handlers.calendar import register_calendar_handlers
     register_calendar_handlers(dp)
+    from handlers.procedures import register_procedure_handlers
+    register_procedure_handlers(dp)
     
     # Запускаем keep-alive сервер
     threading.Thread(target=start_keepalive_server, daemon=True).start()

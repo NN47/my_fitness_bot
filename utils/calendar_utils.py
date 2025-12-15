@@ -5,7 +5,7 @@ from datetime import date
 from typing import set
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import MONTH_NAMES
-from database.repositories import WorkoutRepository, MealRepository, SupplementRepository
+from database.repositories import WorkoutRepository, MealRepository, SupplementRepository, ProcedureRepository
 
 logger = logging.getLogger(__name__)
 
@@ -194,3 +194,20 @@ def build_supplement_day_actions_keyboard(entries: list[dict], target_date: date
     )
     
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_month_procedure_days(user_id: str, year: int, month: int) -> set[int]:
+    """Получает дни месяца, в которые были процедуры."""
+    return ProcedureRepository.get_month_procedure_days(user_id, year, month)
+
+
+def build_procedure_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    """Строит клавиатуру календаря процедур."""
+    return build_calendar_keyboard(
+        user_id=user_id,
+        year=year,
+        month=month,
+        callback_prefix="proc_cal",
+        marker="💆",
+        get_days_func=get_month_procedure_days,
+    )

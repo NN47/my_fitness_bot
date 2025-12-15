@@ -9,6 +9,7 @@ from .water import register_water_handlers
 from .settings import register_settings_handlers
 from .activity import register_activity_handlers
 from .calendar import register_calendar_handlers
+from .procedures import register_procedure_handlers
 
 __all__ = [
     "register_common_handlers",
@@ -21,4 +22,5 @@ __all__ = [
     "register_settings_handlers",
     "register_activity_handlers",
     "register_calendar_handlers",
+    "register_procedure_handlers",
 ]

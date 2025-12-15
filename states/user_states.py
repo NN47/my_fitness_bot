@@ -60,3 +60,8 @@ class KbjuTestStates(StatesGroup):
     entering_weight = State()
     entering_activity = State()
     entering_goal = State()
+
+
+class ProcedureStates(StatesGroup):
+    """Состояния для работы с процедурами."""
+    entering_name = State()
