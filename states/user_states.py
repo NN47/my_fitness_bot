@@ -66,3 +66,8 @@ class KbjuTestStates(StatesGroup):
 class ProcedureStates(StatesGroup):
     """Состояния для работы с процедурами."""
     entering_name = State()
+
+
+class WaterStates(StatesGroup):
+    """Состояния для работы с водой."""
+    entering_amount = State()

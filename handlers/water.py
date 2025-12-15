@@ -4,6 +4,8 @@ from datetime import date
 from collections import defaultdict
 from aiogram import Router
 from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from states.user_states import WaterStates
 from utils.keyboards import water_menu, water_amount_menu, push_menu_stack, main_menu_button
 from utils.progress_formatters import build_water_progress_bar
 from database.repositories import WaterRepository, WeightRepository
@@ -76,12 +78,12 @@ async def water(message: Message):
 
 
 @router.message(lambda m: m.text == "➕ Добавить воду" and getattr(m.bot, "water_menu_open", False))
-async def add_water(message: Message):
+async def add_water(message: Message, state: FSMContext):
     """Обработчик добавления воды."""
     reset_user_state(message)
     message.bot.water_menu_open = True
-    message.bot.expecting_water_amount = True
     
+    await state.set_state(WaterStates.entering_amount)
     push_menu_stack(message.bot, water_amount_menu)
     await message.answer(
         "💧 Добавление воды\n\n"
@@ -159,8 +161,44 @@ async def water_history(message: Message):
     await message.answer("\n".join(lines), reply_markup=water_menu)
 
 
-# TODO: Добавить обработчик для ввода количества воды
-# Это будет сделано при полном переносе функционала
+@router.message(WaterStates.entering_amount)
+async def process_water_amount(message: Message, state: FSMContext):
+    """Обрабатывает ввод количества воды."""
+    user_id = str(message.from_user.id)
+    text = message.text.strip()
+    
+    # Проверяем, не является ли это кнопкой меню
+    if text in ["⬅️ Назад", "🏠 Главное меню", "📊 Статистика за сегодня", "📆 История", "➕ Добавить воду"]:
+        await state.clear()
+        if text == "⬅️ Назад":
+            # Возвращаемся в меню воды
+            await water(message)
+        return
+    
+    try:
+        amount = float(text.replace(",", "."))
+        if amount <= 0:
+            raise ValueError
+    except (ValueError, AttributeError):
+        await message.answer(
+            "Пожалуйста, введи число (количество миллилитров) или выбери из предложенных.",
+            reply_markup=water_amount_menu,
+        )
+        return
+    
+    entry_date = date.today()
+    WaterRepository.save_water_entry(user_id, amount, entry_date)
+    
+    await state.clear()
+    
+    daily_total = WaterRepository.get_daily_total(user_id, entry_date)
+    
+    push_menu_stack(message.bot, water_menu)
+    await message.answer(
+        f"✅ Добавил {amount:.0f} мл воды\n\n"
+        f"💧 Всего за сегодня: {daily_total:.0f} мл",
+        reply_markup=water_menu,
+    )
 
 
 def register_water_handlers(dp):
