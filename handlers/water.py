@@ -5,7 +5,8 @@ from collections import defaultdict
 from aiogram import Router
 from aiogram.types import Message
 from utils.keyboards import water_menu, water_amount_menu, push_menu_stack, main_menu_button
-from database.repositories import WaterRepository
+from utils.progress_formatters import build_water_progress_bar
+from database.repositories import WaterRepository, WeightRepository
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,11 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
 
 def get_water_recommended(user_id: str) -> float:
     """Получает рекомендуемую норму воды для пользователя."""
-    # TODO: Реализовать расчёт на основе веса
-    # Пока возвращаем стандартное значение
+    weight = WeightRepository.get_last_weight(user_id)
+    if weight and weight > 0:
+        # Формула: вес (кг) × 32.5 мл
+        return weight * 32.5
+    # Стандартное значение, если вес не указан
     return 2000.0
 
 
@@ -50,12 +54,20 @@ async def water(message: Message):
     progress = min(100, int((daily_total / recommended) * 100)) if recommended > 0 else 0
     bar = build_water_progress_bar(daily_total, recommended)
     
+    weight = WeightRepository.get_last_weight(user_id)
+    norm_info = ""
+    if weight and weight > 0:
+        norm_info = f"\n📊 Норма рассчитана по твоему весу ({weight:.1f} кг): {weight:.1f} × 32.5 мл = {recommended:.0f} мл"
+    else:
+        norm_info = "\n📊 Норма рассчитана по среднему значению (2000 мл). Укажи свой вес в разделе «⚖️ Вес и замеры», чтобы получить персональную норму."
+    
     intro_text = (
         "💧 Контроль воды\n\n"
         f"Выпито сегодня: {daily_total:.0f} мл\n"
         f"Рекомендуемая норма: {recommended:.0f} мл\n"
         f"Прогресс: {progress}%\n"
-        f"{bar}\n\n"
+        f"{bar}"
+        f"{norm_info}\n\n"
         "Отслеживай количество выпитой воды в течение дня."
     )
     

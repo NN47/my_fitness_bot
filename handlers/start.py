@@ -5,6 +5,12 @@ from aiogram import Router
 from aiogram.types import Message
 from aiogram.filters import Command
 from utils.keyboards import main_menu, push_menu_stack
+from utils.progress_formatters import (
+    format_progress_block,
+    format_water_progress_block,
+    format_today_workouts_block,
+    get_today_summary_text,
+)
 from database.session import get_db_session
 from database.models import User
 
@@ -28,13 +34,13 @@ async def start(message: Message):
             session.commit()
             logger.info(f"New user {user_id} registered")
     
-    # TODO: Добавить форматирование прогресса (пока упрощённо)
-    welcome_text = (
-        f"👋 Привет!\n\n"
-        f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>\n\n"
-        f"Добро пожаловать в Fitness Bot! 🏋️\n\n"
-        f"Выбери действие из меню:"
-    )
+    # Формируем приветствие с прогрессом
+    progress_text = format_progress_block(user_id)
+    water_progress_text = format_water_progress_block(user_id)
+    workouts_text = format_today_workouts_block(user_id, include_date=False)
+    today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
+    
+    welcome_text = f"{today_line}\n\n{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
     
     push_menu_stack(message.bot, main_menu)
     await message.answer(welcome_text, reply_markup=main_menu, parse_mode="HTML")

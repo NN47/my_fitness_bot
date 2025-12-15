@@ -76,8 +76,11 @@ class MealRepository:
             return {
                 "calories": float(result.calories) if result.calories else 0.0,
                 "protein": float(result.protein) if result.protein else 0.0,
+                "protein_g": float(result.protein) if result.protein else 0.0,  # Для совместимости
                 "fat": float(result.fat) if result.fat else 0.0,
+                "fat_total_g": float(result.fat) if result.fat else 0.0,  # Для совместимости
                 "carbs": float(result.carbs) if result.carbs else 0.0,
+                "carbohydrates_total_g": float(result.carbs) if result.carbs else 0.0,  # Для совместимости
             }
     
     @staticmethod
