@@ -1,8 +1,9 @@
 """Обработчики для тренировок."""
 import logging
 from datetime import date, timedelta, datetime
+from typing import Optional
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from utils.keyboards import (
     training_menu,
@@ -21,6 +22,9 @@ from states.user_states import WorkoutStates
 from database.repositories import WorkoutRepository
 from utils.workout_utils import calculate_workout_calories
 from utils.validators import parse_date
+from utils.formatters import format_count_with_unit
+from utils.calendar_utils import build_workout_calendar_keyboard
+from utils.workout_formatters import build_day_actions_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +64,121 @@ async def add_training_entry(message: Message, state: FSMContext):
         "Выбери категорию упражнений:",
         reply_markup=exercise_category_menu,
     )
+
+
+@router.message(lambda m: m.text == "📆 Календарь тренировок")
+async def show_training_calendar(message: Message):
+    """Показывает календарь тренировок."""
+    user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} opened training calendar")
+    await show_workout_calendar(message, user_id)
+
+
+async def show_workout_calendar(message: Message, user_id: str, year: Optional[int] = None, month: Optional[int] = None):
+    """Показывает календарь тренировок."""
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    keyboard = build_workout_calendar_keyboard(user_id, year, month)
+    await message.answer(
+        "📆 Выбери день, чтобы посмотреть, изменить или удалить тренировку:",
+        reply_markup=keyboard,
+    )
+
+
+async def show_day_workouts(message: Message, user_id: str, target_date: date):
+    """Показывает тренировки за день."""
+    workouts = WorkoutRepository.get_workouts_for_day(user_id, target_date)
+    
+    if not workouts:
+        await message.answer(
+            f"{target_date.strftime('%d.%m.%Y')}: нет тренировок.",
+            reply_markup=build_day_actions_keyboard([], target_date),
+        )
+        return
+    
+    text = [f"📅 {target_date.strftime('%d.%m.%Y')} — тренировки:"]
+    total_calories = 0.0
+    
+    for w in workouts:
+        variant_text = f" ({w.variant})" if w.variant else ""
+        entry_calories = w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
+        total_calories += entry_calories
+        formatted_count = format_count_with_unit(w.count, w.variant)
+        text.append(
+            f"• {w.exercise}{variant_text}: {formatted_count} (~{entry_calories:.0f} ккал)"
+        )
+    
+    text.append(f"\n🔥 Итого за день: ~{total_calories:.0f} ккал")
+    
+    await message.answer(
+        "\n".join(text),
+        reply_markup=build_day_actions_keyboard(workouts, target_date),
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("cal_nav:"))
+async def navigate_calendar(callback: CallbackQuery):
+    """Навигация по календарю тренировок."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_workout_calendar(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("cal_back:"))
+async def back_to_calendar(callback: CallbackQuery):
+    """Возврат к календарю тренировок."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_workout_calendar(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("cal_day:"))
+async def select_calendar_day(callback: CallbackQuery):
+    """Выбор дня в календаре тренировок."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+    await show_day_workouts(callback.message, user_id, target_date)
+
+
+@router.callback_query(lambda c: c.data.startswith("wrk_add:"))
+async def add_workout_from_calendar(callback: CallbackQuery, state: FSMContext):
+    """Добавляет тренировку из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    
+    await state.update_data(entry_date=target_date.isoformat())
+    await state.set_state(WorkoutStates.choosing_category)
+    
+    push_menu_stack(callback.message.bot, exercise_category_menu)
+    await callback.message.answer(
+        f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\nВыбери категорию упражнений:",
+        reply_markup=exercise_category_menu,
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("wrk_del:"))
+async def delete_workout_from_calendar(callback: CallbackQuery):
+    """Удаляет тренировку из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    workout_id = int(parts[1])
+    target_date = date.fromisoformat(parts[2]) if len(parts) > 2 else date.today()
+    user_id = str(callback.from_user.id)
+    
+    success = WorkoutRepository.delete_workout(workout_id, user_id)
+    if success:
+        await callback.message.answer("✅ Тренировка удалена")
+        await show_day_workouts(callback.message, user_id, target_date)
+    else:
+        await callback.message.answer("❌ Не удалось удалить тренировку")
 
 
 @router.message(WorkoutStates.choosing_category)
@@ -215,7 +334,6 @@ async def handle_count_input(message: Message, state: FSMContext):
     logger.info(f"User {user_id} saved workout: {exercise} x {count} on {entry_date}")
     
     # Формируем ответ
-    from utils.formatters import format_count_with_unit
     formatted_count = format_count_with_unit(count, variant)
     
     await state.clear()
@@ -235,10 +353,6 @@ async def enter_manual_count(message: Message, state: FSMContext):
     """Обработчик кнопки 'Ввести вручную'."""
     await state.set_state(WorkoutStates.entering_count)
     await message.answer("Введи количество повторений числом:")
-
-
-# TODO: Добавить обработчики календаря тренировок
-# TODO: Добавить обработчики удаления тренировок
 
 
 def register_workout_handlers(dp):

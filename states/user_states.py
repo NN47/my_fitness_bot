@@ -27,6 +27,9 @@ class WeightStates(StatesGroup):
     """Состояния для работы с весом."""
     entering_weight = State()
     choosing_period = State()
+    entering_measurements = State()
+    choosing_date_for_weight = State()
+    choosing_date_for_measurements = State()
 
 
 class SupplementStates(StatesGroup):

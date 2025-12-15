@@ -7,6 +7,8 @@ from .weight import register_weight_handlers
 from .supplements import register_supplement_handlers
 from .water import register_water_handlers
 from .settings import register_settings_handlers
+from .activity import register_activity_handlers
+from .calendar import register_calendar_handlers
 
 __all__ = [
     "register_common_handlers",
@@ -17,4 +19,6 @@ __all__ = [
     "register_supplement_handlers",
     "register_water_handlers",
     "register_settings_handlers",
+    "register_activity_handlers",
+    "register_calendar_handlers",
 ]

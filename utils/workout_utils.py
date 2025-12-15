@@ -83,7 +83,6 @@ def calculate_workout_calories(
 def get_daily_workout_calories(user_id: str, entry_date) -> float:
     """Получает суммарные калории, сожжённые на тренировках за день."""
     from database.repositories import WorkoutRepository
-    from datetime import date
     
     workouts = WorkoutRepository.get_workouts_for_day(user_id, entry_date)
     total = 0.0
