@@ -31,11 +31,19 @@ from datetime import datetime
 import requests
 import re
 from google import genai
-import matplotlib
-matplotlib.use('Agg')  # Используем backend без GUI
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 from io import BytesIO
+
+# Опциональный импорт matplotlib для графиков
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Используем backend без GUI
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    plt = None
+    mdates = None
 
 load_dotenv()
 
@@ -2144,8 +2152,7 @@ kbju_menu = ReplyKeyboardMarkup(
 kbju_goal_view_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="✏️ Редактировать")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
 )
@@ -2192,11 +2199,9 @@ kbju_add_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📝 Ввести приём пищи (анализ ИИ)")],
         [KeyboardButton(text="📷 Анализ еды по фото")],
-        [KeyboardButton(text="📋 Анализ этикетки")],
-        [KeyboardButton(text="📷 Сканировать штрих-код")],
+        [KeyboardButton(text="📋 Анализ этикетки"), KeyboardButton(text="📷 Скан штрих-кода")],
         [KeyboardButton(text="➕ Через CalorieNinjas")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
 )
@@ -2231,6 +2236,7 @@ settings_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🗑 Удалить аккаунт")],
         [KeyboardButton(text="💬 Поддержка")],
+        [KeyboardButton(text="🔒 Политика конфиденциальности")],
         [main_menu_button],
     ],
     resize_keyboard=True,
@@ -2319,8 +2325,7 @@ other_day_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📅 Вчера"), KeyboardButton(text="📆 Позавчера")],
         [KeyboardButton(text="✏️ Ввести дату вручную")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True
 )
@@ -2329,8 +2334,7 @@ other_day_menu = ReplyKeyboardMarkup(
 activity_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💪Добавить упражнение")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True
 )
@@ -2381,12 +2385,12 @@ weighted_exercises = [
 ]
 
 bodyweight_exercise_menu = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text=ex)] for ex in bodyweight_exercises] + [[KeyboardButton(text="⬅️ Назад")], [main_menu_button]],
+    keyboard=[[KeyboardButton(text=ex)] for ex in bodyweight_exercises] + [[KeyboardButton(text="⬅️ Назад"), main_menu_button]],
     resize_keyboard=True,
 )
 
 weighted_exercise_menu = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text=ex)] for ex in weighted_exercises] + [[KeyboardButton(text="⬅️ Назад")], [main_menu_button]],
+    keyboard=[[KeyboardButton(text=ex)] for ex in weighted_exercises] + [[KeyboardButton(text="⬅️ Назад"), main_menu_button]],
     resize_keyboard=True,
 )
 
@@ -2397,8 +2401,8 @@ count_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text=str(n)) for n in range(11, 16)],
         [KeyboardButton(text=str(n)) for n in range(16, 21)],
         [KeyboardButton(text=str(n)) for n in [25, 30, 35, 40, 50]],
-        [KeyboardButton(text="✏️ Ввести вручную"), KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button],
+        [KeyboardButton(text="✏️ Ввести вручную")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
 )
@@ -2446,8 +2450,7 @@ today_menu = ReplyKeyboardMarkup(
 history_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Удалить запись из истории")],
-        [KeyboardButton(text="⬅️ Назад")],
-        [main_menu_button]
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button]
     ],
     resize_keyboard=True
 )
@@ -3222,62 +3225,69 @@ def get_weights_for_period(user_id: str, period: str) -> list:
         session.close()
 
 
-def create_weight_chart(weights: list, period: str) -> BytesIO:
+def create_weight_chart(weights: list, period: str) -> BytesIO | None:
     """Создает график веса и возвращает его как BytesIO."""
     if not weights:
         return None
     
-    # Подготовка данных
-    dates = [w["date"] for w in weights]
-    values = [w["value"] for w in weights]
+    if not MATPLOTLIB_AVAILABLE:
+        return None
     
-    # Создание графика
-    plt.figure(figsize=(12, 6))
-    plt.plot(dates, values, marker='o', linestyle='-', linewidth=2, markersize=6, color='#2E86AB')
-    plt.fill_between(dates, values, alpha=0.3, color='#2E86AB')
-    
-    # Настройка осей
-    plt.xlabel('Дата', fontsize=12, fontweight='bold')
-    plt.ylabel('Вес (кг)', fontsize=12, fontweight='bold')
-    
-    # Название периода
-    period_names = {
-        "week": "За неделю",
-        "month": "За месяц",
-        "half_year": "За полгода",
-        "all_time": "За все время"
-    }
-    plt.title(f'📊 График веса - {period_names.get(period, "За все время")}', fontsize=14, fontweight='bold', pad=20)
-    
-    # Настройка формата дат на оси X
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
-    plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates) // 10)))
-    plt.xticks(rotation=45, ha='right')
-    
-    # Сетка
-    plt.grid(True, alpha=0.3, linestyle='--')
-    
-    # Минимальные и максимальные значения с небольшим отступом
-    if values:
-        min_val = min(values)
-        max_val = max(values)
-        range_val = max_val - min_val
-        plt.ylim(max(0, min_val - range_val * 0.1), max_val + range_val * 0.1)
-    
-    # Добавляем значения на точки
-    for i, (d, v) in enumerate(zip(dates, values)):
-        if i == 0 or i == len(dates) - 1 or i % max(1, len(dates) // 5) == 0:
-            plt.annotate(f'{v:.1f}', (d, v), textcoords="offset points", xytext=(0,10), ha='center', fontsize=9)
-    
-    plt.tight_layout()
-    
-    # Сохранение в BytesIO
-    buf = BytesIO()
-    plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
-    buf.seek(0)
-    plt.close()
-    
-    return buf
+    try:
+        # Подготовка данных
+        dates = [w["date"] for w in weights]
+        values = [w["value"] for w in weights]
+        
+        # Создание графика
+        plt.figure(figsize=(12, 6))
+        plt.plot(dates, values, marker='o', linestyle='-', linewidth=2, markersize=6, color='#2E86AB')
+        plt.fill_between(dates, values, alpha=0.3, color='#2E86AB')
+        
+        # Настройка осей
+        plt.xlabel('Дата', fontsize=12, fontweight='bold')
+        plt.ylabel('Вес (кг)', fontsize=12, fontweight='bold')
+        
+        # Название периода
+        period_names = {
+            "week": "За неделю",
+            "month": "За месяц",
+            "half_year": "За полгода",
+            "all_time": "За все время"
+        }
+        plt.title(f'📊 График веса - {period_names.get(period, "За все время")}', fontsize=14, fontweight='bold', pad=20)
+        
+        # Настройка формата дат на оси X
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d.%m'))
+        plt.gca().xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(dates) // 10)))
+        plt.xticks(rotation=45, ha='right')
+        
+        # Сетка
+        plt.grid(True, alpha=0.3, linestyle='--')
+        
+        # Минимальные и максимальные значения с небольшим отступом
+        if values:
+            min_val = min(values)
+            max_val = max(values)
+            range_val = max_val - min_val
+            plt.ylim(max(0, min_val - range_val * 0.1), max_val + range_val * 0.1)
+        
+        # Добавляем значения на точки
+        for i, (d, v) in enumerate(zip(dates, values)):
+            if i == 0 or i == len(dates) - 1 or i % max(1, len(dates) // 5) == 0:
+                plt.annotate(f'{v:.1f}', (d, v), textcoords="offset points", xytext=(0,10), ha='center', fontsize=9)
+        
+        plt.tight_layout()
+        
+        # Сохранение в BytesIO
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        buf.seek(0)
+        plt.close()
+        
+        return buf
+    except Exception as e:
+        print(f"❌ Ошибка при создании графика: {repr(e)}")
+        return None
 
 
 @dp.message(F.text == "📊 График")
@@ -3347,6 +3357,16 @@ async def show_weight_chart(message: Message, period: str):
             return
         
         # Создаем график
+        if not MATPLOTLIB_AVAILABLE:
+            await answer_with_menu(
+                message,
+                "📊 График веса временно недоступен.\n\n"
+                "Для работы графиков необходимо установить библиотеку matplotlib.\n"
+                "Пока что вы можете просмотреть историю веса в текстовом виде.",
+                reply_markup=weight_menu
+            )
+            return
+        
         chart_buffer = create_weight_chart(weights, period)
         
         if chart_buffer:
@@ -3359,7 +3379,11 @@ async def show_weight_chart(message: Message, period: str):
             )
             chart_buffer.close()
         else:
-            await answer_with_menu(message, "Не удалось создать график.", reply_markup=weight_menu)
+            await answer_with_menu(
+                message,
+                "Не удалось создать график. Попробуйте позже.",
+                reply_markup=weight_menu
+            )
             
     except Exception as e:
         print(f"❌ Ошибка при создании графика веса: {repr(e)}")
@@ -4106,8 +4130,7 @@ def supplement_details_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="✏️ Редактировать добавку")],
             [KeyboardButton(text="🗑 Удалить добавку"), KeyboardButton(text="✅ Отметить добавку")],
-            [KeyboardButton(text="⬅️ Назад")],
-            [main_menu_button],
+            [KeyboardButton(text="⬅️ Назад"), main_menu_button],
         ],
         resize_keyboard=True,
     )
@@ -5574,7 +5597,7 @@ async def start_kbju_add_flow(message: Message, entry_date: date):
         "• 📝 Ввести приём пищи (анализ ИИ) — умный анализ на основе типичных значений (рекомендуется)\n"
         "• 📷 Анализ еды по фото — отправь фото еды\n"
         "• 📋 Анализ этикетки — отправь фото этикетки/упаковки\n"
-        "• 📷 Сканировать штрих-код — отправь фото штрих-кода\n"
+        "• 📷 Скан штрих-кода — отправь фото штрих-кода\n"
         "• ➕ Через CalorieNinjas — альтернативный вариант"
     )
 
@@ -5751,7 +5774,7 @@ async def kbju_add_via_label(message: Message):
     )
 
 
-@dp.message(lambda m: m.text == "📷 Сканировать штрих-код" and getattr(m.bot, "kbju_menu_open", False))
+@dp.message(lambda m: m.text == "📷 Скан штрих-кода" and getattr(m.bot, "kbju_menu_open", False))
 async def kbju_add_via_barcode(message: Message):
     """Обработчик кнопки сканирования штрих-кода"""
     reset_user_state(message)
@@ -7467,6 +7490,51 @@ async def support(message: Message):
         "💬 Поддержка\n\n"
         "Эта функция пока в разработке. Скоро здесь можно будет связаться с поддержкой!",
         reply_markup=settings_menu,
+    )
+
+
+@dp.message(F.text == "🔒 Политика конфиденциальности")
+async def privacy_policy(message: Message):
+    reset_user_state(message)
+    privacy_text = (
+        "🔒 <b>Политика конфиденциальности</b>\n\n"
+        "Добро пожаловать в Fitness Bot! Мы ценим вашу конфиденциальность и стремимся защищать ваши личные данные.\n\n"
+        "<b>1. Сбор данных</b>\n"
+        "Бот собирает и хранит следующие данные:\n"
+        "• Идентификатор пользователя Telegram\n"
+        "• Данные о тренировках (упражнения, количество, даты)\n"
+        "• Записи веса и замеров тела\n"
+        "• Записи питания (КБЖУ)\n"
+        "• Информация о добавках и их приёме\n"
+        "• Настройки КБЖУ и цели\n"
+        "• Фотографии замеров (если загружаются)\n\n"
+        "<b>2. Использование данных</b>\n"
+        "Ваши данные используются исключительно для:\n"
+        "• Предоставления функционала бота\n"
+        "• Отображения статистики и прогресса\n"
+        "• Расчёта калорий и КБЖУ\n"
+        "• Хранения истории тренировок и питания\n\n"
+        "<b>3. Хранение данных</b>\n"
+        "Все данные хранятся в защищённой базе данных на сервере бота. "
+        "Мы применяем стандартные меры безопасности для защиты вашей информации.\n\n"
+        "<b>4. Передача данных третьим лицам</b>\n"
+        "Мы не передаём ваши персональные данные третьим лицам. "
+        "Данные используются только для работы бота и не продаются, не сдаются в аренду и не передаются другим компаниям.\n\n"
+        "<b>5. Удаление данных</b>\n"
+        "Вы можете в любой момент удалить свой аккаунт и все связанные данные через функцию "
+        "\"🗑 Удалить аккаунт\" в настройках. После удаления все ваши данные будут безвозвратно удалены из базы данных.\n\n"
+        "<b>6. Изменения в политике</b>\n"
+        "Мы оставляем за собой право обновлять данную политику конфиденциальности. "
+        "О существенных изменениях мы уведомим пользователей через бота.\n\n"
+        "<b>7. Контакты</b>\n"
+        "Если у вас есть вопросы о политике конфиденциальности, используйте функцию \"💬 Поддержка\" в настройках.\n\n"
+        "Дата последнего обновления: 2024"
+    )
+    await answer_with_menu(
+        message,
+        privacy_text,
+        reply_markup=settings_menu,
+        parse_mode="HTML",
     )
 
 

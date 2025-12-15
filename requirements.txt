@@ -16,3 +16,11 @@ requests
 
 # Gemini NEW API client
 google-genai>=0.3.0
+
+# Graphics (optional - for weight charts)
+matplotlib>=3.7.0
+Pillow>=10.0.0
+
+# Graphics (optional - for weight charts)
+matplotlib>=3.7.0
+Pillow>=10.0.0
