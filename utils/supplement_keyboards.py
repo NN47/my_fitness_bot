@@ -60,3 +60,35 @@ def time_edit_menu(times: list[str]) -> ReplyKeyboardMarkup:
     buttons.append([KeyboardButton(text="➕ Добавить"), KeyboardButton(text="💾 Сохранить")])
     buttons.append([KeyboardButton(text="⬅️ Назад")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+def days_menu(selected: list[str]) -> ReplyKeyboardMarkup:
+    """Меню выбора дней."""
+    week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    rows = []
+    for day in week_days:
+        prefix = "✅ " if day in selected else ""
+        rows.append([KeyboardButton(text=f"{prefix}{day}")])
+    rows.append([KeyboardButton(text="Выбрать все"), KeyboardButton(text="💾 Сохранить")])
+    rows.append([KeyboardButton(text="⬅️ Назад")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def duration_menu() -> ReplyKeyboardMarkup:
+    """Меню выбора длительности."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Постоянно"), KeyboardButton(text="14 дней")],
+            [KeyboardButton(text="30 дней")],
+            [KeyboardButton(text="⬅️ Назад")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def time_first_menu() -> ReplyKeyboardMarkup:
+    """Меню для первого времени."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="➕ Добавить"), KeyboardButton(text="⬅️ Назад")]],
+        resize_keyboard=True,
+    )
