@@ -94,6 +94,8 @@ def gemini_estimate_kbju(food_text: str) -> dict | None:
     }
     или None при ошибке.
     """
+    global last_gemini_error
+    
     if not client:
         print("❌ Gemini клиент не инициализирован (отсутствует API ключ)")
         return None
@@ -150,7 +152,6 @@ def gemini_estimate_kbju(food_text: str) -> dict | None:
             print("❌ Gemini вернул пустой ответ")
             return None
         # Сбрасываем флаг ошибки при успешном запросе
-        global last_gemini_error
         last_gemini_error["is_quota_exceeded"] = False
         last_gemini_error["message"] = ""
         raw = response.text.strip()
@@ -177,7 +178,6 @@ def gemini_estimate_kbju(food_text: str) -> dict | None:
         ) or "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower()
         
         # Сохраняем информацию об ошибке для показа пользователю
-        global last_gemini_error
         last_gemini_error["is_quota_exceeded"] = is_quota_exceeded
         last_gemini_error["message"] = error_str[:500]
         
@@ -209,6 +209,8 @@ def gemini_estimate_kbju_from_photo(image_bytes: bytes) -> dict | None:
     }
     или None при ошибке.
     """
+    global last_gemini_error
+    
     if not client:
         print("❌ Gemini клиент не инициализирован (отсутствует API ключ)")
         return None
@@ -302,7 +304,6 @@ def gemini_estimate_kbju_from_photo(image_bytes: bytes) -> dict | None:
             print("❌ Gemini вернул пустой ответ для фото еды")
             return None
         # Сбрасываем флаг ошибки при успешном запросе
-        global last_gemini_error
         last_gemini_error["is_quota_exceeded"] = False
         last_gemini_error["message"] = ""
         raw = response.text.strip()
@@ -327,7 +328,6 @@ def gemini_estimate_kbju_from_photo(image_bytes: bytes) -> dict | None:
         ) or "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower()
         
         # Сохраняем информацию об ошибке для показа пользователю
-        global last_gemini_error
         last_gemini_error["is_quota_exceeded"] = is_quota_exceeded
         last_gemini_error["message"] = error_str[:500]
         
@@ -364,6 +364,8 @@ def gemini_extract_kbju_from_label(image_bytes: bytes) -> dict | None:
     }
     или None при ошибке.
     """
+    global last_gemini_error
+    
     if not client:
         print("❌ Gemini клиент не инициализирован (отсутствует API ключ)")
         return None
@@ -421,7 +423,6 @@ def gemini_extract_kbju_from_label(image_bytes: bytes) -> dict | None:
             print("❌ Gemini вернул пустой ответ для этикетки")
             return None
         # Сбрасываем флаг ошибки при успешном запросе
-        global last_gemini_error
         last_gemini_error["is_quota_exceeded"] = False
         last_gemini_error["message"] = ""
         raw = response.text.strip()
@@ -444,7 +445,6 @@ def gemini_extract_kbju_from_label(image_bytes: bytes) -> dict | None:
         ) or "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower()
         
         # Сохраняем информацию об ошибке для показа пользователю
-        global last_gemini_error
         last_gemini_error["is_quota_exceeded"] = is_quota_exceeded
         last_gemini_error["message"] = error_str[:500]
         
@@ -469,6 +469,8 @@ def gemini_scan_barcode(image_bytes: bytes) -> str | None:
     
     Возвращает строку с номером штрих-кода (EAN-13, UPC и т.д.) или None при ошибке.
     """
+    global last_gemini_error
+    
     if not client:
         print("❌ Gemini клиент не инициализирован (отсутствует API ключ)")
         return None
@@ -516,7 +518,6 @@ def gemini_scan_barcode(image_bytes: bytes) -> str | None:
             print("❌ Gemini вернул пустой ответ для штрих-кода")
             return None
         # Сбрасываем флаг ошибки при успешном запросе
-        global last_gemini_error
         last_gemini_error["is_quota_exceeded"] = False
         last_gemini_error["message"] = ""
         raw = response.text.strip()
@@ -544,7 +545,6 @@ def gemini_scan_barcode(image_bytes: bytes) -> str | None:
         ) or "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower()
         
         # Сохраняем информацию об ошибке для показа пользователю
-        global last_gemini_error
         last_gemini_error["is_quota_exceeded"] = is_quota_exceeded
         last_gemini_error["message"] = error_str[:500]
         
@@ -5976,6 +5976,8 @@ async def kbju_manual_norm_input(message: Message):
 
 @dp.message(lambda m: getattr(m.bot, "expecting_ai_food_input", False))
 async def kbju_ai_process(message: Message):
+    global last_gemini_error
+    
     user_id = str(message.from_user.id)
     food_text = (message.text or "").strip()
 
@@ -5991,7 +5993,6 @@ async def kbju_ai_process(message: Message):
 
     if not data:
         # Проверяем, была ли ошибка связана с превышением квоты
-        global last_gemini_error
         if last_gemini_error.get("is_quota_exceeded", False):
             await message.answer(
                 "⚠️ Превышен дневной лимит запросов к ИИ 😔\n\n"
@@ -6113,6 +6114,8 @@ async def kbju_ai_process(message: Message):
 @dp.message(lambda m: getattr(m.bot, "expecting_photo_input", False) and m.photo is not None)
 async def kbju_photo_process(message: Message):
     """Обработчик анализа еды по фото"""
+    global last_gemini_error
+    
     user_id = str(message.from_user.id)
     entry_date = getattr(message.bot, "meal_entry_dates", {}).get(user_id, date.today())
 
@@ -6132,7 +6135,6 @@ async def kbju_photo_process(message: Message):
         
         if not data:
             # Проверяем, была ли ошибка связана с превышением квоты
-            global last_gemini_error
             if last_gemini_error.get("is_quota_exceeded", False):
                 await message.answer(
                     "⚠️ Превышен дневной лимит запросов к ИИ 😔\n\n"
@@ -6266,6 +6268,8 @@ async def kbju_photo_expected_but_text_received(message: Message):
 @dp.message(lambda m: getattr(m.bot, "expecting_label_photo_input", False) and m.photo is not None)
 async def kbju_label_photo_process(message: Message):
     """Обработчик анализа этикетки по фото"""
+    global last_gemini_error
+    
     user_id = str(message.from_user.id)
     entry_date = getattr(message.bot, "meal_entry_dates", {}).get(user_id, date.today())
 
@@ -6282,7 +6286,6 @@ async def kbju_label_photo_process(message: Message):
         
         if not data or not data.get("kbju_per_100g"):
             # Проверяем, была ли ошибка связана с превышением квоты
-            global last_gemini_error
             if last_gemini_error.get("is_quota_exceeded", False):
                 await message.answer(
                     "⚠️ Превышен дневной лимит запросов к ИИ 😔\n\n"
