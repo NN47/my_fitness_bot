@@ -77,3 +77,32 @@ class WorkoutRepository:
                 .order_by(Workout.date.asc(), Workout.id.asc())
                 .all()
             )
+    
+    @staticmethod
+    def get_workout_by_id(workout_id: int, user_id: str) -> Optional[Workout]:
+        """Получает тренировку по ID."""
+        with get_db_session() as session:
+            return (
+                session.query(Workout)
+                .filter(Workout.id == workout_id)
+                .filter(Workout.user_id == user_id)
+                .first()
+            )
+    
+    @staticmethod
+    def update_workout(workout_id: int, user_id: str, count: int, calories: float) -> bool:
+        """Обновляет количество и калории тренировки."""
+        with get_db_session() as session:
+            workout = (
+                session.query(Workout)
+                .filter(Workout.id == workout_id)
+                .filter(Workout.user_id == user_id)
+                .first()
+            )
+            if workout:
+                workout.count = count
+                workout.calories = calories
+                session.commit()
+                logger.info(f"Updated workout {workout_id} for user {user_id}: count={count}, calories={calories}")
+                return True
+            return False

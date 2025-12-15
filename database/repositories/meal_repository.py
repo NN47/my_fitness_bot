@@ -111,6 +111,53 @@ class MealRepository:
             )
     
     @staticmethod
+    def get_meal_by_id(meal_id: int, user_id: str) -> Optional[Meal]:
+        """Получает приём пищи по ID."""
+        with get_db_session() as session:
+            return (
+                session.query(Meal)
+                .filter(Meal.id == meal_id)
+                .filter(Meal.user_id == user_id)
+                .first()
+            )
+    
+    @staticmethod
+    def update_meal(
+        meal_id: int,
+        user_id: str,
+        description: str,
+        calories: float,
+        protein: float,
+        fat: float,
+        carbs: float,
+        products_json: Optional[str] = None,
+        api_details: Optional[str] = None,
+    ) -> bool:
+        """Обновляет приём пищи."""
+        with get_db_session() as session:
+            meal = (
+                session.query(Meal)
+                .filter(Meal.id == meal_id)
+                .filter(Meal.user_id == user_id)
+                .first()
+            )
+            if meal:
+                meal.description = description
+                meal.raw_query = description
+                meal.calories = calories
+                meal.protein = protein
+                meal.fat = fat
+                meal.carbs = carbs
+                if products_json:
+                    meal.products_json = products_json
+                if api_details:
+                    meal.api_details = api_details
+                session.commit()
+                logger.info(f"Updated meal {meal_id} for user {user_id}")
+                return True
+            return False
+    
+    @staticmethod
     def save_kbju_settings(
         user_id: str,
         calories: float,

@@ -164,6 +164,91 @@ async def add_workout_from_calendar(callback: CallbackQuery, state: FSMContext):
     )
 
 
+@router.callback_query(lambda c: c.data.startswith("wrk_edit:"))
+async def edit_workout(callback: CallbackQuery, state: FSMContext):
+    """Начинает редактирование тренировки."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    workout_id = int(parts[1])
+    target_date = date.fromisoformat(parts[2]) if len(parts) > 2 else date.today()
+    user_id = str(callback.from_user.id)
+    
+    workout = WorkoutRepository.get_workout_by_id(workout_id, user_id)
+    if not workout:
+        await callback.message.answer("❌ Не нашёл тренировку для изменения.")
+        return
+    
+    await state.update_data(
+        workout_id=workout_id,
+        workout_exercise=workout.exercise,
+        workout_variant=workout.variant,
+        workout_date=workout.date.isoformat(),
+        target_date=target_date.isoformat(),
+    )
+    await state.set_state(WorkoutStates.editing_count)
+    
+    await callback.message.answer(
+        f"✏️ Редактирование тренировки\n\n"
+        f"💪 {workout.exercise}\n"
+        f"📅 {workout.date.strftime('%d.%m.%Y')}\n"
+        f"📊 Текущее количество: {workout.count}\n\n"
+        f"Введи новое количество:"
+    )
+
+
+@router.message(WorkoutStates.editing_count)
+async def handle_workout_edit_count(message: Message, state: FSMContext):
+    """Обрабатывает ввод нового количества при редактировании тренировки."""
+    user_id = str(message.from_user.id)
+    
+    try:
+        count = int(message.text)
+        if count <= 0:
+            raise ValueError
+    except (ValueError, AttributeError):
+        await message.answer("⚠️ Введи положительное число")
+        return
+    
+    data = await state.get_data()
+    workout_id = data.get("workout_id")
+    exercise = data.get("workout_exercise")
+    variant = data.get("workout_variant")
+    target_date_str = data.get("target_date", date.today().isoformat())
+    
+    if not workout_id:
+        await message.answer("❌ Ошибка: не найдена тренировка для обновления.")
+        await state.clear()
+        return
+    
+    # Пересчитываем калории
+    calories = calculate_workout_calories(user_id, exercise, variant, count)
+    
+    # Обновляем тренировку
+    success = WorkoutRepository.update_workout(workout_id, user_id, count, calories)
+    
+    if success:
+        if isinstance(target_date_str, str):
+            try:
+                target_date = date.fromisoformat(target_date_str)
+            except ValueError:
+                target_date = date.today()
+        else:
+            target_date = date.today()
+        
+        await state.clear()
+        formatted_count = format_count_with_unit(count, variant)
+        await message.answer(
+            f"✅ Обновлено!\n\n"
+            f"💪 {exercise}\n"
+            f"📊 {formatted_count}\n"
+            f"🔥 ~{calories:.0f} ккал"
+        )
+        await show_day_workouts(message, user_id, target_date)
+    else:
+        await message.answer("❌ Не удалось обновить тренировку. Попробуйте позже.")
+        await state.clear()
+
+
 @router.callback_query(lambda c: c.data.startswith("wrk_del:"))
 async def delete_workout_from_calendar(callback: CallbackQuery):
     """Удаляет тренировку из календаря."""

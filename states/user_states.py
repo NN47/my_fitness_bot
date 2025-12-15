@@ -21,6 +21,7 @@ class WorkoutStates(StatesGroup):
     entering_count = State()
     choosing_date = State()
     entering_custom_date = State()
+    editing_count = State()  # Редактирование количества
 
 
 class WeightStates(StatesGroup):
