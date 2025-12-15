@@ -39,11 +39,12 @@ class SupplementStates(StatesGroup):
     selecting_days = State()
     choosing_duration = State()
     logging_intake = State()
+    choosing_date_for_intake = State()
     entering_amount = State()
-    editing_supplement = State()
-    viewing_history = State()
     entering_history_time = State()
     entering_history_amount = State()
+    editing_supplement = State()
+    viewing_history = State()
 
 
 class WaterStates(StatesGroup):
