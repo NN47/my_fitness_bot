@@ -1,0 +1,38 @@
+"""Общие обработчики (назад, главное меню и т.д.)."""
+import logging
+from aiogram import Router
+from aiogram.types import Message
+from aiogram.filters import Command
+from utils.keyboards import main_menu, push_menu_stack
+
+logger = logging.getLogger(__name__)
+
+router = Router()
+
+
+@router.message(lambda m: m.text == "🏠 Главное меню")
+async def go_main_menu(message: Message):
+    """Обработчик кнопки 'Главное меню'."""
+    logger.info(f"User {message.from_user.id} navigated to main menu")
+    push_menu_stack(message.bot, main_menu)
+    await message.answer("🏠 Главное меню", reply_markup=main_menu)
+
+
+@router.message(lambda m: m.text == "⬅️ Назад")
+async def go_back(message: Message):
+    """Обработчик кнопки 'Назад'."""
+    logger.info(f"User {message.from_user.id} pressed back button")
+    stack = getattr(message.bot, "menu_stack", [])
+    if stack:
+        prev_menu = stack.pop()
+        message.bot.menu_stack = stack
+        push_menu_stack(message.bot, prev_menu)
+        await message.answer("⬅️ Назад", reply_markup=prev_menu)
+    else:
+        push_menu_stack(message.bot, main_menu)
+        await message.answer("🏠 Главное меню", reply_markup=main_menu)
+
+
+def register_common_handlers(dp):
+    """Регистрирует общие обработчики."""
+    dp.include_router(router)
