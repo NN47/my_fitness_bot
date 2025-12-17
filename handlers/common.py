@@ -20,17 +20,10 @@ async def go_main_menu(message: Message):
 
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def go_back(message: Message):
-    """Обработчик кнопки 'Назад'."""
+    """Обработчик кнопки 'Назад' - возвращает в главное меню."""
     logger.info(f"User {message.from_user.id} pressed back button")
-    stack = getattr(message.bot, "menu_stack", [])
-    if stack:
-        prev_menu = stack.pop()
-        message.bot.menu_stack = stack
-        push_menu_stack(message.bot, prev_menu)
-        await message.answer("⬅️ Назад", reply_markup=prev_menu)
-    else:
-        push_menu_stack(message.bot, main_menu)
-        await message.answer("🏠 Главное меню", reply_markup=main_menu)
+    push_menu_stack(message.bot, main_menu)
+    await message.answer("🏠 Главное меню", reply_markup=main_menu)
 
 
 @router.callback_query(lambda c: c.data == "cal_close")

@@ -59,10 +59,15 @@ async def calories(message: Message):
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened KBJU menu")
     
+    # Показываем прогресс КБЖУ
+    from utils.progress_formatters import format_progress_block
+    progress_text = format_progress_block(user_id)
+    
     push_menu_stack(message.bot, kbju_menu)
     await message.answer(
-        "🍱 КБЖУ\n\nВыбери действие:",
+        f"🍱 КБЖУ\n\n{progress_text}\n\nВыбери действие:",
         reply_markup=kbju_menu,
+        parse_mode="HTML",
     )
 
 

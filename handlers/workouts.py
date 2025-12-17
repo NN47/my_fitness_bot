@@ -42,10 +42,16 @@ async def show_training_menu(message: Message):
     """Показывает меню тренировок."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened training menu")
+    
+    # Показываем прогресс тренировок
+    from utils.progress_formatters import format_today_workouts_block
+    workouts_text = format_today_workouts_block(user_id, include_date=False)
+    
     push_menu_stack(message.bot, training_menu)
     await message.answer(
-        "🏋️ Тренировки\n\nВыбери действие:",
+        f"🏋️ Тренировки\n\n{workouts_text}\n\nВыбери действие:",
         reply_markup=training_menu,
+        parse_mode="HTML",
     )
 
 
