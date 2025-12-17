@@ -80,7 +80,8 @@ def duration_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="Постоянно"), KeyboardButton(text="14 дней")],
             [KeyboardButton(text="30 дней")],
-            [KeyboardButton(text="⬅️ Назад")],
+            [KeyboardButton(text="⏭️ Пропустить")],
+            [KeyboardButton(text="⬅️ Отменить")],
         ],
         resize_keyboard=True,
     )
@@ -90,5 +91,28 @@ def time_first_menu() -> ReplyKeyboardMarkup:
     """Меню для первого времени."""
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="➕ Добавить"), KeyboardButton(text="⬅️ Назад")]],
+        resize_keyboard=True,
+    )
+
+
+def supplement_test_skip_menu() -> ReplyKeyboardMarkup:
+    """Меню для пропуска шага в тесте добавки."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⏭️ Пропустить")],
+            [KeyboardButton(text="⬅️ Отменить")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def supplement_test_notifications_menu() -> ReplyKeyboardMarkup:
+    """Меню выбора уведомлений в тесте."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ Включить"), KeyboardButton(text="❌ Выключить")],
+            [KeyboardButton(text="⏭️ Пропустить")],
+            [KeyboardButton(text="⬅️ Отменить")],
+        ],
         resize_keyboard=True,
     )

@@ -126,20 +126,24 @@ async def start_create_supplement(message: Message, state: FSMContext):
 
 @router.message(SupplementStates.entering_name)
 async def handle_supplement_name(message: Message, state: FSMContext):
-    """Обрабатывает ввод названия добавки."""
+    """Обрабатывает ввод названия добавки - начало теста."""
     name = message.text.strip()
     if not name:
         await message.answer("Название не может быть пустым. Введите название добавки.")
         return
     
     await state.update_data(name=name)
-    # Переходим в состояние редактирования, чтобы кнопки работали
-    await state.set_state(SupplementStates.editing_supplement)
+    # Переходим к следующему шагу - время
+    await state.set_state(SupplementStates.entering_time)
     
-    push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
+    from utils.supplement_keyboards import supplement_test_skip_menu, time_first_menu
+    push_menu_stack(message.bot, supplement_test_skip_menu())
     await message.answer(
-        "Выберите время, дни, длительность приема добавки и уведомления (по желанию):",
-        reply_markup=supplement_edit_menu(show_save=True),
+        f"✅ Название: {name}\n\n"
+        "⏰ Шаг 2: Укажи время приёма добавки (например: 09:00, 12:00, 18:00)\n\n"
+        "Можешь добавить несколько времён, вводя их по одному.\n"
+        "Или нажми «⏭️ Пропустить», чтобы пропустить этот шаг.",
+        reply_markup=supplement_test_skip_menu(),
     )
 
 
@@ -541,9 +545,14 @@ async def mark_supplement_from_details(message: Message, state: FSMContext):
 
 @router.message(lambda m: m.text == "💾 Сохранить")
 async def save_supplement(message: Message, state: FSMContext):
-    """Сохраняет добавку."""
+    """Сохраняет добавку (только для редактирования)."""
     user_id = str(message.from_user.id)
     data = await state.get_data()
+    
+    supplement_id = data.get("supplement_id")
+    # Если это создание новой добавки - не обрабатываем здесь
+    if supplement_id is None:
+        return
     
     name = data.get("name", "").strip()
     if not name:
@@ -558,7 +567,6 @@ async def save_supplement(message: Message, state: FSMContext):
         "notifications_enabled": data.get("notifications_enabled", True),
     }
     
-    supplement_id = data.get("supplement_id")
     saved_id = SupplementRepository.save_supplement(user_id, supplement_payload, supplement_id)
     
     if saved_id:
@@ -604,14 +612,62 @@ async def edit_supplement_time(message: Message, state: FSMContext):
 async def handle_time_value(message: Message, state: FSMContext):
     """Обрабатывает ввод времени."""
     text = message.text.strip()
+    data = await state.get_data()
+    supplement_id = data.get("supplement_id")
     
-    # Проверяем, не является ли это кнопкой меню
+    # Если это создание новой добавки (тест)
+    if supplement_id is None:
+        # Проверяем пропуск
+        if text == "⏭️ Пропустить":
+            await state.update_data(times=[])
+            # Переходим к следующему шагу - дни
+            await state.set_state(SupplementStates.selecting_days)
+            from utils.supplement_keyboards import supplement_test_skip_menu, days_menu
+            push_menu_stack(message.bot, supplement_test_skip_menu())
+            await message.answer(
+                "⏭️ Время пропущено\n\n"
+                "📅 Шаг 3: Выбери дни приёма добавки\n\n"
+                "Можешь выбрать несколько дней или нажми «⏭️ Пропустить».",
+                reply_markup=days_menu([]),
+            )
+            return
+        
+        # Проверяем отмену
+        if text == "⬅️ Отменить":
+            await state.clear()
+            await supplements(message)
+            return
+        
+        # Проверяем формат времени
+        if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", text):
+            await message.answer("Пожалуйста, укажи время в формате ЧЧ:ММ (например: 09:00) или нажми «⏭️ Пропустить»")
+            return
+        
+        # Добавляем время
+        times = data.get("times", []).copy()
+        if text not in times:
+            times.append(text)
+        times.sort()
+        await state.update_data(times=times)
+        
+        # Показываем текущие времена и предлагаем добавить еще или продолжить
+        from utils.supplement_keyboards import supplement_test_skip_menu
+        times_list = "\n".join(times) if times else "нет"
+        push_menu_stack(message.bot, supplement_test_skip_menu())
+        await message.answer(
+            f"✅ Добавлено время: {text}\n\n"
+            f"Текущие времена приёма:\n{times_list}\n\n"
+            "Введи ещё одно время (ЧЧ:ММ) или нажми «⏭️ Пропустить», чтобы продолжить.",
+            reply_markup=supplement_test_skip_menu(),
+        )
+        return
+    
+    # Если это редактирование существующей добавки - старая логика
     menu_buttons = ["⬅️ Назад", "💾 Сохранить", "➕ Добавить"]
     if any(text.startswith(btn) for btn in menu_buttons) or text.startswith("❌"):
         if text.startswith("❌"):
             # Удаление времени
             time_value = text.replace("❌ ", "").strip()
-            data = await state.get_data()
             times = data.get("times", []).copy()
             if time_value in times:
                 times.remove(time_value)
@@ -635,7 +691,6 @@ async def handle_time_value(message: Message, state: FSMContext):
         await message.answer("Пожалуйста, укажите время в формате ЧЧ:ММ. Например: 09:00")
         return
     
-    data = await state.get_data()
     times = data.get("times", []).copy()
     if text not in times:
         times.append(text)
@@ -667,6 +722,76 @@ async def edit_days(message: Message, state: FSMContext):
 @router.message(SupplementStates.selecting_days)
 async def toggle_day(message: Message, state: FSMContext):
     """Переключает выбор дня."""
+    data = await state.get_data()
+    supplement_id = data.get("supplement_id")
+    
+    # Если это создание новой добавки (тест)
+    if supplement_id is None:
+        # Проверяем пропуск
+        if message.text == "⏭️ Пропустить":
+            await state.update_data(days=[])
+            # Переходим к следующему шагу - длительность
+            await state.set_state(SupplementStates.choosing_duration)
+            from utils.supplement_keyboards import supplement_test_skip_menu, duration_menu
+            push_menu_stack(message.bot, supplement_test_skip_menu())
+            await message.answer(
+                "⏭️ Дни пропущены\n\n"
+                "⏳ Шаг 4: Выбери длительность приёма добавки\n\n"
+                "Или нажми «⏭️ Пропустить», чтобы оставить «Постоянно».",
+                reply_markup=duration_menu(),
+            )
+            return
+        
+        # Проверяем отмену
+        if message.text == "⬅️ Отменить" or message.text == "⬅️ Назад":
+            await state.clear()
+            await supplements(message)
+            return
+        
+        # Проверяем "Выбрать все"
+        if message.text == "Выбрать все":
+            await state.update_data(days=["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"])
+            data = await state.get_data()
+            from utils.supplement_keyboards import days_menu, supplement_test_skip_menu
+            push_menu_stack(message.bot, days_menu(data.get("days", [])))
+            await message.answer("✅ Все дни выбраны", reply_markup=days_menu(data.get("days", [])))
+            return
+        
+        # Проверяем "💾 Сохранить" - переход к следующему шагу
+        if message.text == "💾 Сохранить":
+            days = data.get("days", [])
+            # Переходим к следующему шагу - длительность
+            await state.set_state(SupplementStates.choosing_duration)
+            from utils.supplement_keyboards import supplement_test_skip_menu, duration_menu
+            push_menu_stack(message.bot, supplement_test_skip_menu())
+            days_text = ", ".join(days) if days else "не выбрано"
+            await message.answer(
+                f"✅ Дни сохранены: {days_text}\n\n"
+                "⏳ Шаг 4: Выбери длительность приёма добавки\n\n"
+                "Или нажми «⏭️ Пропустить», чтобы оставить «Постоянно».",
+                reply_markup=duration_menu(),
+            )
+            return
+        
+        # Обрабатываем выбор дня
+        day = message.text.replace("✅ ", "")
+        if day not in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]:
+            return
+        
+        days = data.get("days", []).copy()
+        if day in days:
+            days.remove(day)
+        else:
+            days.append(day)
+        
+        await state.update_data(days=days)
+        from utils.supplement_keyboards import days_menu
+        push_menu_stack(message.bot, days_menu(days))
+        days_text = ", ".join(days) if days else "не выбрано"
+        await message.answer(f"✅ Дни обновлены: {days_text}", reply_markup=days_menu(days))
+        return
+    
+    # Если это редактирование существующей добавки - старая логика
     if message.text == "Выбрать все":
         await state.update_data(days=["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"])
         data = await state.get_data()
@@ -697,40 +822,176 @@ async def choose_duration(message: Message, state: FSMContext):
     await message.answer("Выберите длительность приема", reply_markup=duration_menu())
 
 
-@router.message(lambda m: m.text in {"Постоянно", "14 дней", "30 дней"})
-async def set_duration(message: Message, state: FSMContext):
-    """Устанавливает длительность приёма."""
-    duration = message.text.lower()
-    await state.update_data(duration=duration)
-    
+@router.message(SupplementStates.choosing_duration)
+async def handle_duration_choice(message: Message, state: FSMContext):
+    """Обрабатывает выбор длительности в тесте или редактировании."""
     data = await state.get_data()
-    push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
+    supplement_id = data.get("supplement_id")
+    
+    # Проверяем пропуск (только в режиме теста)
+    if supplement_id is None and message.text == "⏭️ Пропустить":
+        await state.update_data(duration="постоянно")
+        # Переходим к следующему шагу - уведомления
+        await ask_notifications_in_test(message, state)
+        return
+    
+    # Проверяем отмену
+    if message.text == "⬅️ Отменить":
+        await state.clear()
+        await supplements(message)
+        return
+    
+    # Проверяем выбор длительности
+    if message.text in {"Постоянно", "14 дней", "30 дней"}:
+        duration = message.text.lower()
+        await state.update_data(duration=duration)
+        
+        # Если это создание новой добавки (тест) - переходим к уведомлениям
+        if supplement_id is None:
+            await ask_notifications_in_test(message, state)
+            return
+        
+        # Если это редактирование - показываем меню редактирования
+        push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
+        await message.answer(
+            f"Длительность установлена: {message.text}\n\n"
+            f"💊 {data.get('name', 'Добавка')}\n"
+            f"⏰ Время: {', '.join(data.get('times', [])) or 'не выбрано'}\n"
+            f"📅 Дни: {', '.join(data.get('days', [])) or 'не выбрано'}\n"
+            f"⏳ Длительность: {duration}",
+            reply_markup=supplement_edit_menu(show_save=True),
+        )
+        return
+
+
+async def ask_notifications_in_test(message: Message, state: FSMContext):
+    """Спрашивает про уведомления в тесте создания добавки."""
+    from utils.supplement_keyboards import supplement_test_notifications_menu
+    await state.set_state(SupplementStates.editing_supplement)  # Временное состояние для обработки уведомлений
+    push_menu_stack(message.bot, supplement_test_notifications_menu())
     await message.answer(
-        f"Длительность установлена: {message.text}\n\n"
-        f"💊 {data.get('name', 'Добавка')}\n"
-        f"⏰ Время: {', '.join(data.get('times', [])) or 'не выбрано'}\n"
-        f"📅 Дни: {', '.join(data.get('days', [])) or 'не выбрано'}\n"
-        f"⏳ Длительность: {duration}",
-        reply_markup=supplement_edit_menu(show_save=True),
+        "🔔 Шаг 5: Включить уведомления о приёме добавки?\n\n"
+        "Если включишь уведомления, я буду напоминать тебе о приёме добавки в указанное время.\n\n"
+        "⚠️ Для уведомлений нужно указать время и дни приёма.",
+        reply_markup=supplement_test_notifications_menu(),
     )
+
+
+@router.message(lambda m: m.text in {"✅ Включить", "❌ Выключить", "⏭️ Пропустить", "⬅️ Отменить"})
+async def handle_notifications_in_test(message: Message, state: FSMContext):
+    """Обрабатывает выбор уведомлений в тесте создания добавки."""
+    data = await state.get_data()
+    supplement_id = data.get("supplement_id")
+    
+    # Только в режиме создания новой добавки
+    if supplement_id is None:
+        if message.text == "⬅️ Отменить":
+            await state.clear()
+            await supplements(message)
+            return
+        
+        if message.text == "⏭️ Пропустить":
+            await state.update_data(notifications_enabled=False)
+            # Сохраняем добавку
+            await save_supplement_from_test(message, state)
+            return
+        
+        if message.text == "✅ Включить":
+            # Проверяем наличие времени и дней
+            times = data.get("times", [])
+            days = data.get("days", [])
+            
+            if not times or not days:
+                from utils.supplement_keyboards import supplement_test_notifications_menu
+                await message.answer(
+                    "⚠️ Для уведомлений нужно указать время и дни приёма!\n\n"
+                    "Вернись назад и заполни эти поля, или выключи уведомления.",
+                    reply_markup=supplement_test_notifications_menu(),
+                )
+                return
+            
+            await state.update_data(notifications_enabled=True)
+            # Сохраняем добавку
+            await save_supplement_from_test(message, state)
+            return
+        
+        if message.text == "❌ Выключить":
+            await state.update_data(notifications_enabled=False)
+            # Сохраняем добавку
+            await save_supplement_from_test(message, state)
+            return
+    
+    # Если это редактирование - обрабатываем как обычно
+    if message.text == "🔔 Уведомления":
+        current_status = data.get("notifications_enabled", True)
+        new_status = not current_status
+        await state.update_data(notifications_enabled=new_status)
+        status_text = "включены" if new_status else "выключены"
+        push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
+        await message.answer(
+            f"🔔 Уведомления {status_text}\n\n"
+            f"Уведомления будут приходить в указанное время приема добавки.",
+            reply_markup=supplement_edit_menu(show_save=True),
+        )
+
+
+async def save_supplement_from_test(message: Message, state: FSMContext):
+    """Сохраняет добавку после завершения теста."""
+    user_id = str(message.from_user.id)
+    data = await state.get_data()
+    
+    name = data.get("name", "").strip()
+    if not name:
+        await message.answer("❌ Ошибка: название добавки не указано.")
+        await state.clear()
+        return
+    
+    supplement_payload = {
+        "name": name,
+        "times": data.get("times", []),
+        "days": data.get("days", []),
+        "duration": data.get("duration", "постоянно"),
+        "notifications_enabled": data.get("notifications_enabled", False),
+    }
+    
+    saved_id = SupplementRepository.save_supplement(user_id, supplement_payload)
+    
+    if saved_id:
+        await state.clear()
+        notifications_status = "включены" if supplement_payload.get("notifications_enabled", False) else "выключены"
+        push_menu_stack(message.bot, supplements_main_menu(has_items=True))
+        await message.answer(
+            "✅ Добавка успешно создана!\n\n"
+            f"💊 {supplement_payload['name']}\n"
+            f"⏰ Время: {', '.join(supplement_payload['times']) or 'не указано'}\n"
+            f"📅 Дни: {', '.join(supplement_payload['days']) or 'не указано'}\n"
+            f"⏳ Длительность: {supplement_payload['duration']}\n"
+            f"🔔 Уведомления: {notifications_status}",
+            reply_markup=supplements_main_menu(has_items=True),
+        )
+    else:
+        await message.answer("❌ Не удалось сохранить добавку. Попробуйте позже.")
+        await state.clear()
 
 
 @router.message(lambda m: m.text == "🔔 Уведомления")
 async def toggle_notifications(message: Message, state: FSMContext):
-    """Переключает уведомления."""
+    """Переключает уведомления (для редактирования)."""
     data = await state.get_data()
-    current_status = data.get("notifications_enabled", True)
-    new_status = not current_status
+    supplement_id = data.get("supplement_id")
     
-    await state.update_data(notifications_enabled=new_status)
-    
-    status_text = "включены" if new_status else "выключены"
-    push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
-    await message.answer(
-        f"🔔 Уведомления {status_text}\n\n"
-        f"Уведомления будут приходить в указанное время приема добавки.",
-        reply_markup=supplement_edit_menu(show_save=True),
-    )
+    # Только для редактирования существующих добавок
+    if supplement_id is not None:
+        current_status = data.get("notifications_enabled", True)
+        new_status = not current_status
+        await state.update_data(notifications_enabled=new_status)
+        status_text = "включены" if new_status else "выключены"
+        push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
+        await message.answer(
+            f"🔔 Уведомления {status_text}\n\n"
+            f"Уведомления будут приходить в указанное время приема добавки.",
+            reply_markup=supplement_edit_menu(show_save=True),
+        )
 
 
 @router.message(lambda m: m.text == "✏️ Изменить название")

@@ -41,11 +41,23 @@ async def go_main_menu(message: Message, state: FSMContext):
 
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def go_back(message: Message, state: FSMContext):
-    """Обработчик кнопки 'Назад' - возвращает в главное меню."""
+    """Обработчик кнопки 'Назад' - возвращает на шаг назад."""
     logger.info(f"User {message.from_user.id} pressed back button")
-    await state.clear()  # Очищаем FSM состояние
-    push_menu_stack(message.bot, main_menu)
-    await message.answer("🏠 Главное меню", reply_markup=main_menu)
+    
+    stack = getattr(message.bot, "menu_stack", [])
+    
+    if len(stack) > 1:
+        # Убираем текущее меню из стека
+        stack.pop()
+        prev_menu = stack[-1]  # Берем предыдущее меню
+        message.bot.menu_stack = stack
+        push_menu_stack(message.bot, prev_menu)
+        await message.answer("⬅️ Назад", reply_markup=prev_menu)
+    else:
+        # Если стек пуст или только главное меню - возвращаемся в главное
+        await state.clear()
+        push_menu_stack(message.bot, main_menu)
+        await message.answer("🏠 Главное меню", reply_markup=main_menu)
 
 
 @router.callback_query(lambda c: c.data == "cal_close")
