@@ -8,7 +8,6 @@ from utils.keyboards import push_menu_stack, main_menu_button
 from database.repositories import WeightRepository
 from states.user_states import WeightStates
 from utils.validators import parse_weight, parse_date
-from services.chart_service import chart_service
 
 logger = logging.getLogger(__name__)
 
@@ -20,20 +19,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 weight_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить вес")],
-        [KeyboardButton(text="📊 График")],
         [KeyboardButton(text="🗑 Удалить вес")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
-    ],
-    resize_keyboard=True,
-)
-
-weight_chart_period_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📅 Неделя")],
-        [KeyboardButton(text="📅 Месяц")],
-        [KeyboardButton(text="📅 Полгода")],
-        [KeyboardButton(text="📅 Все время")],
-        [KeyboardButton(text="⬅️ Назад")],
     ],
     resize_keyboard=True,
 )
@@ -208,83 +195,6 @@ async def handle_weight_input(message: Message, state: FSMContext):
         f"📅 {entry_date.strftime('%d.%m.%Y')}",
         reply_markup=weight_menu,
     )
-
-
-@router.message(lambda m: m.text == "📊 График")
-async def show_weight_chart_menu(message: Message):
-    """Показывает меню выбора периода для графика."""
-    user_id = str(message.from_user.id)
-    weights = WeightRepository.get_weights(user_id)
-    
-    if not weights:
-        push_menu_stack(message.bot, weight_menu)
-        await message.answer("⚖️ У тебя пока нет записей веса для графика.", reply_markup=weight_menu)
-        return
-    
-    push_menu_stack(message.bot, weight_chart_period_menu)
-    await message.answer(
-        "📊 Выбери период для графика веса:",
-        reply_markup=weight_chart_period_menu,
-    )
-
-
-@router.message(lambda m: m.text in ["📅 Неделя", "📅 Месяц", "📅 Полгода", "📅 Все время"])
-async def show_weight_chart(message: Message):
-    """Показывает график веса за период."""
-    user_id = str(message.from_user.id)
-    
-    period_map = {
-        "📅 Неделя": "week",
-        "📅 Месяц": "month",
-        "📅 Полгода": "half_year",
-        "📅 Все время": "all_time",
-    }
-    
-    period = period_map.get(message.text, "all_time")
-    
-    try:
-        weights = WeightRepository.get_weights_for_period(user_id, period)
-        
-        if not weights:
-            period_names = {
-                "week": "неделю",
-                "month": "месяц",
-                "half_year": "полгода",
-                "all_time": "все время"
-            }
-            push_menu_stack(message.bot, weight_menu)
-            await message.answer(
-                f"⚖️ Нет записей веса за {period_names.get(period, 'этот период')}.",
-                reply_markup=weight_menu,
-            )
-            return
-        
-        # Создаём график
-        chart_buffer = chart_service.create_weight_chart(weights, period)
-        
-        if chart_buffer:
-            # Отправляем график
-            chart_buffer.name = "weight_chart.png"
-            push_menu_stack(message.bot, weight_menu)
-            await message.answer_photo(
-                photo=chart_buffer,
-                caption=f"📊 График веса ({len(weights)} записей)",
-                reply_markup=weight_menu,
-            )
-            chart_buffer.close()
-        else:
-            push_menu_stack(message.bot, weight_menu)
-            await message.answer(
-                "Не удалось создать график. Попробуйте позже.",
-                reply_markup=weight_menu,
-            )
-    except Exception as e:
-        logger.error(f"Ошибка при создании графика веса: {e}", exc_info=True)
-        push_menu_stack(message.bot, weight_menu)
-        await message.answer(
-            "Произошла ошибка при создании графика. Попробуйте позже.",
-            reply_markup=weight_menu,
-        )
 
 
 @router.message(lambda m: m.text == "🗑 Удалить вес")

@@ -1,16 +1,12 @@
 """
 Точка входа для запуска бота.
 """
-import os
 import asyncio
 import nest_asyncio
 import logging
 import threading
 import http.server
 import socketserver
-
-# Настраиваем matplotlib для быстрого запуска (до импорта handlers)
-os.environ['MPLCONFIGDIR'] = '/tmp/.matplotlib'
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -50,7 +46,7 @@ def start_keepalive_server():
 logger.info("Запуск keep-alive сервера...")
 threading.Thread(target=start_keepalive_server, daemon=True).start()
 
-# Теперь импортируем handlers (это может занять время из-за matplotlib)
+# Теперь импортируем handlers
 logger.info("Импорт обработчиков...")
 from database.session import init_db
 from handlers import (
