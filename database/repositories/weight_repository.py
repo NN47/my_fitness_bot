@@ -40,6 +40,20 @@ class WeightRepository:
             return query.all()
     
     @staticmethod
+    def get_weights_for_date_range(user_id: str, start_date: Optional[date], end_date: Optional[date]) -> list[Weight]:
+        """Получает веса за указанный период."""
+        with get_db_session() as session:
+            query = (
+                session.query(Weight)
+                .filter(Weight.user_id == user_id)
+            )
+            if start_date:
+                query = query.filter(Weight.date >= start_date)
+            if end_date:
+                query = query.filter(Weight.date <= end_date)
+            return query.order_by(Weight.date.desc(), Weight.id.desc()).all()
+    
+    @staticmethod
     def get_weights_for_period(user_id: str, period: str) -> list[dict]:
         """Получает веса за период."""
         today = date.today()

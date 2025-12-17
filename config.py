@@ -17,6 +17,7 @@ if not API_TOKEN:
 # Внешние API
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_KEY2 = os.getenv("GEMINI_API_KEY2")  # Резервный ключ
+GEMINI_API_KEY3 = os.getenv("GEMINI_API_KEY3")  # Третий резервный ключ
 NUTRITION_API_KEY = os.getenv("NUTRITION_API_KEY")
 
 if not NUTRITION_API_KEY:

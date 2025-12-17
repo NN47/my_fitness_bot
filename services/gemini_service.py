@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 from google import genai
 from google.genai import errors as genai_errors
-from config import GEMINI_API_KEY, GEMINI_API_KEY2
+from config import GEMINI_API_KEY, GEMINI_API_KEY2, GEMINI_API_KEY3
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,9 @@ class GeminiService:
         if GEMINI_API_KEY2:
             self.api_keys.append(GEMINI_API_KEY2)
             logger.info("✅ Резервный ключ Gemini API (GEMINI_API_KEY2) найден")
+        if GEMINI_API_KEY3:
+            self.api_keys.append(GEMINI_API_KEY3)
+            logger.info("✅ Третий резервный ключ Gemini API (GEMINI_API_KEY3) найден")
         
         self.current_key_index = 0
         self.model = "gemini-2.5-flash"
