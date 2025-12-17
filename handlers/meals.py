@@ -77,6 +77,9 @@ async def show_kbju_goal(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened KBJU goal settings")
     
+    # Очищаем FSM состояние
+    await state.clear()
+    
     # Получаем текущие настройки
     settings = MealRepository.get_kbju_settings(user_id)
     
