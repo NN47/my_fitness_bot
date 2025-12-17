@@ -2,7 +2,6 @@
 import calendar
 import logging
 from datetime import date
-from typing import set
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import MONTH_NAMES
 from database.repositories import WorkoutRepository, MealRepository, SupplementRepository, ProcedureRepository
