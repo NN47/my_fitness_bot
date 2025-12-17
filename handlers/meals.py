@@ -3,7 +3,7 @@ import logging
 import json
 import re
 from datetime import date
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from typing import Optional
 from aiogram.fsm.context import FSMContext
