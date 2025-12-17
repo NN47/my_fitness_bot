@@ -46,7 +46,6 @@ async def water(message: Message):
     """Показывает меню контроля воды."""
     reset_user_state(message)
     user_id = str(message.from_user.id)
-    message.bot.water_menu_open = True
     logger.info(f"User {user_id} opened water menu")
     
     today = date.today()
@@ -77,11 +76,10 @@ async def water(message: Message):
     await message.answer(intro_text, reply_markup=water_menu)
 
 
-@router.message(lambda m: m.text == "➕ Добавить воду" and getattr(m.bot, "water_menu_open", False))
+@router.message(lambda m: m.text == "➕ Добавить воду")
 async def add_water(message: Message, state: FSMContext):
     """Обработчик добавления воды."""
     reset_user_state(message)
-    message.bot.water_menu_open = True
     
     await state.set_state(WaterStates.entering_amount)
     push_menu_stack(message.bot, water_amount_menu)
@@ -92,11 +90,10 @@ async def add_water(message: Message, state: FSMContext):
     )
 
 
-@router.message(lambda m: m.text == "📊 Статистика за сегодня" and getattr(m.bot, "water_menu_open", False))
+@router.message(lambda m: m.text == "📊 Статистика за сегодня")
 async def water_today(message: Message):
     """Показывает статистику воды за сегодня."""
     reset_user_state(message)
-    message.bot.water_menu_open = True
     user_id = str(message.from_user.id)
     today = date.today()
     entries = WaterRepository.get_entries_for_day(user_id, today)
@@ -129,11 +126,10 @@ async def water_today(message: Message):
     await message.answer("\n".join(lines), reply_markup=water_menu)
 
 
-@router.message(lambda m: m.text == "📆 История" and getattr(m.bot, "water_menu_open", False))
+@router.message(lambda m: m.text == "📆 История")
 async def water_history(message: Message):
     """Показывает историю воды."""
     reset_user_state(message)
-    message.bot.water_menu_open = True
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} viewed water history")
     

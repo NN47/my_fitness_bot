@@ -59,7 +59,6 @@ async def calories(message: Message):
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened KBJU menu")
     
-    message.bot.kbju_menu_open = True
     push_menu_stack(message.bot, kbju_menu)
     await message.answer(
         "🍱 КБЖУ\n\nВыбери действие:",
@@ -67,7 +66,7 @@ async def calories(message: Message):
     )
 
 
-@router.message(lambda m: m.text == "➕ Добавить" and getattr(m.bot, "kbju_menu_open", False))
+@router.message(lambda m: m.text == "➕ Добавить")
 async def calories_add(message: Message, state: FSMContext):
     """Начинает процесс добавления приёма пищи."""
     reset_user_state(message)
@@ -77,7 +76,6 @@ async def calories_add(message: Message, state: FSMContext):
 async def start_kbju_add_flow(message: Message, entry_date: date, state: FSMContext):
     """Запускает поток добавления приёма пищи."""
     user_id = str(message.from_user.id)
-    message.bot.kbju_menu_open = True
     
     # Сохраняем дату в FSM
     await state.update_data(entry_date=entry_date.isoformat())
@@ -96,7 +94,7 @@ async def start_kbju_add_flow(message: Message, entry_date: date, state: FSMCont
     await message.answer(text, reply_markup=kbju_add_menu)
 
 
-@router.message(lambda m: m.text == "➕ Через CalorieNinjas" and getattr(m.bot, "kbju_menu_open", False))
+@router.message(lambda m: m.text == "➕ Через CalorieNinjas")
 async def kbju_add_via_calorieninjas(message: Message, state: FSMContext):
     """Обработчик добавления через CalorieNinjas."""
     await state.set_state(MealEntryStates.waiting_for_food_input)
@@ -115,7 +113,7 @@ async def kbju_add_via_calorieninjas(message: Message, state: FSMContext):
     await message.answer(text, reply_markup=kbju_add_menu)
 
 
-@router.message(lambda m: m.text == "📝 Ввести приём пищи (анализ ИИ)" and getattr(m.bot, "kbju_menu_open", False))
+@router.message(lambda m: m.text == "📝 Ввести приём пищи (анализ ИИ)")
 async def kbju_add_via_ai(message: Message, state: FSMContext):
     """Обработчик добавления через Gemini AI."""
     await state.set_state(MealEntryStates.waiting_for_ai_food_input)
@@ -132,11 +130,10 @@ async def kbju_add_via_ai(message: Message, state: FSMContext):
     await message.answer(text, reply_markup=kbju_add_menu)
 
 
-@router.message(lambda m: m.text == "📷 Анализ еды по фото" and getattr(m.bot, "kbju_menu_open", False))
+@router.message(lambda m: m.text == "📷 Анализ еды по фото")
 async def kbju_add_via_photo(message: Message, state: FSMContext):
     """Обработчик анализа еды по фото."""
     reset_user_state(message)
-    message.bot.kbju_menu_open = True
     await state.set_state(MealEntryStates.waiting_for_photo)
     
     text = (
@@ -309,11 +306,10 @@ async def handle_ai_food_input(message: Message, state: FSMContext):
     await message.answer("\n".join(lines), reply_markup=kbju_after_meal_menu)
 
 
-@router.message(lambda m: m.text == "📋 Анализ этикетки" and getattr(m.bot, "kbju_menu_open", False))
+@router.message(lambda m: m.text == "📋 Анализ этикетки")
 async def kbju_add_via_label(message: Message, state: FSMContext):
     """Обработчик анализа этикетки."""
     reset_user_state(message)
-    message.bot.kbju_menu_open = True
     await state.set_state(MealEntryStates.waiting_for_label_photo)
     
     text = (
@@ -329,11 +325,10 @@ async def kbju_add_via_label(message: Message, state: FSMContext):
     await message.answer(text, reply_markup=kbju_add_menu)
 
 
-@router.message(lambda m: m.text == "📷 Скан штрих-кода" and getattr(m.bot, "kbju_menu_open", False))
+@router.message(lambda m: m.text == "📷 Скан штрих-кода")
 async def kbju_add_via_barcode(message: Message, state: FSMContext):
     """Обработчик сканирования штрих-кода."""
     reset_user_state(message)
-    message.bot.kbju_menu_open = True
     await state.set_state(MealEntryStates.waiting_for_barcode_photo)
     
     text = (
@@ -650,11 +645,10 @@ async def handle_weight_input(message: Message, state: FSMContext):
     )
 
 
-@router.message(lambda m: m.text == "📊 Дневной отчёт" and getattr(m.bot, "kbju_menu_open", False))
+@router.message(lambda m: m.text == "📊 Дневной отчёт")
 async def calories_today_results(message: Message):
     """Показывает дневной отчёт по КБЖУ."""
     reset_user_state(message)
-    message.bot.kbju_menu_open = True
     user_id = str(message.from_user.id)
     await send_today_results(message, user_id)
 
@@ -683,11 +677,10 @@ async def send_today_results(message: Message, user_id: str):
     await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
-@router.message(lambda m: m.text == "📆 Календарь КБЖУ" and getattr(m.bot, "kbju_menu_open", False))
+@router.message(lambda m: m.text == "📆 Календарь КБЖУ")
 async def calories_calendar(message: Message):
     """Показывает календарь КБЖУ."""
     reset_user_state(message)
-    message.bot.kbju_menu_open = True
     user_id = str(message.from_user.id)
     await show_kbju_calendar(message, user_id)
 

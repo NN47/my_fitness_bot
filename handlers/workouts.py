@@ -433,7 +433,7 @@ async def handle_count_input(message: Message, state: FSMContext):
     )
 
 
-@router.message(lambda m: m.text == "✏️ Ввести вручную" and getattr(m.bot, "training_menu_open", False))
+@router.message(lambda m: m.text == "✏️ Ввести вручную")
 async def enter_manual_count(message: Message, state: FSMContext):
     """Обработчик кнопки 'Ввести вручную'."""
     await state.set_state(WorkoutStates.entering_count)
