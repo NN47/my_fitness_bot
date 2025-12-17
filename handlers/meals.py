@@ -101,10 +101,16 @@ async def show_kbju_goal(message: Message, state: FSMContext):
             settings.carbs,
             goal_label
         )
-        text += "\n\n💡 Хочешь изменить цель? Нажми «✅ Пройти быстрый тест КБЖУ» в меню КБЖУ."
+        text += "\n\n💡 Хочешь изменить цель?"
+        
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Пройти тест заново", callback_data="kbju_test_start")]
+        ])
         
         push_menu_stack(message.bot, kbju_menu)
         await message.answer(text, parse_mode="HTML", reply_markup=kbju_menu)
+        await message.answer("Нажми кнопку ниже, чтобы изменить цель:", reply_markup=inline_kb)
     else:
         # Предлагаем пройти тест
         from utils.keyboards import kbju_gender_menu
@@ -1065,6 +1071,24 @@ async def delete_meal(callback: CallbackQuery):
         await show_day_meals(callback.message, user_id, target_date)
     else:
         await callback.message.answer("❌ Не удалось удалить запись")
+
+
+@router.callback_query(lambda c: c.data == "kbju_test_start")
+async def start_kbju_test_from_button(callback: CallbackQuery, state: FSMContext):
+    """Начинает тест КБЖУ из inline кнопки."""
+    await callback.answer()
+    from utils.keyboards import kbju_gender_menu
+    from states.user_states import KbjuTestStates
+    
+    await state.clear()
+    await state.set_state(KbjuTestStates.entering_gender)
+    
+    push_menu_stack(callback.message.bot, kbju_gender_menu)
+    await callback.message.answer(
+        "Окей, пройдём небольшой тест 💪\n\n"
+        "Для начала — укажи пол:",
+        reply_markup=kbju_gender_menu,
+    )
 
 
 def register_meal_handlers(dp):
