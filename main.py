@@ -1,32 +1,24 @@
 """
 Точка входа для запуска бота.
 """
+import os
 import asyncio
 import nest_asyncio
 import logging
 import threading
 import http.server
 import socketserver
+
+# Настраиваем matplotlib для быстрого запуска (до импорта handlers)
+os.environ['MPLCONFIGDIR'] = '/tmp/.matplotlib'
+
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import API_TOKEN, KEEPALIVE_PORT
-from database.session import init_db
 from utils.logging_config import setup_logging
-from handlers import (
-    register_common_handlers,
-    register_start_handlers,
-    register_workout_handlers,
-    register_meal_handlers,
-    register_weight_handlers,
-    register_supplement_handlers,
-    register_water_handlers,
-    register_settings_handlers,
-    register_activity_handlers,
-    register_kbju_test_handlers,
-)
 
 # Настраиваем логирование
 setup_logging()
@@ -43,9 +35,36 @@ def start_keepalive_server():
     """Запускает keep-alive HTTP сервер в отдельном потоке."""
     PORT = KEEPALIVE_PORT
     handler = http.server.SimpleHTTPRequestHandler
-    with ReusableTCPServer(("", PORT), handler) as httpd:
+    
+    class QuietHandler(handler):
+        """Handler без вывода логов."""
+        def log_message(self, format, *args):
+            pass
+    
+    with ReusableTCPServer(("", PORT), QuietHandler) as httpd:
         logger.info(f"✅ Keep-alive сервер запущен на порту {PORT}")
         httpd.serve_forever()
+
+
+# Запускаем keep-alive сервер СРАЗУ, до импорта handlers
+logger.info("Запуск keep-alive сервера...")
+threading.Thread(target=start_keepalive_server, daemon=True).start()
+
+# Теперь импортируем handlers (это может занять время из-за matplotlib)
+logger.info("Импорт обработчиков...")
+from database.session import init_db
+from handlers import (
+    register_common_handlers,
+    register_start_handlers,
+    register_workout_handlers,
+    register_meal_handlers,
+    register_weight_handlers,
+    register_supplement_handlers,
+    register_water_handlers,
+    register_settings_handlers,
+    register_activity_handlers,
+    register_kbju_test_handlers,
+)
 
 
 async def main():
@@ -75,9 +94,6 @@ async def main():
     register_calendar_handlers(dp)
     from handlers.procedures import register_procedure_handlers
     register_procedure_handlers(dp)
-    
-    # Запускаем keep-alive сервер
-    threading.Thread(target=start_keepalive_server, daemon=True).start()
     
     logger.info("🚀 Бот запущен и готов к работе!")
     

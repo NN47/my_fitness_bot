@@ -1,14 +1,21 @@
 """Сервис для создания графиков."""
+import os
 import logging
 from io import BytesIO
 from typing import Optional
 from datetime import date
+
+# Настройка matplotlib для быстрого запуска
+os.environ['MPLCONFIGDIR'] = '/tmp/.matplotlib'
 
 try:
     import matplotlib
     matplotlib.use('Agg')  # Используем backend без GUI
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
+    # Отключаем предупреждения о шрифтах
+    import warnings
+    warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib')
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
