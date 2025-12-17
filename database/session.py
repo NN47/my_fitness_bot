@@ -15,8 +15,9 @@ engine = create_engine(
     pool_recycle=DB_POOL_RECYCLE,
 )
 
-# Создаём фабрику сессий
-SessionLocal = sessionmaker(bind=engine)
+# Создаём фабрику сессий с expire_on_commit=False
+# чтобы объекты оставались доступными после коммита
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def init_db():
