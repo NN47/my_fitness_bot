@@ -467,6 +467,9 @@ async def handle_photo_input(message: Message, state: FSMContext):
     else:
         entry_date = date.today()
     
+    # Показываем сообщение об анализе
+    await message.answer("📷 Анализирую фото с помощью ИИ, секунду... 🤖")
+    
     # Скачиваем фото
     photo = message.photo[-1]  # Берём самое большое разрешение
     file = await message.bot.get_file(photo.file_id)
@@ -483,28 +486,70 @@ async def handle_photo_input(message: Message, state: FSMContext):
         )
         return
     
-    total = kbju_data["total"]
+    items = kbju_data.get("items", [])
+    total = kbju_data.get("total", {})
+    
+    # Безопасное преобразование значений
+    def safe_float(value) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+    
+    # Формируем детальный ответ
+    lines = ["📷 Анализ фото еды (ИИ):\n"]
+    
+    totals_for_db = {
+        "calories": safe_float(total.get("kcal")),
+        "protein": safe_float(total.get("protein")),
+        "fat": safe_float(total.get("fat")),
+        "carbs": safe_float(total.get("carbs")),
+    }
+    
+    # Показываем каждый продукт
+    for item in items:
+        name = item.get("name") or "продукт"
+        grams = safe_float(item.get("grams"))
+        cal = safe_float(item.get("kcal"))
+        p = safe_float(item.get("protein"))
+        f = safe_float(item.get("fat"))
+        c = safe_float(item.get("carbs"))
+        
+        lines.append(
+            f"• {name} ({grams:.0f} г) — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+        )
+    
+    lines.append("\nИТОГО:")
+    lines.append(
+        f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals_for_db['protein']:.1f} г\n"
+        f"🥑 Жиры: {totals_for_db['fat']:.1f} г\n"
+        f"🍩 Углеводы: {totals_for_db['carbs']:.1f} г"
+    )
     
     # Сохраняем в БД
     MealRepository.save_meal(
         user_id=user_id,
-        raw_query="[Фото еды]",
-        calories=float(total.get("kcal", 0)),
-        protein=float(total.get("protein", 0)),
-        fat=float(total.get("fat", 0)),
-        carbs=float(total.get("carbs", 0)),
+        raw_query="[Анализ по фото]",
+        calories=totals_for_db["calories"],
+        protein=totals_for_db["protein"],
+        fat=totals_for_db["fat"],
+        carbs=totals_for_db["carbs"],
         entry_date=entry_date,
-        products_json=json.dumps(kbju_data.get("items", [])),
+        products_json=json.dumps(items),
     )
     
-    # Формируем ответ
-    lines = [
-        "🍱 КБЖУ определён по фото:\n",
-        f"🔥 Калории: {total.get('kcal', 0):.0f} ккал",
-        f"💪 Белки: {total.get('protein', 0):.0f} г",
-        f"🥑 Жиры: {total.get('fat', 0):.0f} г",
-        f"🍩 Углеводы: {total.get('carbs', 0):.0f} г",
-    ]
+    # Показываем суммарные данные за день
+    daily_totals = MealRepository.get_daily_totals(user_id, entry_date)
+    lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    lines.append(
+        f"🔥 Калории: {daily_totals.get('calories', 0):.0f} ккал\n"
+        f"💪 Белки: {daily_totals.get('protein', 0):.1f} г\n"
+        f"🥑 Жиры: {daily_totals.get('fat', 0):.1f} г\n"
+        f"🍩 Углеводы: {daily_totals.get('carbs', 0):.1f} г"
+    )
     
     await state.clear()
     push_menu_stack(message.bot, kbju_after_meal_menu)
@@ -529,6 +574,9 @@ async def handle_label_photo(message: Message, state: FSMContext):
     else:
         entry_date = date.today()
     
+    # Показываем сообщение об анализе
+    await message.answer("📋 Анализирую этикетку с помощью ИИ, секунду... 🤖")
+    
     # Скачиваем фото
     photo = message.photo[-1]
     file = await message.bot.get_file(photo.file_id)
@@ -547,31 +595,66 @@ async def handle_label_photo(message: Message, state: FSMContext):
     
     kbju_per_100g = label_data["kbju_per_100g"]
     package_weight = label_data.get("package_weight")
+    found_weight = label_data.get("found_weight", False)
+    product_name = label_data.get("product_name", "Продукт")
     
-    # Если вес упаковки найден, используем его
-    if package_weight:
-        weight_grams = package_weight
-        await state.set_state(MealEntryStates.waiting_for_weight_input)
-        await state.update_data(
-            kbju_per_100g=kbju_per_100g,
-            weight_grams=weight_grams,
-            entry_date=entry_date.isoformat(),
-        )
-        await message.answer(
-            f"✅ Нашёл КБЖУ на этикетке!\n"
-            f"Вес упаковки: {weight_grams} г\n\n"
-            f"Сколько грамм ты съел(а)? (или нажми /skip чтобы использовать весь вес упаковки)"
-        )
+    # Безопасное преобразование значений
+    def safe_float(value) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+    
+    kcal_100g = safe_float(kbju_per_100g.get("kcal"))
+    protein_100g = safe_float(kbju_per_100g.get("protein"))
+    fat_100g = safe_float(kbju_per_100g.get("fat"))
+    carbs_100g = safe_float(kbju_per_100g.get("carbs"))
+    
+    # Сохраняем данные в FSM для дальнейшего использования
+    await state.set_state(MealEntryStates.waiting_for_weight_input)
+    await state.update_data(
+        kbju_per_100g=kbju_per_100g,
+        product_name=product_name,
+        entry_date=entry_date.isoformat(),
+    )
+    
+    # Формируем сообщение в зависимости от того, найден ли вес
+    if found_weight and package_weight is not None:
+        weight = safe_float(package_weight)
+        if weight > 0:
+            await message.answer(
+                f"✅ Нашёл КБЖУ на этикетке!\n\n"
+                f"📦 Продукт: {product_name}\n"
+                f"📊 КБЖУ на 100 г:\n"
+                f"🔥 Калории: {kcal_100g:.0f} ккал\n"
+                f"💪 Белки: {protein_100g:.1f} г\n"
+                f"🥑 Жиры: {fat_100g:.1f} г\n"
+                f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
+                f"📦 В упаковке {weight:.0f} г, сколько Вы съели?"
+            )
+        else:
+            await message.answer(
+                f"✅ Нашёл КБЖУ на этикетке!\n\n"
+                f"📦 Продукт: {product_name}\n"
+                f"📊 КБЖУ на 100 г:\n"
+                f"🔥 Калории: {kcal_100g:.0f} ккал\n"
+                f"💪 Белки: {protein_100g:.1f} г\n"
+                f"🥑 Жиры: {fat_100g:.1f} г\n"
+                f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
+                f"❓ Вес в упаковке не найден, сколько вы съели?"
+            )
     else:
-        # Спрашиваем вес
-        await state.set_state(MealEntryStates.waiting_for_weight_input)
-        await state.update_data(
-            kbju_per_100g=kbju_per_100g,
-            entry_date=entry_date.isoformat(),
-        )
         await message.answer(
-            "✅ Нашёл КБЖУ на этикетке!\n\n"
-            "Сколько грамм ты съел(а)?"
+            f"✅ Нашёл КБЖУ на этикетке!\n\n"
+            f"📦 Продукт: {product_name}\n"
+            f"📊 КБЖУ на 100 г:\n"
+            f"🔥 Калории: {kcal_100g:.0f} ккал\n"
+            f"💪 Белки: {protein_100g:.1f} г\n"
+            f"🥑 Жиры: {fat_100g:.1f} г\n"
+            f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
+            f"❓ Вес в упаковке не найден, сколько вы съели?"
         )
 
 
@@ -593,6 +676,9 @@ async def handle_barcode_photo(message: Message, state: FSMContext):
     else:
         entry_date = date.today()
     
+    # Показываем сообщение о распознавании
+    await message.answer("📷 Распознаю штрих-код, секунду... 🤖")
+    
     # Скачиваем фото
     photo = message.photo[-1]
     file = await message.bot.get_file(photo.file_id)
@@ -604,80 +690,94 @@ async def handle_barcode_photo(message: Message, state: FSMContext):
     
     if not barcode:
         await message.answer(
-            "⚠️ Не удалось распознать штрих-код.\n"
-            "Попробуй сделать фото более чётким."
+            "Не удалось распознать штрих-код на фото 😔\n\n"
+            "Попробуй сделать фото ещё раз:\n"
+            "• Убедись, что штрих-код хорошо виден\n"
+            "• Сделай фото при хорошем освещении\n"
+            "• Штрих-код должен быть в фокусе\n\n"
+            "Или используй другие способы добавления КБЖУ."
         )
         return
+    
+    await message.answer(f"✅ Штрих-код распознан: {barcode}\n\n🔍 Ищу информацию о продукте...")
     
     # Получаем данные из Open Food Facts
     product_data = nutrition_service.get_product_from_openfoodfacts(barcode)
     
-    if not product_data or "nutriments" not in product_data:
+    if not product_data:
         await message.answer(
-            f"⚠️ Не нашёл продукт со штрих-кодом {barcode} в базе Open Food Facts.\n"
-            "Попробуй использовать другой способ добавления."
+            f"❌ Продукт со штрих-кодом {barcode} не найден в базе Open Food Facts.\n\n"
+            "Попробуй другой способ добавления КБЖУ или используй фото этикетки."
         )
+        await state.clear()
         return
     
-    nutriments = product_data["nutriments"]
+    # Формируем информацию о продукте
     product_name = product_data.get("name", "Неизвестный продукт")
+    brand = product_data.get("brand", "")
+    nutriments = product_data.get("nutriments", {})
+    weight = product_data.get("weight")
+    
+    def safe_float(value) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
     
     # КБЖУ на 100г
-    kcal_per_100g = nutriments.get("kcal", 0)
-    protein_per_100g = nutriments.get("protein", 0)
-    fat_per_100g = nutriments.get("fat", 0)
-    carbs_per_100g = nutriments.get("carbs", 0)
+    kcal_100g = safe_float(nutriments.get("kcal", 0))
+    protein_100g = safe_float(nutriments.get("protein", 0))
+    fat_100g = safe_float(nutriments.get("fat", 0))
+    carbs_100g = safe_float(nutriments.get("carbs", 0))
     
-    # Если есть вес упаковки, используем его
-    package_weight = product_data.get("weight")
-    
-    if package_weight:
-        weight_grams = package_weight
-        # Рассчитываем КБЖУ для всего веса
-        ratio = weight_grams / 100.0
-        calories = kcal_per_100g * ratio
-        protein = protein_per_100g * ratio
-        fat = fat_per_100g * ratio
-        carbs = carbs_per_100g * ratio
-        
-        # Сохраняем
-        MealRepository.save_meal(
-            user_id=user_id,
-            raw_query=f"[Штрих-код: {barcode}] {product_name}",
-            calories=calories,
-            protein=protein,
-            fat=fat,
-            carbs=carbs,
-            entry_date=entry_date,
+    # Проверяем, есть ли хотя бы какое-то КБЖУ
+    if not (kcal_100g or protein_100g or fat_100g or carbs_100g):
+        await message.answer(
+            f"❌ В базе Open Food Facts нет информации о КБЖУ для продукта со штрих-кодом {barcode}.\n\n"
+            "Попробуй использовать фото этикетки или другие способы добавления КБЖУ."
         )
-        
         await state.clear()
-        push_menu_stack(message.bot, kbju_after_meal_menu)
-        await message.answer(
-            f"✅ Продукт найден: {product_name}\n"
-            f"Вес: {weight_grams} г\n\n"
-            f"🔥 Калории: {calories:.0f} ккал\n"
-            f"💪 Белки: {protein:.0f} г\n"
-            f"🥑 Жиры: {fat:.0f} г\n"
-            f"🍩 Углеводы: {carbs:.0f} г",
-            reply_markup=kbju_after_meal_menu,
-        )
+        return
+    
+    # Сохраняем данные в FSM для дальнейшего использования
+    await state.set_state(MealEntryStates.waiting_for_weight_input)
+    await state.update_data(
+        kbju_per_100g={
+            "kcal": kcal_100g,
+            "protein": protein_100g,
+            "fat": fat_100g,
+            "carbs": carbs_100g,
+        },
+        product_name=product_name,
+        barcode=barcode,
+        entry_date=entry_date.isoformat(),
+    )
+    
+    # Формируем сообщение с информацией о продукте
+    text_parts = [f"✅ Нашёл продукт в базе Open Food Facts!\n\n"]
+    text_parts.append(f"📦 Продукт: <b>{product_name}</b>\n")
+    
+    if brand:
+        text_parts.append(f"🏷 Бренд: {brand}\n")
+    
+    text_parts.append(f"🔢 Штрих-код: {barcode}\n")
+    text_parts.append(f"\n📊 КБЖУ на 100 г:\n")
+    text_parts.append(f"🔥 Калории: {kcal_100g:.0f} ккал\n")
+    text_parts.append(f"💪 Белки: {protein_100g:.1f} г\n")
+    text_parts.append(f"🥑 Жиры: {fat_100g:.1f} г\n")
+    text_parts.append(f"🍩 Углеводы: {carbs_100g:.1f} г\n")
+    
+    # Если есть вес упаковки в базе, упоминаем его, но все равно спрашиваем
+    if weight:
+        text_parts.append(f"\n📦 В базе указан вес упаковки: {weight} г\n")
+        text_parts.append(f"Сколько грамм вы съели? (можно ввести {weight} или другое значение)")
     else:
-        # Спрашиваем вес
-        await state.set_state(MealEntryStates.waiting_for_weight_input)
-        await state.update_data(
-            product_name=product_name,
-            barcode=barcode,
-            kcal_per_100g=kcal_per_100g,
-            protein_per_100g=protein_per_100g,
-            fat_per_100g=fat_per_100g,
-            carbs_per_100g=carbs_per_100g,
-            entry_date=entry_date.isoformat(),
-        )
-        await message.answer(
-            f"✅ Продукт найден: {product_name}\n\n"
-            "Сколько грамм ты съел(а)?"
-        )
+        text_parts.append(f"\n❓ Сколько грамм вы съели?")
+    
+    push_menu_stack(message.bot, kbju_add_menu)
+    await message.answer("".join(text_parts), reply_markup=kbju_add_menu, parse_mode="HTML")
 
 
 @router.message(MealEntryStates.waiting_for_weight_input)
@@ -691,7 +791,7 @@ async def handle_weight_input(message: Message, state: FSMContext):
         if weight_grams <= 0:
             raise ValueError
     except (ValueError, AttributeError):
-        await message.answer("⚠️ Введи число больше нуля (например: 100 или 150.5)")
+        await message.answer("Вес должен быть больше нуля. Введи правильное число (например: 50 или 100):")
         return
     
     entry_date_str = data.get("entry_date")
@@ -707,48 +807,91 @@ async def handle_weight_input(message: Message, state: FSMContext):
     else:
         entry_date = date.today()
     
-    # Проверяем, откуда пришёл запрос (этикетка или штрих-код)
-    if "kbju_per_100g" in data:
-        # Этикетка
-        kbju_per_100g = data["kbju_per_100g"]
-        ratio = weight_grams / 100.0
-        calories = kbju_per_100g.get("kcal", 0) * ratio
-        protein = kbju_per_100g.get("protein", 0) * ratio
-        fat = kbju_per_100g.get("fat", 0) * ratio
-        carbs = kbju_per_100g.get("carbs", 0) * ratio
-        raw_query = "[Этикетка]"
+    # Безопасное преобразование значений
+    def safe_float(value) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+    
+    # Пересчитываем пропорционально указанному весу
+    multiplier = weight_grams / 100.0
+    
+    # Определяем источник (этикетка или штрих-код)
+    kbju_per_100g = data.get("kbju_per_100g")
+    product_name = data.get("product_name", "Продукт")
+    barcode = data.get("barcode")
+    
+    if kbju_per_100g:
+        # Этикетка или штрих-код (оба используют kbju_per_100g)
+        kcal_100g = safe_float(kbju_per_100g.get("kcal"))
+        protein_100g = safe_float(kbju_per_100g.get("protein"))
+        fat_100g = safe_float(kbju_per_100g.get("fat"))
+        carbs_100g = safe_float(kbju_per_100g.get("carbs"))
+        
+        totals_for_db = {
+            "calories": kcal_100g * multiplier,
+            "protein": protein_100g * multiplier,
+            "fat": fat_100g * multiplier,
+            "carbs": carbs_100g * multiplier,
+        }
+        
+        # Определяем источник по наличию barcode
+        if barcode:
+            lines = [f"📷 Сканирование штрих-кода: {product_name}\n"]
+            raw_query = f"[Штрих-код: {barcode}]"
+        else:
+            lines = [f"📋 Анализ этикетки: {product_name}\n"]
+            raw_query = f"[Этикетка: {product_name}]"
     else:
-        # Штрих-код
+        # Старый формат (для обратной совместимости)
         ratio = weight_grams / 100.0
-        calories = data.get("kcal_per_100g", 0) * ratio
-        protein = data.get("protein_per_100g", 0) * ratio
-        fat = data.get("fat_per_100g", 0) * ratio
-        carbs = data.get("carbs_per_100g", 0) * ratio
+        totals_for_db = {
+            "calories": safe_float(data.get("kcal_per_100g", 0)) * ratio,
+            "protein": safe_float(data.get("protein_per_100g", 0)) * ratio,
+            "fat": safe_float(data.get("fat_per_100g", 0)) * ratio,
+            "carbs": safe_float(data.get("carbs_per_100g", 0)) * ratio,
+        }
         product_name = data.get("product_name", "Продукт")
         barcode = data.get("barcode", "")
-        raw_query = f"[Штрих-код: {barcode}] {product_name}"
+        lines = [f"📷 Сканирование штрих-кода: {product_name}\n"]
+        raw_query = f"[Штрих-код: {barcode}]"
     
-    # Сохраняем
+    lines.append(f"📦 Вес: {weight_grams:.0f} г\n")
+    lines.append("КБЖУ:")
+    lines.append(
+        f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals_for_db['protein']:.1f} г\n"
+        f"🥑 Жиры: {totals_for_db['fat']:.1f} г\n"
+        f"🍩 Углеводы: {totals_for_db['carbs']:.1f} г"
+    )
+    
+    # Сохраняем в БД
     MealRepository.save_meal(
         user_id=user_id,
         raw_query=raw_query,
-        calories=calories,
-        protein=protein,
-        fat=fat,
-        carbs=carbs,
+        calories=totals_for_db["calories"],
+        protein=totals_for_db["protein"],
+        fat=totals_for_db["fat"],
+        carbs=totals_for_db["carbs"],
         entry_date=entry_date,
+    )
+    
+    # Показываем суммарные данные за день
+    daily_totals = MealRepository.get_daily_totals(user_id, entry_date)
+    lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    lines.append(
+        f"🔥 Калории: {daily_totals.get('calories', 0):.0f} ккал\n"
+        f"💪 Белки: {daily_totals.get('protein', 0):.1f} г\n"
+        f"🥑 Жиры: {daily_totals.get('fat', 0):.1f} г\n"
+        f"🍩 Углеводы: {daily_totals.get('carbs', 0):.1f} г"
     )
     
     await state.clear()
     push_menu_stack(message.bot, kbju_after_meal_menu)
-    await message.answer(
-        f"✅ Сохранено ({weight_grams:.0f} г):\n"
-        f"🔥 Калории: {calories:.0f} ккал\n"
-        f"💪 Белки: {protein:.0f} г\n"
-        f"🥑 Жиры: {fat:.0f} г\n"
-        f"🍩 Углеводы: {carbs:.0f} г",
-        reply_markup=kbju_after_meal_menu,
-    )
+    await message.answer("\n".join(lines), reply_markup=kbju_after_meal_menu)
 
 
 @router.message(lambda m: m.text == "📊 Дневной отчёт")
