@@ -31,16 +31,6 @@ def get_water_recommended(user_id: str) -> float:
     return 2000.0
 
 
-def build_water_progress_bar(current: float, target: float, length: int = 10) -> str:
-    """Строит прогресс-бар для воды."""
-    if target <= 0:
-        return "░" * length
-    
-    filled = int((current / target) * length)
-    filled = min(filled, length)
-    return "█" * filled + "░" * (length - filled)
-
-
 @router.message(lambda m: m.text == "💧 Контроль воды")
 async def water(message: Message):
     """Показывает меню контроля воды."""

@@ -13,9 +13,26 @@ router = Router()
 @router.message(lambda m: m.text == "🏠 Главное меню")
 async def go_main_menu(message: Message):
     """Обработчик кнопки 'Главное меню'."""
-    logger.info(f"User {message.from_user.id} navigated to main menu")
+    from datetime import date
+    from utils.progress_formatters import (
+        format_progress_block,
+        format_water_progress_block,
+        format_today_workouts_block,
+    )
+    
+    user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} navigated to main menu")
+    
+    # Формируем сообщение с прогрессом
+    progress_text = format_progress_block(user_id)
+    water_progress_text = format_water_progress_block(user_id)
+    workouts_text = format_today_workouts_block(user_id, include_date=False)
+    today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
+    
+    welcome_text = f"{today_line}\n\n{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
+    
     push_menu_stack(message.bot, main_menu)
-    await message.answer("🏠 Главное меню", reply_markup=main_menu)
+    await message.answer(welcome_text, reply_markup=main_menu, parse_mode="HTML")
 
 
 @router.message(lambda m: m.text == "⬅️ Назад")

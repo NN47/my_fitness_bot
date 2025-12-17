@@ -71,6 +71,52 @@ async def calories(message: Message):
     )
 
 
+@router.message(lambda m: m.text == "🎯 Цель / Норма КБЖУ")
+async def show_kbju_goal(message: Message, state: FSMContext):
+    """Показывает текущую цель КБЖУ или предлагает пройти тест."""
+    user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} opened KBJU goal settings")
+    
+    # Получаем текущие настройки
+    settings = MealRepository.get_kbju_settings(user_id)
+    
+    if settings:
+        # Показываем текущие настройки
+        goal_labels = {
+            "loss": "📉 Похудение",
+            "maintain": "⚖️ Поддержание веса",
+            "gain": "💪 Набор массы"
+        }
+        goal_label = goal_labels.get(settings.get("goal"), "Не указана")
+        
+        from utils.formatters import format_kbju_goal_text
+        text = format_kbju_goal_text(
+            settings.get("calories"),
+            settings.get("protein"),
+            settings.get("fat"),
+            settings.get("carbs"),
+            goal_label
+        )
+        text += "\n\n💡 Хочешь изменить цель? Нажми кнопку ниже, чтобы пройти тест заново."
+        
+        push_menu_stack(message.bot, kbju_menu)
+        await message.answer(text, parse_mode="HTML", reply_markup=kbju_menu)
+    else:
+        # Предлагаем пройти тест
+        from utils.keyboards import kbju_gender_menu
+        from states.user_states import KbjuTestStates
+        
+        await state.clear()
+        await state.set_state(KbjuTestStates.entering_gender)
+        
+        push_menu_stack(message.bot, kbju_gender_menu)
+        await message.answer(
+            "Окей, пройдём небольшой тест 💪\n\n"
+            "Для начала — укажи пол:",
+            reply_markup=kbju_gender_menu,
+        )
+
+
 @router.message(lambda m: m.text == "➕ Добавить")
 async def calories_add(message: Message, state: FSMContext):
     """Начинает процесс добавления приёма пищи."""
