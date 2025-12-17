@@ -3,6 +3,7 @@ import logging
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from utils.keyboards import main_menu, push_menu_stack
 
 logger = logging.getLogger(__name__)
@@ -11,7 +12,7 @@ router = Router()
 
 
 @router.message(lambda m: m.text == "🏠 Главное меню")
-async def go_main_menu(message: Message):
+async def go_main_menu(message: Message, state: FSMContext):
     """Обработчик кнопки 'Главное меню'."""
     from datetime import date
     from utils.progress_formatters import (
@@ -22,6 +23,9 @@ async def go_main_menu(message: Message):
     
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} navigated to main menu")
+    
+    # Очищаем FSM состояние
+    await state.clear()
     
     # Формируем сообщение с прогрессом
     progress_text = format_progress_block(user_id)
@@ -36,9 +40,10 @@ async def go_main_menu(message: Message):
 
 
 @router.message(lambda m: m.text == "⬅️ Назад")
-async def go_back(message: Message):
+async def go_back(message: Message, state: FSMContext):
     """Обработчик кнопки 'Назад' - возвращает в главное меню."""
     logger.info(f"User {message.from_user.id} pressed back button")
+    await state.clear()  # Очищаем FSM состояние
     push_menu_stack(message.bot, main_menu)
     await message.answer("🏠 Главное меню", reply_markup=main_menu)
 

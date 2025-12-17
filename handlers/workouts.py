@@ -38,10 +38,11 @@ def reset_user_state(message: Message, *, keep_supplements: bool = False):
 
 
 @router.message(lambda m: m.text == "🏋️ Тренировка")
-async def show_training_menu(message: Message):
+async def show_training_menu(message: Message, state: FSMContext):
     """Показывает меню тренировок."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened training menu")
+    await state.clear()  # Очищаем FSM состояние
     
     # Показываем прогресс тренировок
     from utils.progress_formatters import format_today_workouts_block

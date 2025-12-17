@@ -54,10 +54,11 @@ def translate_text(text: str, source_lang: str = "ru", target_lang: str = "en") 
 
 
 @router.message(lambda m: m.text == "🍱 КБЖУ")
-async def calories(message: Message):
+async def calories(message: Message, state: FSMContext):
     """Показывает меню КБЖУ."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened KBJU menu")
+    await state.clear()  # Очищаем FSM состояние
     
     # Показываем прогресс КБЖУ
     from utils.progress_formatters import format_progress_block

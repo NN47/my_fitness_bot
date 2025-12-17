@@ -2,6 +2,7 @@
 import logging
 from aiogram import Router
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.fsm.context import FSMContext
 from utils.keyboards import settings_menu, delete_account_confirm_menu, push_menu_stack, main_menu_button
 from database.session import get_db_session
 
@@ -47,9 +48,10 @@ def delete_user_account(user_id: str) -> bool:
 
 
 @router.message(lambda m: m.text == "⚙️ Настройки")
-async def settings(message: Message):
+async def settings(message: Message, state: FSMContext):
     """Показывает меню настроек."""
     reset_user_state(message)
+    await state.clear()  # Очищаем FSM состояние
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened settings")
     
