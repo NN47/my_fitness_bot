@@ -47,15 +47,31 @@ def format_today_meals(meals: list[Meal], daily_totals: dict, day_str: str) -> s
                 lines.append("🔍 <b>Результат:</b>")
                 for p in products:
                     name = p.get("name_ru") or p.get("name") or "продукт"
-                    cal = p.get("calories") or p.get("_calories") or 0
-                    prot = p.get("protein_g") or p.get("_protein_g") or 0
-                    fat = p.get("fat_total_g") or p.get("_fat_total_g") or 0
-                    carb = p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 0
                     
-                    lines.append(
-                        f"• {html.escape(name)} — {cal:.0f} ккал "
-                        f"(Б {prot:.1f} / Ж {fat:.1f} / У {carb:.1f})"
-                    )
+                    # Поддержка разных форматов данных (CalorieNinjas и Gemini API)
+                    # CalorieNinjas использует: _calories, _protein_g, _fat_total_g, _carbohydrates_total_g
+                    # Gemini API использует: kcal, protein, fat, carbs, grams
+                    cal = (p.get("calories") or p.get("_calories") or 
+                           p.get("kcal") or 0)
+                    prot = (p.get("protein_g") or p.get("_protein_g") or 
+                            p.get("protein") or 0)
+                    fat = (p.get("fat_total_g") or p.get("_fat_total_g") or 
+                           p.get("fat") or 0)
+                    carb = (p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 
+                            p.get("carbs") or 0)
+                    
+                    # Если есть вес, показываем его
+                    grams = p.get("grams") or p.get("weight")
+                    if grams:
+                        lines.append(
+                            f"• {html.escape(name)} ({grams:.0f} г) — {cal:.0f} ккал "
+                            f"(Б {prot:.1f} / Ж {fat:.1f} / У {carb:.1f})"
+                        )
+                    else:
+                        lines.append(
+                            f"• {html.escape(name)} — {cal:.0f} ккал "
+                            f"(Б {prot:.1f} / Ж {fat:.1f} / У {carb:.1f})"
+                        )
             else:
                 # Старый вариант без products_json
                 lines.append(
