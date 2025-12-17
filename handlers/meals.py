@@ -279,7 +279,7 @@ async def handle_food_input(message: Message, state: FSMContext):
     api_details = "\n".join(api_details_lines)
     
     # Сохраняем в БД
-    MealRepository.save_meal(
+    saved_meal = MealRepository.save_meal(
         user_id=user_id,
         raw_query=user_text,
         calories=float(totals['calories']),
@@ -290,6 +290,11 @@ async def handle_food_input(message: Message, state: FSMContext):
         api_details=api_details,
         products_json=json.dumps(items),
     )
+    
+    # Сохраняем ID последнего приёма для редактирования
+    if not hasattr(message.bot, "last_meal_ids"):
+        message.bot.last_meal_ids = {}
+    message.bot.last_meal_ids[user_id] = saved_meal.id
     
     # Показываем суммарные данные за день
     daily_totals = MealRepository.get_daily_totals(user_id, entry_date)
@@ -386,7 +391,7 @@ async def handle_ai_food_input(message: Message, state: FSMContext):
     )
     
     # Сохраняем в БД
-    MealRepository.save_meal(
+    saved_meal = MealRepository.save_meal(
         user_id=user_id,
         raw_query=user_text,
         calories=totals_for_db["calories"],
@@ -396,6 +401,11 @@ async def handle_ai_food_input(message: Message, state: FSMContext):
         entry_date=entry_date,
         products_json=json.dumps(items),
     )
+    
+    # Сохраняем ID последнего приёма для редактирования
+    if not hasattr(message.bot, "last_meal_ids"):
+        message.bot.last_meal_ids = {}
+    message.bot.last_meal_ids[user_id] = saved_meal.id
     
     # Показываем суммарные данные за день
     daily_totals = MealRepository.get_daily_totals(user_id, entry_date)
@@ -530,7 +540,7 @@ async def handle_photo_input(message: Message, state: FSMContext):
     )
     
     # Сохраняем в БД
-    MealRepository.save_meal(
+    saved_meal = MealRepository.save_meal(
         user_id=user_id,
         raw_query="[Анализ по фото]",
         calories=totals_for_db["calories"],
@@ -540,6 +550,11 @@ async def handle_photo_input(message: Message, state: FSMContext):
         entry_date=entry_date,
         products_json=json.dumps(items),
     )
+    
+    # Сохраняем ID последнего приёма для редактирования
+    if not hasattr(message.bot, "last_meal_ids"):
+        message.bot.last_meal_ids = {}
+    message.bot.last_meal_ids[user_id] = saved_meal.id
     
     # Показываем суммарные данные за день
     daily_totals = MealRepository.get_daily_totals(user_id, entry_date)
@@ -869,7 +884,7 @@ async def handle_weight_input(message: Message, state: FSMContext):
     )
     
     # Сохраняем в БД
-    MealRepository.save_meal(
+    saved_meal = MealRepository.save_meal(
         user_id=user_id,
         raw_query=raw_query,
         calories=totals_for_db["calories"],
@@ -878,6 +893,11 @@ async def handle_weight_input(message: Message, state: FSMContext):
         carbs=totals_for_db["carbs"],
         entry_date=entry_date,
     )
+    
+    # Сохраняем ID последнего приёма для редактирования
+    if not hasattr(message.bot, "last_meal_ids"):
+        message.bot.last_meal_ids = {}
+    message.bot.last_meal_ids[user_id] = saved_meal.id
     
     # Показываем суммарные данные за день
     daily_totals = MealRepository.get_daily_totals(user_id, entry_date)
@@ -1016,6 +1036,71 @@ async def add_meal_from_calendar(callback: CallbackQuery, state: FSMContext):
 async def kbju_add_more_meal(message: Message, state: FSMContext):
     """Добавляет ещё один приём пищи."""
     await start_kbju_add_flow(message, date.today(), state)
+
+
+@router.message(F.text == "✏️ Редактировать")
+async def edit_last_meal(message: Message, state: FSMContext):
+    """Редактирует последний добавленный приём пищи."""
+    user_id = str(message.from_user.id)
+    
+    # Получаем ID последнего приёма
+    if not hasattr(message.bot, "last_meal_ids"):
+        message.bot.last_meal_ids = {}
+    
+    last_meal_id = message.bot.last_meal_ids.get(user_id)
+    if not last_meal_id:
+        await message.answer(
+            "❌ Не найден последний приём пищи для редактирования.\n"
+            "Попробуй добавить приём пищи, а затем отредактировать его."
+        )
+        return
+    
+    # Получаем приём пищи
+    meal = MealRepository.get_meal_by_id(last_meal_id, user_id)
+    if not meal:
+        await message.answer("❌ Не нашёл запись для изменения.")
+        return
+    
+    # Извлекаем продукты из products_json
+    products = []
+    if meal.products_json:
+        try:
+            products = json.loads(meal.products_json)
+        except Exception:
+            pass
+    
+    if not products:
+        await message.answer(
+            "❌ Не удалось извлечь список продуктов из этой записи.\n"
+            "Попробуй удалить и создать запись заново."
+        )
+        return
+    
+    # Сохраняем данные в FSM для редактирования
+    await state.set_state(MealEntryStates.editing_meal)
+    await state.update_data(
+        meal_id=last_meal_id,
+        target_date=meal.date.isoformat(),
+        saved_products=products,
+    )
+    
+    # Формируем список продуктов для редактирования
+    edit_lines = ["✏️ Редактирование приёма пищи\n\nТекущий состав:"]
+    for i, p in enumerate(products, 1):
+        name = p.get("name") or "продукт"
+        grams = p.get("grams", 0)
+        edit_lines.append(f"{i}. {name}, {grams:.0f} г")
+    
+    edit_lines.append("\nВведи новый состав в формате:")
+    edit_lines.append("название, вес г")
+    edit_lines.append("название, вес г")
+    edit_lines.append("\nПример:")
+    edit_lines.append("курица, 200 г")
+    edit_lines.append("рис, 150 г")
+    edit_lines.append("\nМожно изменить название и/или вес. КБЖУ пересчитается автоматически.")
+    
+    push_menu_stack(message.bot, kbju_after_meal_menu)
+    await message.answer("\n".join(edit_lines), reply_markup=kbju_after_meal_menu)
 
 
 @router.callback_query(lambda c: c.data.startswith("meal_edit:"))

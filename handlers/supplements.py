@@ -552,6 +552,11 @@ async def save_supplement(message: Message, state: FSMContext):
     supplement_id = data.get("supplement_id")
     # Если это создание новой добавки - не обрабатываем здесь
     if supplement_id is None:
+        # Проверяем, не в режиме ли выбора дней (тест создания)
+        if data.get("is_test_creation") or await state.get_state() == SupplementStates.selecting_days:
+            # Это обрабатывается в toggle_day
+            return
+        # Иначе просто игнорируем
         return
     
     name = data.get("name", "").strip()
