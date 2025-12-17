@@ -3,24 +3,91 @@ import json
 import logging
 from typing import Optional
 from google import genai
-from config import GEMINI_API_KEY
+from google.genai import errors as genai_errors
+from config import GEMINI_API_KEY, GEMINI_API_KEY2
 
 logger = logging.getLogger(__name__)
 
 
 class GeminiService:
-    """Сервис для работы с Gemini API."""
+    """Сервис для работы с Gemini API с поддержкой fallback ключей."""
     
     def __init__(self):
         if not GEMINI_API_KEY:
             raise RuntimeError("GEMINI_API_KEY не задан в конфигурации")
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        # Список ключей для переключения
+        self.api_keys = [GEMINI_API_KEY]
+        if GEMINI_API_KEY2:
+            self.api_keys.append(GEMINI_API_KEY2)
+            logger.info("✅ Резервный ключ Gemini API (GEMINI_API_KEY2) найден")
+        
+        self.current_key_index = 0
         self.model = "gemini-2.5-flash"
+        self.client = genai.Client(api_key=self.api_keys[self.current_key_index])
+    
+    def _is_quota_error(self, error: Exception) -> bool:
+        """Проверяет, является ли ошибка ошибкой квоты/лимита."""
+        error_str = str(error).lower()
+        error_type = type(error).__name__
+        
+        # Проверяем различные типы ошибок квоты
+        quota_indicators = [
+            "quota",
+            "rate limit",
+            "429",
+            "resource exhausted",
+            "too many requests",
+            "billing",
+            "permission denied",
+            "forbidden",
+            "403",
+        ]
+        
+        return any(indicator in error_str for indicator in quota_indicators) or \
+               error_type in ["ResourceExhausted", "RateLimitError", "QuotaExceeded"]
+    
+    def _switch_to_next_key(self):
+        """Переключается на следующий доступный ключ."""
+        if len(self.api_keys) <= 1:
+            logger.warning("⚠️ Нет резервных ключей для переключения")
+            return False
+        
+        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+        self.client = genai.Client(api_key=self.api_keys[self.current_key_index])
+        logger.warning(f"🔄 Переключился на резервный ключ Gemini API (ключ #{self.current_key_index + 1})")
+        return True
+    
+    def _make_request(self, func, *args, **kwargs):
+        """Выполняет запрос с автоматическим переключением ключей при ошибках квоты."""
+        max_attempts = len(self.api_keys)
+        last_error = None
+        
+        for attempt in range(max_attempts):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                last_error = e
+                
+                # Если это ошибка квоты и есть резервные ключи
+                if self._is_quota_error(e) and len(self.api_keys) > 1:
+                    logger.warning(f"⚠️ Ошибка квоты на ключе #{self.current_key_index + 1}: {e}")
+                    
+                    # Переключаемся на следующий ключ
+                    if self._switch_to_next_key():
+                        continue  # Пробуем снова с новым ключом
+                
+                # Если это не ошибка квоты или нет резервных ключей - пробрасываем ошибку
+                raise
+        
+        # Если все попытки исчерпаны
+        raise last_error
     
     def analyze(self, text: str) -> str:
         """Анализирует текст через Gemini."""
         try:
-            response = self.client.models.generate_content(
+            response = self._make_request(
+                self.client.models.generate_content,
                 model=self.model,
                 contents=text
             )
@@ -85,7 +152,8 @@ class GeminiService:
 Вот данные пользователя: "{food_text}"
 """
         try:
-            response = self.client.models.generate_content(
+            response = self._make_request(
+                self.client.models.generate_content,
                 model=self.model,
                 contents=prompt,
             )
@@ -173,7 +241,8 @@ class GeminiService:
             elif image_bytes.startswith(b'WEBP'):
                 mime_type = "image/webp"
             
-            response = self.client.models.generate_content(
+            response = self._make_request(
+                self.client.models.generate_content,
                 model=self.model,
                 contents=[
                     types.Part.from_bytes(
@@ -256,7 +325,8 @@ class GeminiService:
             elif image_bytes.startswith(b'WEBP'):
                 mime_type = "image/webp"
             
-            response = self.client.models.generate_content(
+            response = self._make_request(
+                self.client.models.generate_content,
                 model=self.model,
                 contents=[
                     types.Part.from_bytes(
@@ -316,7 +386,8 @@ class GeminiService:
             elif image_bytes.startswith(b'WEBP'):
                 mime_type = "image/webp"
             
-            response = self.client.models.generate_content(
+            response = self._make_request(
+                self.client.models.generate_content,
                 model=self.model,
                 contents=[
                     types.Part.from_bytes(
