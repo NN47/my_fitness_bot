@@ -329,6 +329,9 @@ async def handle_ai_food_input(message: Message, state: FSMContext):
     else:
         entry_date = date.today()
     
+    # Показываем сообщение об анализе
+    await message.answer("🤖 Считаю КБЖУ с помощью ИИ, секунду...")
+    
     # Получаем КБЖУ через Gemini
     kbju_data = gemini_service.estimate_kbju(user_text)
     
@@ -339,28 +342,70 @@ async def handle_ai_food_input(message: Message, state: FSMContext):
         )
         return
     
-    total = kbju_data["total"]
+    items = kbju_data.get("items", [])
+    total = kbju_data.get("total", {})
+    
+    # Безопасное преобразование значений
+    def safe_float(value) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+    
+    # Формируем детальный ответ
+    lines = ["🤖 Оценка по ИИ для этого приёма пищи:\n"]
+    
+    totals_for_db = {
+        "calories": safe_float(total.get("kcal")),
+        "protein": safe_float(total.get("protein")),
+        "fat": safe_float(total.get("fat")),
+        "carbs": safe_float(total.get("carbs")),
+    }
+    
+    # Показываем каждый продукт
+    for item in items:
+        name = item.get("name") or "продукт"
+        grams = safe_float(item.get("grams"))
+        cal = safe_float(item.get("kcal"))
+        p = safe_float(item.get("protein"))
+        f = safe_float(item.get("fat"))
+        c = safe_float(item.get("carbs"))
+        
+        lines.append(
+            f"• {name} ({grams:.0f} г) — {cal:.0f} ккал (Б {p:.1f} / Ж {f:.1f} / У {c:.1f})"
+        )
+    
+    lines.append("\nИТОГО:")
+    lines.append(
+        f"🔥 Калории: {totals_for_db['calories']:.0f} ккал\n"
+        f"💪 Белки: {totals_for_db['protein']:.1f} г\n"
+        f"🥑 Жиры: {totals_for_db['fat']:.1f} г\n"
+        f"🍩 Углеводы: {totals_for_db['carbs']:.1f} г"
+    )
     
     # Сохраняем в БД
     MealRepository.save_meal(
         user_id=user_id,
         raw_query=user_text,
-        calories=float(total.get("kcal", 0)),
-        protein=float(total.get("protein", 0)),
-        fat=float(total.get("fat", 0)),
-        carbs=float(total.get("carbs", 0)),
+        calories=totals_for_db["calories"],
+        protein=totals_for_db["protein"],
+        fat=totals_for_db["fat"],
+        carbs=totals_for_db["carbs"],
         entry_date=entry_date,
-        products_json=json.dumps(kbju_data.get("items", [])),
+        products_json=json.dumps(items),
     )
     
-    # Формируем ответ
-    lines = [
-        "🍱 КБЖУ определён с помощью ИИ:\n",
-        f"🔥 Калории: {total.get('kcal', 0):.0f} ккал",
-        f"💪 Белки: {total.get('protein', 0):.0f} г",
-        f"🥑 Жиры: {total.get('fat', 0):.0f} г",
-        f"🍩 Углеводы: {total.get('carbs', 0):.0f} г",
-    ]
+    # Показываем суммарные данные за день
+    daily_totals = MealRepository.get_daily_totals(user_id, entry_date)
+    lines.append("\nСУММА ЗА СЕГОДНЯ:")
+    lines.append(
+        f"🔥 Калории: {daily_totals.get('calories', 0):.0f} ккал\n"
+        f"💪 Белки: {daily_totals.get('protein', 0):.1f} г\n"
+        f"🥑 Жиры: {daily_totals.get('fat', 0):.1f} г\n"
+        f"🍩 Углеводы: {daily_totals.get('carbs', 0):.1f} г"
+    )
     
     await state.clear()
     push_menu_stack(message.bot, kbju_after_meal_menu)
