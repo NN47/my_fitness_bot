@@ -727,62 +727,97 @@ async def edit_days(message: Message, state: FSMContext):
 @router.message(SupplementStates.selecting_days)
 async def toggle_day(message: Message, state: FSMContext):
     """Переключает выбор дня."""
-    data = await state.get_data()
-    supplement_id = data.get("supplement_id")
+    user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} selecting days, input: {message.text}")
     
-    # Если это создание новой добавки (тест)
-    if supplement_id is None:
-        # Проверяем пропуск
-        if message.text == "⏭️ Пропустить":
-            await state.update_data(days=[])
-            # Переходим к следующему шагу - длительность
-            await state.set_state(SupplementStates.choosing_duration)
-            from utils.supplement_keyboards import supplement_test_skip_menu, duration_menu
-            push_menu_stack(message.bot, supplement_test_skip_menu())
-            await message.answer(
-                "⏭️ Дни пропущены\n\n"
-                "⏳ Шаг 4: Выбери длительность приёма добавки\n\n"
-                "Или нажми «⏭️ Пропустить», чтобы оставить «Постоянно».",
-                reply_markup=duration_menu(),
-            )
+    try:
+        data = await state.get_data()
+        supplement_id = data.get("supplement_id")
+        
+        # Если это создание новой добавки (тест)
+        if supplement_id is None:
+            # Проверяем пропуск
+            if message.text == "⏭️ Пропустить":
+                await state.update_data(days=[])
+                # Переходим к следующему шагу - длительность
+                await state.set_state(SupplementStates.choosing_duration)
+                from utils.supplement_keyboards import supplement_test_skip_menu, duration_menu
+                push_menu_stack(message.bot, supplement_test_skip_menu())
+                await message.answer(
+                    "⏭️ Дни пропущены\n\n"
+                    "⏳ Шаг 4: Выбери длительность приёма добавки\n\n"
+                    "Или нажми «⏭️ Пропустить», чтобы оставить «Постоянно».",
+                    reply_markup=duration_menu(),
+                )
+                return
+            
+            # Проверяем отмену
+            if message.text == "⬅️ Отменить" or message.text == "⬅️ Назад":
+                await state.clear()
+                await supplements(message)
+                return
+            
+            # Проверяем "Выбрать все"
+            if message.text == "Выбрать все":
+                await state.update_data(days=["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"])
+                data = await state.get_data()
+                from utils.supplement_keyboards import days_menu, supplement_test_skip_menu
+                push_menu_stack(message.bot, days_menu(data.get("days", [])))
+                await message.answer("✅ Все дни выбраны", reply_markup=days_menu(data.get("days", [])))
+                return
+            
+            # Проверяем "💾 Сохранить" - переход к следующему шагу
+            if message.text == "💾 Сохранить":
+                days = data.get("days", [])
+                # Переходим к следующему шагу - длительность
+                await state.set_state(SupplementStates.choosing_duration)
+                from utils.supplement_keyboards import supplement_test_skip_menu, duration_menu
+                push_menu_stack(message.bot, supplement_test_skip_menu())
+                days_text = ", ".join(days) if days else "не выбрано"
+                await message.answer(
+                    f"✅ Дни сохранены: {days_text}\n\n"
+                    "⏳ Шаг 4: Выбери длительность приёма добавки\n\n"
+                    "Или нажми «⏭️ Пропустить», чтобы оставить «Постоянно».",
+                    reply_markup=duration_menu(),
+                )
+                return
+            
+            # Обрабатываем выбор дня
+            day = message.text.replace("✅ ", "").strip()
+            if day not in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]:
+                # Если это не день, возможно это кнопка меню - игнорируем
+                logger.debug(f"User {message.from_user.id}: unrecognized day input in test mode: {message.text}")
+                return
+            
+            days = data.get("days", []).copy()
+            if day in days:
+                days.remove(day)
+            else:
+                days.append(day)
+            
+            await state.update_data(days=days)
+            from utils.supplement_keyboards import days_menu
+            push_menu_stack(message.bot, days_menu(days))
+            days_text = ", ".join(days) if days else "не выбрано"
+            await message.answer(f"✅ Дни обновлены: {days_text}", reply_markup=days_menu(days))
             return
         
-        # Проверяем отмену
-        if message.text == "⬅️ Отменить" or message.text == "⬅️ Назад":
-            await state.clear()
-            await supplements(message)
-            return
-        
-        # Проверяем "Выбрать все"
+        # Если это редактирование существующей добавки - старая логика
         if message.text == "Выбрать все":
             await state.update_data(days=["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"])
             data = await state.get_data()
-            from utils.supplement_keyboards import days_menu, supplement_test_skip_menu
+            from utils.supplement_keyboards import days_menu
             push_menu_stack(message.bot, days_menu(data.get("days", [])))
-            await message.answer("✅ Все дни выбраны", reply_markup=days_menu(data.get("days", [])))
+            await message.answer("Все дни выбраны", reply_markup=days_menu(data.get("days", [])))
             return
         
-        # Проверяем "💾 Сохранить" - переход к следующему шагу
-        if message.text == "💾 Сохранить":
-            days = data.get("days", [])
-            # Переходим к следующему шагу - длительность
-            await state.set_state(SupplementStates.choosing_duration)
-            from utils.supplement_keyboards import supplement_test_skip_menu, duration_menu
-            push_menu_stack(message.bot, supplement_test_skip_menu())
-            days_text = ", ".join(days) if days else "не выбрано"
-            await message.answer(
-                f"✅ Дни сохранены: {days_text}\n\n"
-                "⏳ Шаг 4: Выбери длительность приёма добавки\n\n"
-                "Или нажми «⏭️ Пропустить», чтобы оставить «Постоянно».",
-                reply_markup=duration_menu(),
-            )
-            return
-        
-        # Обрабатываем выбор дня
-        day = message.text.replace("✅ ", "")
+        day = message.text.replace("✅ ", "").strip()
         if day not in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]:
+            # Если это не день, возможно это кнопка меню - игнорируем
+            logger.debug(f"User {message.from_user.id}: unrecognized day input in edit mode: {message.text}")
             return
         
+        data = await state.get_data()
         days = data.get("days", []).copy()
         if day in days:
             days.remove(day)
@@ -792,32 +827,10 @@ async def toggle_day(message: Message, state: FSMContext):
         await state.update_data(days=days)
         from utils.supplement_keyboards import days_menu
         push_menu_stack(message.bot, days_menu(days))
-        days_text = ", ".join(days) if days else "не выбрано"
-        await message.answer(f"✅ Дни обновлены: {days_text}", reply_markup=days_menu(days))
-        return
-    
-    # Если это редактирование существующей добавки - старая логика
-    if message.text == "Выбрать все":
-        await state.update_data(days=["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"])
-        data = await state.get_data()
-        push_menu_stack(message.bot, days_menu(data.get("days", [])))
-        await message.answer("Все дни выбраны", reply_markup=days_menu(data.get("days", [])))
-        return
-    
-    day = message.text.replace("✅ ", "")
-    if day not in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]:
-        return
-    
-    data = await state.get_data()
-    days = data.get("days", []).copy()
-    if day in days:
-        days.remove(day)
-    else:
-        days.append(day)
-    
-    await state.update_data(days=days)
-    push_menu_stack(message.bot, days_menu(days))
-    await message.answer("Дни обновлены", reply_markup=days_menu(days))
+        await message.answer("Дни обновлены", reply_markup=days_menu(days))
+    except Exception as e:
+        logger.error(f"Error in toggle_day for user {user_id}: {e}", exc_info=True)
+        await message.answer("❌ Произошла ошибка. Попробуй ещё раз.")
 
 
 @router.message(lambda m: m.text == "⏳ Длительность приема")

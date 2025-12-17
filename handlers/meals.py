@@ -1198,13 +1198,30 @@ async def start_meal_edit(callback: CallbackQuery, state: FSMContext):
 async def handle_meal_edit_input(message: Message, state: FSMContext):
     """Обрабатывает ввод нового состава продуктов при редактировании."""
     user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} editing meal, input: {message.text[:50]}")
+    
     data = await state.get_data()
     meal_id = data.get("meal_id")
     target_date_str = data.get("target_date", date.today().isoformat())
     saved_products = data.get("saved_products", [])
     new_text = message.text.strip()
     
+    # Проверяем, не является ли это кнопкой меню
+    menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
+    if new_text in menu_buttons:
+        await state.clear()
+        if new_text == "⬅️ Назад":
+            from handlers.common import go_back
+            await go_back(message, state)
+        elif new_text == "🏠 Главное меню":
+            from handlers.common import go_main_menu
+            await go_main_menu(message, state)
+        else:
+            await message.answer("Редактирование отменено.")
+        return
+    
     if not meal_id:
+        logger.warning(f"User {user_id}: meal_id not found in FSM state")
         await message.answer("❌ Не получилось определить запись для обновления.")
         await state.clear()
         return
@@ -1214,6 +1231,7 @@ async def handle_meal_edit_input(message: Message, state: FSMContext):
         return
     
     if not saved_products:
+        logger.warning(f"User {user_id}: saved_products not found in FSM state")
         await message.answer(
             "❌ Не удалось найти сохраненные данные продуктов.\n"
             "Попробуй удалить и создать запись заново."
@@ -1222,19 +1240,24 @@ async def handle_meal_edit_input(message: Message, state: FSMContext):
         return
     
     # Парсим ввод пользователя: каждая строка = "название, вес г"
-    lines = [line.strip() for line in new_text.split("\n") if line.strip()]
-    edited_products = []
-    
-    for i, line in enumerate(lines):
-        # Парсим формат "название, вес г" или "название, вес"
-        match = re.match(r"(.+?),\s*(\d+(?:[.,]\d+)?)\s*г?", line, re.IGNORECASE)
-        if not match:
-            await message.answer(
-                f"❌ Неверный формат в строке {i+1}: {line}\n"
-                "Используй формат: название, вес г\n"
-                "Пример: курица, 200 г"
-            )
+    try:
+        lines = [line.strip() for line in new_text.split("\n") if line.strip()]
+        if not lines:
+            await message.answer("Напиши новый состав продуктов в формате: название, вес г")
             return
+        
+        edited_products = []
+        
+        for i, line in enumerate(lines):
+            # Парсим формат "название, вес г" или "название, вес"
+            match = re.match(r"(.+?),\s*(\d+(?:[.,]\d+)?)\s*г?", line, re.IGNORECASE)
+            if not match:
+                await message.answer(
+                    f"❌ Неверный формат в строке {i+1}: {line}\n"
+                    "Используй формат: название, вес г\n"
+                    "Пример: курица, 200 г"
+                )
+                return
         
         name = match.group(1).strip()
         grams_str = match.group(2).replace(",", ".")
@@ -1264,69 +1287,78 @@ async def handle_meal_edit_input(message: Message, state: FSMContext):
             fat_per_100g = (original_product.get("fat_total_g", 0) / orig_grams) * 100
             carbs_per_100g = (original_product.get("carbohydrates_total_g", 0) / orig_grams) * 100
         
-        # Пересчитываем КБЖУ для нового веса
-        new_calories = (calories_per_100g * grams) / 100
-        new_protein = (protein_per_100g * grams) / 100
-        new_fat = (fat_per_100g * grams) / 100
-        new_carbs = (carbs_per_100g * grams) / 100
+            # Пересчитываем КБЖУ для нового веса
+            new_calories = (calories_per_100g * grams) / 100
+            new_protein = (protein_per_100g * grams) / 100
+            new_fat = (fat_per_100g * grams) / 100
+            new_carbs = (carbs_per_100g * grams) / 100
+            
+            edited_products.append({
+                "name": name,
+                "grams": grams,
+                "calories": new_calories,
+                "protein_g": new_protein,
+                "fat_total_g": new_fat,
+                "carbohydrates_total_g": new_carbs,
+            })
         
-        edited_products.append({
-            "name": name,
-            "grams": grams,
-            "calories": new_calories,
-            "protein_g": new_protein,
-            "fat_total_g": new_fat,
-            "carbohydrates_total_g": new_carbs,
-        })
-    
-    # Суммируем КБЖУ всех продуктов
-    totals = {
-        "calories": sum(p["calories"] for p in edited_products),
-        "protein_g": sum(p["protein_g"] for p in edited_products),
-        "fat_total_g": sum(p["fat_total_g"] for p in edited_products),
-        "carbohydrates_total_g": sum(p["carbohydrates_total_g"] for p in edited_products),
-    }
-    
-    # Формируем api_details
-    api_details_lines = []
-    for p in edited_products:
-        api_details_lines.append(
-            f"• {p['name']} ({p['grams']:.0f} г) — {p['calories']:.0f} ккал "
-            f"(Б {p['protein_g']:.1f} / Ж {p['fat_total_g']:.1f} / У {p['carbohydrates_total_g']:.1f})"
+        # Суммируем КБЖУ всех продуктов
+        totals = {
+            "calories": sum(p["calories"] for p in edited_products),
+            "protein_g": sum(p["protein_g"] for p in edited_products),
+            "fat_total_g": sum(p["fat_total_g"] for p in edited_products),
+            "carbohydrates_total_g": sum(p["carbohydrates_total_g"] for p in edited_products),
+        }
+        
+        # Формируем api_details
+        api_details_lines = []
+        for p in edited_products:
+            api_details_lines.append(
+                f"• {p['name']} ({p['grams']:.0f} г) — {p['calories']:.0f} ккал "
+                f"(Б {p['protein_g']:.1f} / Ж {p['fat_total_g']:.1f} / У {p['carbohydrates_total_g']:.1f})"
+            )
+        api_details = "\n".join(api_details_lines) if api_details_lines else None
+        
+        # Обновляем запись
+        success = MealRepository.update_meal(
+            meal_id=meal_id,
+            user_id=user_id,
+            description=new_text,
+            calories=totals["calories"],
+            protein=totals["protein_g"],
+            fat=totals["fat_total_g"],
+            carbs=totals["carbohydrates_total_g"],
+            products_json=json.dumps(edited_products),
+            api_details=api_details,
         )
-    api_details = "\n".join(api_details_lines) if api_details_lines else None
-    
-    # Обновляем запись
-    success = MealRepository.update_meal(
-        meal_id=meal_id,
-        user_id=user_id,
-        description=new_text,
-        calories=totals["calories"],
-        protein=totals["protein_g"],
-        fat=totals["fat_total_g"],
-        carbs=totals["carbohydrates_total_g"],
-        products_json=json.dumps(edited_products),
-        api_details=api_details,
-    )
-    
-    if not success:
-        await message.answer("❌ Не нашёл запись для обновления.")
+        
+        if not success:
+            logger.error(f"User {user_id}: Failed to update meal {meal_id}")
+            await message.answer("❌ Не нашёл запись для обновления.")
+            await state.clear()
+            return
+        
         await state.clear()
-        return
-    
-    await state.clear()
-    
-    # Показываем обновлённый день
-    if isinstance(target_date_str, str):
-        try:
-            target_date = date.fromisoformat(target_date_str)
-        except ValueError:
+        
+        # Показываем обновлённый день
+        if isinstance(target_date_str, str):
+            try:
+                target_date = date.fromisoformat(target_date_str)
+            except ValueError:
+                target_date = date.today()
+        else:
             target_date = date.today()
-    else:
-        target_date = date.today()
-    
-    await message.answer("✅ Приём пищи обновлён!")
-    await show_day_meals(message, user_id, target_date)
+        
+        await message.answer("✅ Приём пищи обновлён!")
+        await show_day_meals(message, user_id, target_date)
+        
+    except Exception as e:
+        logger.error(f"Error in handle_meal_edit_input for user {user_id}: {e}", exc_info=True)
+        await message.answer(
+            "❌ Произошла ошибка при обработке данных.\n"
+            "Попробуй ещё раз или удали и создай запись заново."
+        )
+        await state.clear()
 
 
 @router.callback_query(lambda c: c.data.startswith("meal_del:"))
