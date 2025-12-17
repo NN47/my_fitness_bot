@@ -90,14 +90,14 @@ async def show_kbju_goal(message: Message, state: FSMContext):
             "maintain": "⚖️ Поддержание веса",
             "gain": "💪 Набор массы"
         }
-        goal_label = goal_labels.get(settings.get("goal"), "Не указана")
+        goal_label = goal_labels.get(settings.goal, "Не указана")
         
         from utils.formatters import format_kbju_goal_text
         text = format_kbju_goal_text(
-            settings.get("calories"),
-            settings.get("protein"),
-            settings.get("fat"),
-            settings.get("carbs"),
+            settings.calories,
+            settings.protein,
+            settings.fat,
+            settings.carbs,
             goal_label
         )
         text += "\n\n💡 Хочешь изменить цель? Нажми кнопку ниже, чтобы пройти тест заново."
