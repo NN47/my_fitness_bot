@@ -101,7 +101,7 @@ async def show_kbju_goal(message: Message, state: FSMContext):
             settings.carbs,
             goal_label
         )
-        text += "\n\n💡 Хочешь изменить цель? Нажми кнопку ниже, чтобы пройти тест заново."
+        text += "\n\n💡 Хочешь изменить цель? Нажми «✅ Пройти быстрый тест КБЖУ» в меню КБЖУ."
         
         push_menu_stack(message.bot, kbju_menu)
         await message.answer(text, parse_mode="HTML", reply_markup=kbju_menu)

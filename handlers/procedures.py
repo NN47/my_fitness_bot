@@ -20,8 +20,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 procedures_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить процедуру")],
-        [KeyboardButton(text="📆 Календарь процедур")],
         [KeyboardButton(text="📊 Сегодня")],
+        [KeyboardButton(text="📆 Календарь процедур")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,

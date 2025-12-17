@@ -133,7 +133,8 @@ async def handle_supplement_name(message: Message, state: FSMContext):
         return
     
     await state.update_data(name=name)
-    data = await state.get_data()
+    # Переходим в состояние редактирования, чтобы кнопки работали
+    await state.set_state(SupplementStates.editing_supplement)
     
     push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
     await message.answer(
