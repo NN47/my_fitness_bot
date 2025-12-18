@@ -45,7 +45,8 @@ def estimate_met_for_exercise(exercise: str) -> float:
         "Гиперэкстензия с утяжелителем": 4.0,
     }
     
-    return met_values.get(exercise, 3.0)  # По умолчанию 3.0
+    # Старая логика: только точные соответствия, иначе дефолт 3.0
+    return met_values.get(exercise, 3.0)
 
 
 def calculate_workout_calories(
@@ -55,29 +56,38 @@ def calculate_workout_calories(
     count: int,
 ) -> float:
     """
-    Вычисляет примерные калории, сожжённые на тренировке.
-    
-    Формула: калории = MET × вес (кг) × время (часы)
-    
-    Для упражнений с повторениями используется приблизительная оценка.
+    Вычисляет примерные калории, сожжённые на тренировке (старая формула).
+
+    Старая формула из проекта:
+    калории = MET × вес(кг) × время(часы)
+
+    - Если variant указывает на секунды/минуты — переводим в часы и считаем по времени.
+    - Иначе (включая шаги и повторы) — старая грубая оценка по количеству:
+      duration_hours = (count / 100) * 0.1  (≈ 0.1 часа на 100 повторений/условных единиц)
     """
     weight = WeightRepository.get_last_weight(user_id) or 70.0
     met = estimate_met_for_exercise(exercise)
-    
-    # Если вариант - время (сек, мин), считаем по времени
-    if variant in ("сек", "мин"):
-        if variant == "сек":
-            duration_hours = count / 3600
-        else:  # мин
-            duration_hours = count / 60
-        calories = met * weight * duration_hours
-    else:
-        # Для повторений используем приблизительную оценку
-        # Примерно 0.1 часа на 100 повторений
-        duration_hours = (count / 100) * 0.1
-        calories = met * weight * duration_hours
-    
-    return max(calories, 0.0)
+
+    try:
+        value = float(count or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+
+    v = (variant or "").strip().lower()
+
+    # Время: секунды
+    if v in {"сек", "сек.", "секунды", "seconds", "second", "seconds."} or (variant == "Секунды"):
+        duration_hours = value / 3600.0
+        return max(met * weight * duration_hours, 0.0)
+
+    # Время: минуты
+    if v in {"мин", "мин.", "минуты", "minutes", "minute", "minutes."} or (variant == "Минуты"):
+        duration_hours = value / 60.0
+        return max(met * weight * duration_hours, 0.0)
+
+    # Всё остальное (повторы / шаги / иные варианты)
+    duration_hours = (value / 100.0) * 0.1
+    return max(met * weight * duration_hours, 0.0)
 
 
 def get_daily_workout_calories(user_id: str, entry_date) -> float:
