@@ -543,20 +543,15 @@ async def mark_supplement_from_details(message: Message, state: FSMContext):
     )
 
 
-@router.message(lambda m: m.text == "💾 Сохранить")
+@router.message(SupplementStates.editing_supplement, lambda m: m.text == "💾 Сохранить")
 async def save_supplement(message: Message, state: FSMContext):
-    """Сохраняет добавку (только для редактирования)."""
+    """Сохраняет добавку (только для редактирования существующей)."""
     user_id = str(message.from_user.id)
     data = await state.get_data()
     
     supplement_id = data.get("supplement_id")
-    # Если это создание новой добавки - не обрабатываем здесь
     if supplement_id is None:
-        # Проверяем, не в режиме ли выбора дней (тест создания)
-        if data.get("is_test_creation") or await state.get_state() == SupplementStates.selecting_days:
-            # Это обрабатывается в toggle_day
-            return
-        # Иначе просто игнорируем
+        # На всякий случай: в режиме создания/теста сохранение обрабатывается другими шагами
         return
     
     name = data.get("name", "").strip()
@@ -668,7 +663,23 @@ async def handle_time_value(message: Message, state: FSMContext):
         return
     
     # Если это редактирование существующей добавки - старая логика
-    menu_buttons = ["⬅️ Назад", "💾 Сохранить", "➕ Добавить"]
+    # "💾 Сохранить" в режиме редактирования времени означает "готово" и возврат в меню редактирования,
+    # а не сохранение в БД (это делается отдельной кнопкой в меню редактирования добавки).
+    if text == "💾 Сохранить":
+        await state.set_state(SupplementStates.editing_supplement)
+        data = await state.get_data()
+        push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
+        await message.answer(
+            "✅ Время сохранено.\n\n"
+            f"💊 {data.get('name', 'Добавка')}\n"
+            f"⏰ Время: {', '.join(data.get('times', [])) or 'не выбрано'}\n"
+            f"📅 Дни: {', '.join(data.get('days', [])) or 'не выбрано'}\n"
+            f"⏳ Длительность: {data.get('duration', 'постоянно')}",
+            reply_markup=supplement_edit_menu(show_save=True),
+        )
+        return
+    
+    menu_buttons = ["⬅️ Назад", "➕ Добавить"]
     if any(text.startswith(btn) for btn in menu_buttons) or text.startswith("❌"):
         if text.startswith("❌"):
             # Удаление времени
@@ -803,6 +814,21 @@ async def toggle_day(message: Message, state: FSMContext):
             return
         
         # Если это редактирование существующей добавки - старая логика
+        if message.text == "💾 Сохранить":
+            # В режиме редактирования дней "Сохранить" = завершить выбор и вернуться в меню редактирования
+            await state.set_state(SupplementStates.editing_supplement)
+            data = await state.get_data()
+            push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
+            await message.answer(
+                "✅ Дни сохранены.\n\n"
+                f"💊 {data.get('name', 'Добавка')}\n"
+                f"⏰ Время: {', '.join(data.get('times', [])) or 'не выбрано'}\n"
+                f"📅 Дни: {', '.join(data.get('days', [])) or 'не выбрано'}\n"
+                f"⏳ Длительность: {data.get('duration', 'постоянно')}",
+                reply_markup=supplement_edit_menu(show_save=True),
+            )
+            return
+        
         if message.text == "Выбрать все":
             await state.update_data(days=["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"])
             data = await state.get_data()
@@ -924,6 +950,7 @@ async def handle_duration_or_notifications(message: Message, state: FSMContext):
             return
         
         # Если это редактирование - показываем меню редактирования
+        await state.set_state(SupplementStates.editing_supplement)
         push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
         await message.answer(
             f"Длительность установлена: {message.text}\n\n"
