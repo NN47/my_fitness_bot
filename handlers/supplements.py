@@ -182,10 +182,10 @@ async def log_supplement_intake(message: Message, state: FSMContext):
     supplements_list = SupplementRepository.get_supplements(user_id)
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "🏠 Главное меню"]
+    menu_buttons = ["⬅️ Назад", "⬅️ Отменить", "🏠 Главное меню"]
     if message.text in menu_buttons:
         await state.clear()
-        if message.text == "⬅️ Назад":
+        if message.text == "⬅️ Назад" or message.text == "⬅️ Отменить":
             await supplements(message)
         return
     
@@ -218,6 +218,12 @@ async def log_supplement_intake(message: Message, state: FSMContext):
 @router.message(SupplementStates.choosing_date_for_intake)
 async def handle_intake_date_choice(message: Message, state: FSMContext):
     """Обрабатывает выбор даты для приёма добавки."""
+    # Проверяем кнопки отмены/назад
+    if message.text == "⬅️ Отменить" or message.text == "⬅️ Назад":
+        await state.clear()
+        await supplements(message)
+        return
+    
     if message.text == "📅 Сегодня":
         target_date = date.today()
     elif message.text == "📅 Вчера":
@@ -255,6 +261,12 @@ async def handle_intake_date_choice(message: Message, state: FSMContext):
 @router.message(SupplementStates.entering_history_time)
 async def handle_history_time(message: Message, state: FSMContext):
     """Обрабатывает ввод времени приёма добавки."""
+    # Проверяем кнопки отмены/назад
+    if message.text == "⬅️ Отменить" or message.text == "⬅️ Назад":
+        await state.clear()
+        await supplements(message)
+        return
+    
     time_text = message.text.strip()
     if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", time_text):
         await message.answer("Пожалуйста, укажи время в формате ЧЧ:ММ (например, 08:15)")
@@ -284,6 +296,12 @@ async def handle_history_time(message: Message, state: FSMContext):
 @router.message(SupplementStates.entering_history_amount)
 async def handle_history_amount(message: Message, state: FSMContext):
     """Обрабатывает ввод количества добавки и сохраняет запись."""
+    # Проверяем кнопки отмены/назад
+    if message.text == "⬅️ Отменить" or message.text == "⬅️ Назад":
+        await state.clear()
+        await supplements(message)
+        return
+    
     user_id = str(message.from_user.id)
     amount = parse_supplement_amount(message.text)
     

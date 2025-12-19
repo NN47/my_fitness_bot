@@ -166,11 +166,25 @@ async def handle_weight_input(message: Message, state: FSMContext):
     """Обрабатывает ввод веса."""
     user_id = str(message.from_user.id)
     
+    # Сначала проверяем, не дата ли это (если пользователь ввёл дату вручную)
+    data = await state.get_data()
+    entry_date_str = data.get("entry_date")
+    
+    # Если дата ещё не установлена, проверяем, не ввёл ли пользователь дату
+    if not entry_date_str:
+        parsed = parse_date(message.text)
+        if parsed:
+            target_date = parsed.date() if isinstance(parsed, datetime) else date.today()
+            await state.update_data(entry_date=target_date.isoformat())
+            await message.answer(f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\nВведи свой вес в килограммах (например: 72.5):")
+            return
+    
     weight_value = parse_weight(message.text)
     if weight_value is None or weight_value <= 0:
         await message.answer("⚠️ Введи положительное число (например: 72.5 или 72,5)")
         return
     
+    # Получаем дату из состояния (обновляем data на случай, если дата была установлена выше)
     data = await state.get_data()
     entry_date_str = data.get("entry_date", date.today().isoformat())
     
