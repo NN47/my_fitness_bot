@@ -392,8 +392,28 @@ async def handle_count_input(message: Message, state: FSMContext):
     # Обработка ответа на вопрос "добавить еще подход?"
     if message.text == "✅ Да, добавить еще подход":
         # Остаемся в том же состоянии, просто просим ввести количество
+        # Явно убеждаемся, что состояние установлено правильно и данные сохранены
         data = await state.get_data()
         exercise = data.get("exercise")
+        variant = data.get("variant")
+        entry_date_str = data.get("entry_date")
+        
+        if not exercise or not variant:
+            logger.error(f"User {user_id}: missing exercise or variant when adding another set. Data: {data}")
+            await message.answer("❌ Ошибка: данные потеряны. Начни добавление тренировки заново.")
+            await state.clear()
+            push_menu_stack(message.bot, training_menu)
+            await message.answer("Выбери действие:", reply_markup=training_menu)
+            return
+        
+        # Явно сохраняем данные обратно в state (на случай, если они потерялись)
+        await state.update_data(
+            exercise=exercise,
+            variant=variant,
+            entry_date=entry_date_str or date.today().isoformat(),
+        )
+        await state.set_state(WorkoutStates.entering_count)
+        
         await message.answer(f"Введи количество повторений для {exercise}:")
         return
     
@@ -416,6 +436,15 @@ async def handle_count_input(message: Message, state: FSMContext):
     exercise = data.get("exercise")
     variant = data.get("variant")
     entry_date_str = data.get("entry_date", date.today().isoformat())
+    
+    # Проверяем, что данные есть
+    if not exercise or not variant:
+        logger.error(f"User {user_id}: missing exercise or variant in state. Data: {data}")
+        await message.answer("❌ Ошибка: данные потеряны. Начни добавление тренировки заново.")
+        await state.clear()
+        push_menu_stack(message.bot, training_menu)
+        await message.answer("Выбери действие:", reply_markup=training_menu)
+        return
     
     if isinstance(entry_date_str, str):
         try:
@@ -475,10 +504,10 @@ async def handle_count_input(message: Message, state: FSMContext):
             f"📊 {formatted_count}\n"
             f"🔥 ~{calories:.0f} ккал\n"
             f"📅 {date_label}\n\n"
-            f"Всего {exercise} за {date_label}: {total_formatted}",
+            f"Всего {exercise} за {date_label}: {total_formatted}\n\n"
+            f"Хотите ввести еще подход?",
             reply_markup=add_another_set_menu,
         )
-        await message.answer("Хотите ввести еще подход?")
 
 
 @router.message(lambda m: m.text == "✏️ Ввести вручную")
