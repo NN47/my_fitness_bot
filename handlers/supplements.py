@@ -400,19 +400,14 @@ async def show_supplement_details(message: Message, sup: dict, index: int):
     await message.answer("\n".join(lines), reply_markup=supplement_details_menu())
 
 
-@router.message(SupplementStates.viewing_history)
+@router.message(
+    SupplementStates.viewing_history,
+    ~F.text.in_(["✏️ Редактировать добавку", "🗑 Удалить добавку", "✅ Отметить добавку", "⬅️ Назад", "🏠 Главное меню"])
+)
 async def choose_supplement_for_view(message: Message, state: FSMContext):
     """Обрабатывает выбор добавки для просмотра."""
     user_id = str(message.from_user.id)
     supplements_list = SupplementRepository.get_supplements(user_id)
-    
-    # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "🏠 Главное меню"]
-    if message.text in menu_buttons:
-        await state.clear()
-        if message.text == "⬅️ Назад":
-            await supplements_list_view(message, state)
-        return
     
     # Ищем добавку по имени (с учетом пробелов и регистра)
     message_text = message.text.strip()
@@ -1387,10 +1382,11 @@ async def cancel_supplement(message: Message, state: FSMContext):
 
 
 @router.message(lambda m: m.text == "📅 Календарь добавок")
-async def show_supplement_calendar_menu(message: Message):
+async def show_supplement_calendar_menu(message: Message, state: FSMContext):
     """Показывает календарь добавок."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened supplement calendar")
+    await state.clear()  # Очищаем состояние при открытии календаря
     await show_supplement_calendar(message, user_id)
 
 
