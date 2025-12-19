@@ -441,8 +441,13 @@ async def choose_supplement_for_view(message: Message, state: FSMContext):
         )
         return
     
-    await state.update_data(viewing_index=target_index)
-    await show_supplement_details(message, supplements_list[target_index], target_index)
+    selected_supplement = supplements_list[target_index]
+    # Сохраняем и индекс, и ID добавки для надежности
+    await state.update_data(
+        viewing_index=target_index,
+        viewing_supplement_id=selected_supplement.get("id")
+    )
+    await show_supplement_details(message, selected_supplement, target_index)
     await state.set_state(SupplementStates.viewing_history)  # Сохраняем состояние просмотра
 
 
@@ -455,9 +460,18 @@ async def edit_supplement_start(message: Message, state: FSMContext):
     # Проверяем, есть ли текущий просмотр
     data = await state.get_data()
     viewing_index = data.get("viewing_index")
+    supplement_id = data.get("viewing_supplement_id")
     
-    if viewing_index is not None and 0 <= viewing_index < len(supplements_list):
+    # Сначала пытаемся использовать ID, если он есть
+    selected = None
+    if supplement_id:
+        selected = next((s for s in supplements_list if s.get("id") == supplement_id), None)
+    
+    # Если не нашли по ID, используем индекс
+    if not selected and viewing_index is not None and 0 <= viewing_index < len(supplements_list):
         selected = supplements_list[viewing_index]
+    
+    if selected:
         await state.update_data(
             supplement_id=selected.get("id"),
             name=selected.get("name", ""),
@@ -585,24 +599,39 @@ async def delete_supplement(message: Message, state: FSMContext):
     
     data = await state.get_data()
     viewing_index = data.get("viewing_index")
+    supplement_id = data.get("viewing_supplement_id")
     
-    if viewing_index is None or viewing_index >= len(supplements_list):
-        await message.answer("Сначала выбери добавку в списке 'Мои добавки'.")
-        return
-    
-    target = supplements_list[viewing_index]
-    supplement_id = target.get("id")
-    
+    # Сначала пытаемся использовать ID, если он есть
     if supplement_id:
-        success = SupplementRepository.delete_supplement(user_id, supplement_id)
-        if success:
-            await message.answer(f"🗑 Добавка {target.get('name', 'без названия')} удалена.")
-            await state.clear()
-            await supplements_list_view(message, state)
+        # Проверяем, что добавка с таким ID существует
+        target = next((s for s in supplements_list if s.get("id") == supplement_id), None)
+        if target:
+            success = SupplementRepository.delete_supplement(user_id, supplement_id)
+            if success:
+                await message.answer(f"🗑 Добавка {target.get('name', 'без названия')} удалена.")
+                await state.clear()
+                await supplements_list_view(message, state)
+            else:
+                await message.answer("❌ Не удалось удалить добавку. Попробуйте позже.")
+            return
+    
+    # Если ID нет, используем индекс (для обратной совместимости)
+    if viewing_index is not None and viewing_index < len(supplements_list):
+        target = supplements_list[viewing_index]
+        supplement_id = target.get("id")
+        
+        if supplement_id:
+            success = SupplementRepository.delete_supplement(user_id, supplement_id)
+            if success:
+                await message.answer(f"🗑 Добавка {target.get('name', 'без названия')} удалена.")
+                await state.clear()
+                await supplements_list_view(message, state)
+            else:
+                await message.answer("❌ Не удалось удалить добавку. Попробуйте позже.")
         else:
-            await message.answer("❌ Не удалось удалить добавку. Попробуйте позже.")
+            await message.answer("❌ Не найдена добавка для удаления.")
     else:
-        await message.answer("❌ Не найдена добавка для удаления.")
+        await message.answer("Сначала выбери добавку в списке 'Мои добавки'.")
 
 
 @router.message(lambda m: m.text == "✅ Отметить добавку")
@@ -613,8 +642,18 @@ async def mark_supplement_from_details(message: Message, state: FSMContext):
     
     data = await state.get_data()
     viewing_index = data.get("viewing_index")
+    supplement_id = data.get("viewing_supplement_id")
     
-    if viewing_index is None or viewing_index >= len(supplements_list):
+    # Сначала пытаемся использовать ID, если он есть
+    target = None
+    if supplement_id:
+        target = next((s for s in supplements_list if s.get("id") == supplement_id), None)
+    
+    # Если не нашли по ID, используем индекс
+    if not target and viewing_index is not None and viewing_index < len(supplements_list):
+        target = supplements_list[viewing_index]
+    
+    if not target:
         push_menu_stack(message.bot, supplements_main_menu(has_items=bool(supplements_list)))
         await message.answer(
             "Сначала выбери добавку в списке 'Мои добавки'.",
@@ -622,7 +661,6 @@ async def mark_supplement_from_details(message: Message, state: FSMContext):
         )
         return
     
-    target = supplements_list[viewing_index]
     await state.update_data(supplement_name=target.get("name", ""), supplement_id=target.get("id"))
     await state.set_state(SupplementStates.choosing_date_for_intake)
     
