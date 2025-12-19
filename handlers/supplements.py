@@ -602,6 +602,7 @@ async def delete_supplement(message: Message, state: FSMContext):
     supplement_id = data.get("viewing_supplement_id")
     
     # Сначала пытаемся использовать ID, если он есть
+    target = None
     if supplement_id:
         # Проверяем, что добавка с таким ID существует
         target = next((s for s in supplements_list if s.get("id") == supplement_id), None)
@@ -615,8 +616,8 @@ async def delete_supplement(message: Message, state: FSMContext):
                 await message.answer("❌ Не удалось удалить добавку. Попробуйте позже.")
             return
     
-    # Если ID нет, используем индекс (для обратной совместимости)
-    if viewing_index is not None and viewing_index < len(supplements_list):
+    # Если не нашли по ID, пытаемся использовать индекс (для обратной совместимости)
+    if not target and viewing_index is not None and viewing_index < len(supplements_list):
         target = supplements_list[viewing_index]
         supplement_id = target.get("id")
         
@@ -628,10 +629,15 @@ async def delete_supplement(message: Message, state: FSMContext):
                 await supplements_list_view(message, state)
             else:
                 await message.answer("❌ Не удалось удалить добавку. Попробуйте позже.")
+            return
         else:
             await message.answer("❌ Не найдена добавка для удаления.")
-    else:
-        await message.answer("Сначала выбери добавку в списке 'Мои добавки'.")
+            return
+    
+    # Если не нашли добавку ни по ID, ни по индексу
+    if not target:
+        await message.answer("❌ Не нашёл такую добавку. Выбери добавку из списка 'Мои добавки'.")
+        await supplements_list_view(message, state)
 
 
 @router.message(lambda m: m.text == "✅ Отметить добавку")
