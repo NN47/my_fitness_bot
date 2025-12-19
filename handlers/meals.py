@@ -1258,40 +1258,96 @@ async def handle_meal_edit_input(message: Message, state: FSMContext):
                     "Пример: курица, 200 г"
                 )
                 return
-        
-        name = match.group(1).strip()
-        grams_str = match.group(2).replace(",", ".")
-        grams = float(grams_str)
-        
-        # Находим соответствующий продукт из сохраненных
-        if i < len(saved_products):
-            original_product = saved_products[i]
-        else:
-            original_product = saved_products[-1] if saved_products else None
-        
-        if not original_product:
-            await message.answer("❌ Ошибка: не найдены исходные данные продукта.")
-            return
-        
-        # Получаем КБЖУ на 100г
-        calories_per_100g = original_product.get("calories_per_100g")
-        protein_per_100g = original_product.get("protein_per_100g")
-        fat_per_100g = original_product.get("fat_per_100g")
-        carbs_per_100g = original_product.get("carbs_per_100g")
-        
-        # Если нет значений на 100г, вычисляем из сохраненных данных
-        if not calories_per_100g and original_product.get("grams", 0) > 0:
-            orig_grams = original_product.get("grams", 1)
-            calories_per_100g = (original_product.get("calories", 0) / orig_grams) * 100
-            protein_per_100g = (original_product.get("protein_g", 0) / orig_grams) * 100
-            fat_per_100g = (original_product.get("fat_total_g", 0) / orig_grams) * 100
-            carbs_per_100g = (original_product.get("carbohydrates_total_g", 0) / orig_grams) * 100
-        
-            # Пересчитываем КБЖУ для нового веса
-            new_calories = (calories_per_100g * grams) / 100
-            new_protein = (protein_per_100g * grams) / 100
-            new_fat = (fat_per_100g * grams) / 100
-            new_carbs = (carbs_per_100g * grams) / 100
+            
+            name = match.group(1).strip()
+            grams_str = match.group(2).replace(",", ".")
+            grams = float(grams_str)
+            
+            # Определяем, является ли продукт новым или существующим
+            is_new_product = i >= len(saved_products)
+            original_product = saved_products[i] if not is_new_product else None
+            
+            # Проверяем, изменилось ли название продукта
+            name_changed = False
+            if original_product:
+                original_name = original_product.get("name", "").strip().lower()
+                name_changed = original_name != name.lower()
+            
+            # Пытаемся получить КБЖУ из сохраненных данных, если продукт существует и название не изменилось
+            calories_per_100g = None
+            protein_per_100g = None
+            fat_per_100g = None
+            carbs_per_100g = None
+            
+            if original_product and not name_changed:
+                # Получаем КБЖУ на 100г из сохраненных данных
+                calories_per_100g = original_product.get("calories_per_100g")
+                protein_per_100g = original_product.get("protein_per_100g")
+                fat_per_100g = original_product.get("fat_per_100g")
+                carbs_per_100g = original_product.get("carbs_per_100g")
+                
+                # Если нет значений на 100г, вычисляем из сохраненных данных
+                if not calories_per_100g or calories_per_100g == 0:
+                    orig_grams = original_product.get("grams", 0)
+                    if orig_grams > 0:
+                        orig_calories = original_product.get("calories", 0) or 0
+                        orig_protein = original_product.get("protein_g", 0) or 0
+                        orig_fat = original_product.get("fat_total_g", 0) or 0
+                        orig_carbs = original_product.get("carbohydrates_total_g", 0) or 0
+                        
+                        if orig_calories > 0:  # Только если есть валидные данные
+                            calories_per_100g = (orig_calories / orig_grams) * 100
+                            protein_per_100g = (orig_protein / orig_grams) * 100
+                            fat_per_100g = (orig_fat / orig_grams) * 100
+                            carbs_per_100g = (orig_carbs / orig_grams) * 100
+            
+            # Если продукт новый, название изменилось или данные некорректны, получаем КБЖУ через API
+            if is_new_product or name_changed or not calories_per_100g or calories_per_100g == 0:
+                try:
+                    # Получаем КБЖУ через API для нового продукта
+                    # Запрашиваем на 100г, чтобы получить значения на 100г
+                    query = f"{name} 100g"
+                    translated_query = translate_text(query, source_lang="ru", target_lang="en")
+                    logger.info(f"Getting nutrition for new/edited product: {translated_query}")
+                    
+                    items, _ = nutrition_service.get_nutrition_from_api(translated_query)
+                    
+                    if items:
+                        # Берем первый найденный продукт
+                        item = items[0]
+                        
+                        # API возвращает значения для указанного количества (100г в нашем случае)
+                        # Используем ключи с подчеркиванием, которые добавляет nutrition_service
+                        cal = float(item.get("_calories", 0.0))
+                        p = float(item.get("_protein_g", 0.0))
+                        f = float(item.get("_fat_total_g", 0.0))
+                        c = float(item.get("_carbohydrates_total_g", 0.0))
+                        
+                        # Так как мы запросили на 100г, эти значения уже на 100г
+                        calories_per_100g = cal
+                        protein_per_100g = p
+                        fat_per_100g = f
+                        carbs_per_100g = c
+                    else:
+                        logger.warning(f"API не вернул данные для продукта: {name}")
+                        # Используем нули, если API не вернул данные
+                        calories_per_100g = 0
+                        protein_per_100g = 0
+                        fat_per_100g = 0
+                        carbs_per_100g = 0
+                except Exception as e:
+                    logger.error(f"Error getting nutrition from API for {name}: {e}")
+                    # Если API не сработал, используем нули
+                    calories_per_100g = calories_per_100g or 0
+                    protein_per_100g = protein_per_100g or 0
+                    fat_per_100g = fat_per_100g or 0
+                    carbs_per_100g = carbs_per_100g or 0
+            
+            # Пересчитываем КБЖУ для указанного веса
+            new_calories = (calories_per_100g * grams) / 100 if calories_per_100g else 0
+            new_protein = (protein_per_100g * grams) / 100 if protein_per_100g else 0
+            new_fat = (fat_per_100g * grams) / 100 if fat_per_100g else 0
+            new_carbs = (carbs_per_100g * grams) / 100 if carbs_per_100g else 0
             
             edited_products.append({
                 "name": name,
@@ -1300,6 +1356,10 @@ async def handle_meal_edit_input(message: Message, state: FSMContext):
                 "protein_g": new_protein,
                 "fat_total_g": new_fat,
                 "carbohydrates_total_g": new_carbs,
+                "calories_per_100g": calories_per_100g,
+                "protein_per_100g": protein_per_100g,
+                "fat_per_100g": fat_per_100g,
+                "carbs_per_100g": carbs_per_100g,
             })
         
         # Суммируем КБЖУ всех продуктов
