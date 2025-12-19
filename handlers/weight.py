@@ -4,7 +4,7 @@ from datetime import date, timedelta, datetime
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from utils.keyboards import push_menu_stack, main_menu_button
+from utils.keyboards import push_menu_stack, main_menu_button, training_date_menu, other_day_menu
 from database.repositories import WeightRepository
 from states.user_states import WeightStates
 from utils.validators import parse_weight, parse_date
@@ -184,17 +184,22 @@ async def handle_weight_input(message: Message, state: FSMContext):
         entry_date = date.today()
     
     # Сохраняем вес
-    WeightRepository.save_weight(user_id, str(weight_value), entry_date)
-    logger.info(f"User {user_id} saved weight: {weight_value} kg on {entry_date}")
-    
-    await state.clear()
-    push_menu_stack(message.bot, weight_menu)
-    await message.answer(
-        f"✅ Вес сохранён!\n\n"
-        f"⚖️ {weight_value:.1f} кг\n"
-        f"📅 {entry_date.strftime('%d.%m.%Y')}",
-        reply_markup=weight_menu,
-    )
+    try:
+        WeightRepository.save_weight(user_id, str(weight_value), entry_date)
+        logger.info(f"User {user_id} saved weight: {weight_value} kg on {entry_date}")
+        
+        await state.clear()
+        push_menu_stack(message.bot, weight_menu)
+        await message.answer(
+            f"✅ Вес сохранён!\n\n"
+            f"⚖️ {weight_value:.1f} кг\n"
+            f"📅 {entry_date.strftime('%d.%m.%Y')}",
+            reply_markup=weight_menu,
+        )
+    except Exception as e:
+        logger.error(f"Error saving weight: {e}", exc_info=True)
+        await message.answer("⚠️ Ошибка при сохранении. Повтори попытку позже.")
+        await state.clear()
 
 
 @router.message(lambda m: m.text == "🗑 Удалить вес")

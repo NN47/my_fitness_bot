@@ -127,6 +127,12 @@ async def start_create_supplement(message: Message, state: FSMContext):
 @router.message(SupplementStates.entering_name)
 async def handle_supplement_name(message: Message, state: FSMContext):
     """Обрабатывает ввод названия добавки - начало теста."""
+    # Проверяем кнопку отмены
+    if message.text == "⬅️ Отменить" or message.text == "⬅️ Назад":
+        await state.clear()
+        await supplements(message)
+        return
+    
     name = message.text.strip()
     if not name:
         await message.answer("Название не может быть пустым. Введите название добавки.")
