@@ -796,8 +796,13 @@ async def toggle_day(message: Message, state: FSMContext):
             # Обрабатываем выбор дня
             day = message.text.replace("✅ ", "").strip()
             if day not in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]:
-                # Если это не день, возможно это кнопка меню - игнорируем
-                logger.debug(f"User {message.from_user.id}: unrecognized day input in test mode: {message.text}")
+                # Если это не день, показываем подсказку
+                from utils.supplement_keyboards import days_menu
+                current_days = data.get("days", [])
+                await message.answer(
+                    "Пожалуйста, выбери дни недели из меню или нажми «💾 Сохранить», чтобы продолжить.",
+                    reply_markup=days_menu(current_days),
+                )
                 return
             
             days = data.get("days", []).copy()
@@ -839,8 +844,13 @@ async def toggle_day(message: Message, state: FSMContext):
         
         day = message.text.replace("✅ ", "").strip()
         if day not in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]:
-            # Если это не день, возможно это кнопка меню - игнорируем
-            logger.debug(f"User {message.from_user.id}: unrecognized day input in edit mode: {message.text}")
+            # Если это не день, показываем подсказку
+            from utils.supplement_keyboards import days_menu
+            current_days = data.get("days", [])
+            await message.answer(
+                "Пожалуйста, выбери дни недели из меню или нажми «💾 Сохранить», чтобы вернуться к редактированию.",
+                reply_markup=days_menu(current_days),
+            )
             return
         
         data = await state.get_data()
@@ -925,6 +935,17 @@ async def handle_duration_or_notifications(message: Message, state: FSMContext):
             await state.update_data(notifications_enabled=False)
             await save_supplement_from_test(message, state)
             return
+        
+        # Если это неизвестное сообщение в режиме уведомлений
+        from utils.supplement_keyboards import supplement_test_notifications_menu
+        await message.answer(
+            "Пожалуйста, выбери один из вариантов:\n"
+            "✅ Включить - включить уведомления\n"
+            "❌ Выключить - выключить уведомления\n"
+            "⏭️ Пропустить - пропустить этот шаг",
+            reply_markup=supplement_test_notifications_menu(),
+        )
+        return
     
     # Если это режим выбора длительности
     # Проверяем отмену
@@ -961,44 +982,61 @@ async def handle_duration_or_notifications(message: Message, state: FSMContext):
             reply_markup=supplement_edit_menu(show_save=True),
         )
         return
+    
+    # Если это неизвестное сообщение в режиме выбора длительности
+    from utils.supplement_keyboards import duration_menu
+    await message.answer(
+        "Пожалуйста, выбери длительность приёма из меню:\n"
+        "• Постоянно\n"
+        "• 14 дней\n"
+        "• 30 дней\n\n"
+        "Или нажми «⏭️ Пропустить», чтобы оставить «Постоянно».",
+        reply_markup=duration_menu(),
+    )
 
 
 async def save_supplement_from_test(message: Message, state: FSMContext):
     """Сохраняет добавку после завершения теста."""
     user_id = str(message.from_user.id)
-    data = await state.get_data()
     
-    name = data.get("name", "").strip()
-    if not name:
-        await message.answer("❌ Ошибка: название добавки не указано.")
-        await state.clear()
-        return
-    
-    supplement_payload = {
-        "name": name,
-        "times": data.get("times", []),
-        "days": data.get("days", []),
-        "duration": data.get("duration", "постоянно"),
-        "notifications_enabled": data.get("notifications_enabled", False),
-    }
-    
-    saved_id = SupplementRepository.save_supplement(user_id, supplement_payload)
-    
-    if saved_id:
-        await state.clear()
-        notifications_status = "включены" if supplement_payload.get("notifications_enabled", False) else "выключены"
-        push_menu_stack(message.bot, supplements_main_menu(has_items=True))
-        await message.answer(
-            "✅ Добавка успешно создана!\n\n"
-            f"💊 {supplement_payload['name']}\n"
-            f"⏰ Время: {', '.join(supplement_payload['times']) or 'не указано'}\n"
-            f"📅 Дни: {', '.join(supplement_payload['days']) or 'не указано'}\n"
-            f"⏳ Длительность: {supplement_payload['duration']}\n"
-            f"🔔 Уведомления: {notifications_status}",
-            reply_markup=supplements_main_menu(has_items=True),
-        )
-    else:
-        await message.answer("❌ Не удалось сохранить добавку. Попробуйте позже.")
+    try:
+        data = await state.get_data()
+        
+        name = data.get("name", "").strip()
+        if not name:
+            await message.answer("❌ Ошибка: название добавки не указано.")
+            await state.clear()
+            return
+        
+        supplement_payload = {
+            "name": name,
+            "times": data.get("times", []),
+            "days": data.get("days", []),
+            "duration": data.get("duration", "постоянно"),
+            "notifications_enabled": data.get("notifications_enabled", False),
+        }
+        
+        saved_id = SupplementRepository.save_supplement(user_id, supplement_payload)
+        
+        if saved_id:
+            await state.clear()
+            notifications_status = "включены" if supplement_payload.get("notifications_enabled", False) else "выключены"
+            push_menu_stack(message.bot, supplements_main_menu(has_items=True))
+            await message.answer(
+                "✅ Добавка успешно создана!\n\n"
+                f"💊 {supplement_payload['name']}\n"
+                f"⏰ Время: {', '.join(supplement_payload['times']) or 'не указано'}\n"
+                f"📅 Дни: {', '.join(supplement_payload['days']) or 'не указано'}\n"
+                f"⏳ Длительность: {supplement_payload['duration']}\n"
+                f"🔔 Уведомления: {notifications_status}",
+                reply_markup=supplements_main_menu(has_items=True),
+            )
+        else:
+            await message.answer("❌ Не удалось сохранить добавку. Попробуйте позже.")
+            await state.clear()
+    except Exception as e:
+        logger.error(f"Error saving supplement from test for user {user_id}: {e}", exc_info=True)
+        await message.answer("❌ Произошла ошибка при сохранении добавки. Попробуйте позже.")
         await state.clear()
 
 

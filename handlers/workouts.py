@@ -414,7 +414,12 @@ async def handle_count_input(message: Message, state: FSMContext):
         )
         await state.set_state(WorkoutStates.entering_count)
         
-        await message.answer(f"Введи количество повторений для {exercise}:")
+        # Показываем клавиатуру для выбора количества
+        push_menu_stack(message.bot, count_menu)
+        await message.answer(
+            f"Введи количество повторений для {exercise}:",
+            reply_markup=count_menu
+        )
         return
     
     if message.text == "❌ Нет, завершить":

@@ -85,7 +85,16 @@ def calculate_workout_calories(
         duration_hours = value / 60.0
         return max(met * weight * duration_hours, 0.0)
 
-    # Всё остальное (повторы / шаги / иные варианты)
+    # Шаги: специальная формула на основе ориентира 16705 шагов = 634 ккал
+    if v in {"количество шагов", "шаги", "steps"} or (variant == "Количество шагов") or (exercise == "Шаги"):
+        # Формула: калории = шаги × (634 / 16705) × (вес / 70)
+        # 634 / 16705 ≈ 0.03796 ккал на шаг при весе 70 кг
+        base_calories_per_step = 634.0 / 16705.0  # ≈ 0.03796
+        base_weight = 70.0
+        calories = value * base_calories_per_step * (weight / base_weight)
+        return max(calories, 0.0)
+
+    # Всё остальное (повторы / иные варианты)
     duration_hours = (value / 100.0) * 0.1
     return max(met * weight * duration_hours, 0.0)
 
