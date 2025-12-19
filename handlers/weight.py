@@ -4,7 +4,7 @@ from datetime import date, timedelta, datetime
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from utils.keyboards import push_menu_stack, main_menu_button
+from utils.keyboards import push_menu_stack, main_menu_button, training_date_menu, other_day_menu
 from database.repositories import WeightRepository
 from states.user_states import WeightStates
 from utils.validators import parse_weight, parse_date
@@ -166,11 +166,25 @@ async def handle_weight_input(message: Message, state: FSMContext):
     """Обрабатывает ввод веса."""
     user_id = str(message.from_user.id)
     
+    # Сначала проверяем, не дата ли это (если пользователь ввёл дату вручную)
+    data = await state.get_data()
+    entry_date_str = data.get("entry_date")
+    
+    # Если дата ещё не установлена, проверяем, не ввёл ли пользователь дату
+    if not entry_date_str:
+        parsed = parse_date(message.text)
+        if parsed:
+            target_date = parsed.date() if isinstance(parsed, datetime) else date.today()
+            await state.update_data(entry_date=target_date.isoformat())
+            await message.answer(f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\nВведи свой вес в килограммах (например: 72.5):")
+            return
+    
     weight_value = parse_weight(message.text)
     if weight_value is None or weight_value <= 0:
         await message.answer("⚠️ Введи положительное число (например: 72.5 или 72,5)")
         return
     
+    # Получаем дату из состояния (обновляем data на случай, если дата была установлена выше)
     data = await state.get_data()
     entry_date_str = data.get("entry_date", date.today().isoformat())
     
@@ -184,17 +198,22 @@ async def handle_weight_input(message: Message, state: FSMContext):
         entry_date = date.today()
     
     # Сохраняем вес
-    WeightRepository.save_weight(user_id, str(weight_value), entry_date)
-    logger.info(f"User {user_id} saved weight: {weight_value} kg on {entry_date}")
-    
-    await state.clear()
-    push_menu_stack(message.bot, weight_menu)
-    await message.answer(
-        f"✅ Вес сохранён!\n\n"
-        f"⚖️ {weight_value:.1f} кг\n"
-        f"📅 {entry_date.strftime('%d.%m.%Y')}",
-        reply_markup=weight_menu,
-    )
+    try:
+        WeightRepository.save_weight(user_id, str(weight_value), entry_date)
+        logger.info(f"User {user_id} saved weight: {weight_value} kg on {entry_date}")
+        
+        await state.clear()
+        push_menu_stack(message.bot, weight_menu)
+        await message.answer(
+            f"✅ Вес сохранён!\n\n"
+            f"⚖️ {weight_value:.1f} кг\n"
+            f"📅 {entry_date.strftime('%d.%m.%Y')}",
+            reply_markup=weight_menu,
+        )
+    except Exception as e:
+        logger.error(f"Error saving weight: {e}", exc_info=True)
+        await message.answer("⚠️ Ошибка при сохранении. Повтори попытку позже.")
+        await state.clear()
 
 
 @router.message(lambda m: m.text == "🗑 Удалить вес")
