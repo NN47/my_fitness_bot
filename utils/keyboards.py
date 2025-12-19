@@ -261,6 +261,15 @@ activity_analysis_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+# Меню для добавления еще подхода
+add_another_set_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="✅ Да, добавить еще подход")],
+        [KeyboardButton(text="❌ Нет, завершить")],
+    ],
+    resize_keyboard=True,
+)
+
 
 def push_menu_stack(bot, reply_markup):
     """Добавляет клавиатуру в стек меню."""

@@ -17,6 +17,7 @@ from utils.keyboards import (
     weighted_exercises,
     push_menu_stack,
     main_menu_button,
+    add_another_set_menu,
 )
 from states.user_states import WorkoutStates
 from database.repositories import WorkoutRepository
@@ -388,6 +389,21 @@ async def handle_count_input(message: Message, state: FSMContext):
             await message.answer("Введи количество повторений числом:")
         return
     
+    # Обработка ответа на вопрос "добавить еще подход?"
+    if message.text == "✅ Да, добавить еще подход":
+        # Остаемся в том же состоянии, просто просим ввести количество
+        data = await state.get_data()
+        exercise = data.get("exercise")
+        await message.answer(f"Введи количество повторений для {exercise}:")
+        return
+    
+    if message.text == "❌ Нет, завершить":
+        # Завершаем и возвращаемся в меню
+        await state.clear()
+        push_menu_stack(message.bot, training_menu)
+        await message.answer("✅ Тренировка завершена!", reply_markup=training_menu)
+        return
+    
     try:
         count = int(message.text)
         if count <= 0:
@@ -425,19 +441,44 @@ async def handle_count_input(message: Message, state: FSMContext):
     
     logger.info(f"User {user_id} saved workout: {exercise} x {count} on {entry_date}")
     
+    # Получаем общее количество для этого упражнения за день
+    workouts_today = WorkoutRepository.get_workouts_for_day(user_id, entry_date)
+    total_count = sum(w.count for w in workouts_today if w.exercise == exercise and w.variant == variant)
+    
     # Формируем ответ
     formatted_count = format_count_with_unit(count, variant)
+    total_formatted = format_count_with_unit(total_count, variant)
     
-    await state.clear()
-    push_menu_stack(message.bot, training_menu)
-    await message.answer(
-        f"✅ Сохранено!\n\n"
-        f"💪 {exercise}\n"
-        f"📊 {formatted_count}\n"
-        f"🔥 ~{calories:.0f} ккал\n"
-        f"📅 {entry_date.strftime('%d.%m.%Y')}",
-        reply_markup=training_menu,
-    )
+    date_label = "сегодня" if entry_date == date.today() else entry_date.strftime("%d.%m.%Y")
+    
+    # Определяем, нужно ли спрашивать про еще подход
+    # Для упражнений по времени (Пробежка, Йога, Планка, Шаги) не спрашиваем
+    exercises_without_sets = ["Пробежка", "Йога", "Планка", "Шаги", "Скакалка"]
+    
+    if exercise in exercises_without_sets:
+        # Для упражнений по времени сразу завершаем
+        await state.clear()
+        push_menu_stack(message.bot, training_menu)
+        await message.answer(
+            f"✅ Записал! 👍\n"
+            f"💪 {exercise}\n"
+            f"📊 {formatted_count}\n"
+            f"🔥 ~{calories:.0f} ккал\n"
+            f"📅 {date_label}",
+            reply_markup=training_menu,
+        )
+    else:
+        # Для обычных упражнений спрашиваем про еще подход
+        await message.answer(
+            f"✅ Записал! 👍\n"
+            f"💪 {exercise}\n"
+            f"📊 {formatted_count}\n"
+            f"🔥 ~{calories:.0f} ккал\n"
+            f"📅 {date_label}\n\n"
+            f"Всего {exercise} за {date_label}: {total_formatted}",
+            reply_markup=add_another_set_menu,
+        )
+        await message.answer("Хотите ввести еще подход?")
 
 
 @router.message(lambda m: m.text == "✏️ Ввести вручную")
