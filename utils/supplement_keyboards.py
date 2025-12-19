@@ -48,7 +48,7 @@ def supplement_edit_menu(show_save: bool = False) -> ReplyKeyboardMarkup:
     ]
     if show_save:
         buttons.append([KeyboardButton(text="💾 Сохранить")])
-    buttons.append([KeyboardButton(text="⬅️ Отменить")])
+    buttons.append([KeyboardButton(text="❌ Отменить")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
@@ -62,7 +62,7 @@ def time_edit_menu(times: list[str]) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def days_menu(selected: list[str]) -> ReplyKeyboardMarkup:
+def days_menu(selected: list[str], show_cancel: bool = False) -> ReplyKeyboardMarkup:
     """Меню выбора дней."""
     week_days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     rows = []
@@ -70,7 +70,10 @@ def days_menu(selected: list[str]) -> ReplyKeyboardMarkup:
         prefix = "✅ " if day in selected else ""
         rows.append([KeyboardButton(text=f"{prefix}{day}")])
     rows.append([KeyboardButton(text="Выбрать все"), KeyboardButton(text="💾 Сохранить")])
-    rows.append([KeyboardButton(text="⬅️ Назад")])
+    if show_cancel:
+        rows.append([KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отменить")])
+    else:
+        rows.append([KeyboardButton(text="⬅️ Назад")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
@@ -81,7 +84,7 @@ def duration_menu() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="Постоянно"), KeyboardButton(text="14 дней")],
             [KeyboardButton(text="30 дней")],
             [KeyboardButton(text="⏭️ Пропустить")],
-            [KeyboardButton(text="⬅️ Отменить")],
+            [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отменить")],
         ],
         resize_keyboard=True,
     )
@@ -95,15 +98,14 @@ def time_first_menu() -> ReplyKeyboardMarkup:
     )
 
 
-def supplement_test_skip_menu() -> ReplyKeyboardMarkup:
+def supplement_test_skip_menu(show_back: bool = False) -> ReplyKeyboardMarkup:
     """Меню для пропуска шага в тесте добавки."""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="⏭️ Пропустить")],
-            [KeyboardButton(text="⬅️ Отменить")],
-        ],
-        resize_keyboard=True,
-    )
+    buttons = [[KeyboardButton(text="⏭️ Пропустить")]]
+    if show_back:
+        buttons.append([KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отменить")])
+    else:
+        buttons.append([KeyboardButton(text="❌ Отменить")])
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
 def supplement_test_notifications_menu() -> ReplyKeyboardMarkup:
@@ -112,7 +114,7 @@ def supplement_test_notifications_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="✅ Включить"), KeyboardButton(text="❌ Выключить")],
             [KeyboardButton(text="⏭️ Пропустить")],
-            [KeyboardButton(text="⬅️ Отменить")],
+            [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отменить")],
         ],
         resize_keyboard=True,
     )
