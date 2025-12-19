@@ -416,16 +416,27 @@ async def choose_supplement_for_view(message: Message, state: FSMContext):
     
     # Ищем добавку по имени (с учетом пробелов и регистра)
     message_text = message.text.strip()
-    target_index = next(
-        (idx for idx, item in enumerate(supplements_list) if item["name"].strip().lower() == message_text.lower()),
-        None,
-    )
+    
+    # Более надежное сравнение - нормализуем пробелы и регистр
+    def normalize_name(name: str) -> str:
+        """Нормализует название для сравнения."""
+        return " ".join(name.strip().split()).lower()
+    
+    normalized_search = normalize_name(message_text)
+    target_index = None
+    
+    for idx, item in enumerate(supplements_list):
+        item_name = item.get("name", "")
+        normalized_item = normalize_name(item_name)
+        if normalized_item == normalized_search:
+            target_index = idx
+            break
     
     if target_index is None:
         # Показываем список добавок снова
         push_menu_stack(message.bot, supplements_view_menu(supplements_list))
         await message.answer(
-            "Не нашёл такую добавку. Выбери название из списка.",
+            f"Не нашёл такую добавку: '{message_text}'. Выбери название из списка.",
             reply_markup=supplements_view_menu(supplements_list),
         )
         return
@@ -515,16 +526,32 @@ async def choose_supplement_to_edit(message: Message, state: FSMContext):
     
     # Ищем добавку по имени (с учетом пробелов и регистра)
     message_text = message.text.strip()
-    target_index = next(
-        (idx for idx, item in enumerate(supplements_list) if item["name"].strip().lower() == message_text.lower()),
-        None,
-    )
+    
+    # Логируем для отладки
+    logger.info(f"User {user_id} searching for supplement: '{message_text}'")
+    logger.info(f"Available supplements: {[item.get('name', '') for item in supplements_list]}")
+    
+    # Более надежное сравнение - нормализуем пробелы и регистр
+    def normalize_name(name: str) -> str:
+        """Нормализует название для сравнения."""
+        return " ".join(name.strip().split()).lower()
+    
+    normalized_search = normalize_name(message_text)
+    target_index = None
+    
+    for idx, item in enumerate(supplements_list):
+        item_name = item.get("name", "")
+        normalized_item = normalize_name(item_name)
+        logger.info(f"Comparing: '{normalized_search}' with '{normalized_item}' (original: '{item_name}')")
+        if normalized_item == normalized_search:
+            target_index = idx
+            break
     
     if target_index is None:
         # Показываем список добавок снова
         push_menu_stack(message.bot, supplements_choice_menu(supplements_list))
         await message.answer(
-            "Не нашёл такую добавку. Выбери название из списка.",
+            f"Не нашёл такую добавку: '{message_text}'. Выбери название из списка.",
             reply_markup=supplements_choice_menu(supplements_list),
         )
         return
@@ -991,17 +1018,30 @@ async def ask_notifications_in_test(message: Message, state: FSMContext):
     times = data.get("times", [])
     days = data.get("days", [])
     
-    # Логируем для отладки
-    logger.info(f"User {message.from_user.id} asking notifications: times={times}, days={days}, type(times)={type(times)}, type(days)={type(days)}")
+    # Убеждаемся, что times и days являются списками
+    if not isinstance(times, list):
+        times = [times] if times else []
+    if not isinstance(days, list):
+        days = [days] if days else []
     
-    # Сохраняем флаг, что это тест создания добавки
-    await state.update_data(is_test_creation=True)
+    # Логируем для отладки
+    logger.info(f"User {message.from_user.id} asking notifications:")
+    logger.info(f"  Raw times={times}, type={type(times)}, is_list={isinstance(times, list)}")
+    logger.info(f"  Raw days={days}, type={type(days)}, is_list={isinstance(days, list)}")
+    logger.info(f"  Full state data keys: {list(data.keys())}")
+    
+    # Сохраняем флаг, что это тест создания добавки, и убеждаемся, что times и days сохранены как списки
+    await state.update_data(
+        is_test_creation=True,
+        times=times,  # Явно сохраняем как список
+        days=days,   # Явно сохраняем как список
+    )
     await state.set_state(SupplementStates.choosing_duration)  # Используем существующее состояние
     push_menu_stack(message.bot, supplement_test_notifications_menu())
     
     # Показываем текущие значения времени и дней в сообщении
-    times_text = ", ".join(times) if times and isinstance(times, list) and len(times) > 0 else "не указано"
-    days_text = ", ".join(days) if days and isinstance(days, list) and len(days) > 0 else "не выбрано"
+    times_text = ", ".join(times) if times and len(times) > 0 else "не указано"
+    days_text = ", ".join(days) if days and len(days) > 0 else "не выбрано"
     
     await message.answer(
         f"🔔 Шаг 5: Включить уведомления о приёме добавки?\n\n"
@@ -1052,16 +1092,32 @@ async def handle_duration_or_notifications(message: Message, state: FSMContext):
             return
         
         if message.text == "✅ Включить":
-            times = data.get("times", [])
-            days = data.get("days", [])
+            # Перезагружаем данные из state, чтобы убедиться, что у нас актуальные данные
+            current_data = await state.get_data()
+            times = current_data.get("times", [])
+            days = current_data.get("days", [])
             
             # Проверяем, что есть хотя бы одно время и хотя бы один день
             # Исправляем проверку: times может быть None или пустым списком
-            times_list = times if isinstance(times, list) and times else []
-            days_list = days if isinstance(days, list) and days else []
+            times_list = []
+            if times:
+                if isinstance(times, list):
+                    times_list = [t for t in times if t]  # Убираем пустые значения
+                elif isinstance(times, str):
+                    times_list = [times]
+            
+            days_list = []
+            if days:
+                if isinstance(days, list):
+                    days_list = [d for d in days if d]  # Убираем пустые значения
+                elif isinstance(days, str):
+                    days_list = [days]
             
             # Логируем для отладки
-            logger.info(f"User {message.from_user.id} checking notifications: times={times}, times_list={times_list}, days={days}, days_list={days_list}")
+            logger.info(f"User {message.from_user.id} checking notifications:")
+            logger.info(f"  Raw times={times}, type={type(times)}, times_list={times_list}")
+            logger.info(f"  Raw days={days}, type={type(days)}, days_list={days_list}")
+            logger.info(f"  Full state data: {current_data}")
             
             if not times_list or not days_list:
                 from utils.supplement_keyboards import supplement_test_notifications_menu
@@ -1127,21 +1183,60 @@ async def handle_duration_or_notifications(message: Message, state: FSMContext):
     
     # Проверяем пропуск (только в режиме теста)
     if supplement_id is None and message.text == "⏭️ Пропустить":
-        await state.update_data(duration="постоянно")
+        # Получаем текущие данные и убеждаемся, что times и days сохранены как списки
+        current_data = await state.get_data()
+        times = current_data.get("times", [])
+        days = current_data.get("days", [])
+        
+        # Убеждаемся, что times и days являются списками
+        if not isinstance(times, list):
+            times = [times] if times else []
+        if not isinstance(days, list):
+            days = [days] if days else []
+        
+        # Сохраняем все данные вместе
+        await state.update_data(
+            duration="постоянно",
+            is_test_creation=True,
+            times=times,  # Явно сохраняем как список
+            days=days,    # Явно сохраняем как список
+        )
+        
+        logger.info(f"User {message.from_user.id} skipped duration, saving: times={times}, days={days}")
         await ask_notifications_in_test(message, state)
         return
     
     # Проверяем выбор длительности
     if message.text in {"Постоянно", "14 дней", "30 дней"}:
         duration = message.text.lower()
-        await state.update_data(duration=duration)
         
         # Если это создание новой добавки (тест) - переходим к уведомлениям
         if supplement_id is None:
-            # Убеждаемся, что флаг is_test_creation установлен
-            await state.update_data(is_test_creation=True)
+            # Получаем текущие данные и убеждаемся, что times и days сохранены как списки
+            current_data = await state.get_data()
+            times = current_data.get("times", [])
+            days = current_data.get("days", [])
+            
+            # Убеждаемся, что times и days являются списками
+            if not isinstance(times, list):
+                times = [times] if times else []
+            if not isinstance(days, list):
+                days = [days] if days else []
+            
+            # Сохраняем все данные вместе, включая флаг is_test_creation
+            await state.update_data(
+                duration=duration,
+                is_test_creation=True,
+                times=times,  # Явно сохраняем как список
+                days=days,    # Явно сохраняем как список
+            )
+            
+            logger.info(f"User {message.from_user.id} selected duration, saving: times={times}, days={days}")
             await ask_notifications_in_test(message, state)
             return
+        
+        # Если это редактирование - показываем меню редактирования
+        await state.update_data(duration=duration)
         
         # Если это редактирование - показываем меню редактирования
         await state.set_state(SupplementStates.editing_supplement)

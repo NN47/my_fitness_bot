@@ -1303,45 +1303,107 @@ async def handle_meal_edit_input(message: Message, state: FSMContext):
             
             # Если продукт новый, название изменилось или данные некорректны, получаем КБЖУ через API
             if is_new_product or name_changed or not calories_per_100g or calories_per_100g == 0:
-                try:
-                    # Получаем КБЖУ через API для нового продукта
-                    # Запрашиваем на 100г, чтобы получить значения на 100г
-                    query = f"{name} 100g"
-                    translated_query = translate_text(query, source_lang="ru", target_lang="en")
-                    logger.info(f"Getting nutrition for new/edited product: {translated_query}")
-                    
-                    items, _ = nutrition_service.get_nutrition_from_api(translated_query)
-                    
-                    if items:
-                        # Берем первый найденный продукт
-                        item = items[0]
+                api_success = False
+                
+                # Пробуем несколько вариантов запроса
+                query_variants = [
+                    f"{name} 100g",  # С весом 100г (для получения данных на 100г)
+                    f"{name} {int(grams)}g",  # С указанным пользователем весом
+                    name,  # Только название
+                ]
+                
+                for query_variant in query_variants:
+                    if api_success:
+                        break
                         
-                        # API возвращает значения для указанного количества (100г в нашем случае)
-                        # Используем ключи с подчеркиванием, которые добавляет nutrition_service
-                        cal = float(item.get("_calories", 0.0))
-                        p = float(item.get("_protein_g", 0.0))
-                        f = float(item.get("_fat_total_g", 0.0))
-                        c = float(item.get("_carbohydrates_total_g", 0.0))
+                    try:
+                        translated_query = translate_text(query_variant, source_lang="ru", target_lang="en")
+                        logger.info(f"Getting nutrition for product '{name}': trying query '{translated_query}'")
                         
-                        # Так как мы запросили на 100г, эти значения уже на 100г
-                        calories_per_100g = cal
-                        protein_per_100g = p
-                        fat_per_100g = f
-                        carbs_per_100g = c
-                    else:
-                        logger.warning(f"API не вернул данные для продукта: {name}")
-                        # Используем нули, если API не вернул данные
+                        items, _ = nutrition_service.get_nutrition_from_api(translated_query)
+                        
+                        if items:
+                            logger.debug(f"API returned {len(items)} items for '{name}': {[item.get('name', 'unknown') for item in items]}")
+                            # Пробуем найти продукт с валидными данными
+                            for item_idx, item in enumerate(items):
+                                # API возвращает значения для указанного количества
+                                # Используем ключи с подчеркиванием, которые добавляет nutrition_service
+                                cal = float(item.get("_calories", 0.0))
+                                p = float(item.get("_protein_g", 0.0))
+                                f = float(item.get("_fat_total_g", 0.0))
+                                c = float(item.get("_carbohydrates_total_g", 0.0))
+                                
+                                # Если значения с подчеркиванием нулевые, пробуем оригинальные ключи
+                                if cal == 0:
+                                    cal = float(item.get("calories", 0.0))
+                                    p = float(item.get("protein_g", 0.0))
+                                    f = float(item.get("fat_total_g", 0.0))
+                                    c = float(item.get("carbohydrates_total_g", 0.0))
+                                
+                                item_name = item.get("name", "unknown")
+                                logger.debug(f"Item {item_idx} '{item_name}': cal={cal}, p={p}, f={f}, c={c}")
+                                
+                                # Проверяем, что хотя бы калории не нулевые
+                                if cal > 0:
+                                    # CalorieNinjas API возвращает данные для указанного количества в запросе
+                                    # Если запрос был с "100g", значения уже на 100г
+                                    if "100g" in query_variant.lower():
+                                        calories_per_100g = cal
+                                        protein_per_100g = p
+                                        fat_per_100g = f
+                                        carbs_per_100g = c
+                                    elif f"{int(grams)}g" in query_variant.lower():
+                                        # Если запрос был с указанным пользователем весом, пересчитываем на 100г
+                                        query_grams = int(grams)
+                                        if query_grams > 0:
+                                            calories_per_100g = (cal / query_grams) * 100
+                                            protein_per_100g = (p / query_grams) * 100
+                                            fat_per_100g = (f / query_grams) * 100
+                                            carbs_per_100g = (c / query_grams) * 100
+                                        else:
+                                            calories_per_100g = cal
+                                            protein_per_100g = p
+                                            fat_per_100g = f
+                                            carbs_per_100g = c
+                                    else:
+                                        # Если запрос был без веса, API может вернуть данные на порцию
+                                        # Нужно проверить, есть ли информация о весе порции
+                                        serving_size = float(item.get("serving_size_g", 0.0))
+                                        if serving_size > 0:
+                                            # Пересчитываем на 100г
+                                            calories_per_100g = (cal / serving_size) * 100
+                                            protein_per_100g = (p / serving_size) * 100
+                                            fat_per_100g = (f / serving_size) * 100
+                                            carbs_per_100g = (c / serving_size) * 100
+                                        else:
+                                            # Если вес порции не указан, предполагаем что данные на 100г
+                                            calories_per_100g = cal
+                                            protein_per_100g = p
+                                            fat_per_100g = f
+                                            carbs_per_100g = c
+                                    
+                                    api_success = True
+                                    logger.info(f"Successfully got nutrition for '{name}': {calories_per_100g:.0f} kcal/100g (from query: {query_variant})")
+                                    break
+                            
+                            if not api_success:
+                                logger.warning(f"API вернул данные для '{name}', но все значения нулевые")
+                        else:
+                            logger.warning(f"API не вернул данные для продукта '{name}' с запросом '{translated_query}'")
+                    except Exception as e:
+                        logger.error(f"Error getting nutrition from API for '{name}' with query '{query_variant}': {e}")
+                        continue
+                
+                # Если не удалось получить данные через API
+                if not api_success:
+                    logger.warning(f"Не удалось получить КБЖУ для продукта '{name}' через API")
+                    # Используем нули только если это действительно новый продукт
+                    if is_new_product or name_changed:
                         calories_per_100g = 0
                         protein_per_100g = 0
                         fat_per_100g = 0
                         carbs_per_100g = 0
-                except Exception as e:
-                    logger.error(f"Error getting nutrition from API for {name}: {e}")
-                    # Если API не сработал, используем нули
-                    calories_per_100g = calories_per_100g or 0
-                    protein_per_100g = protein_per_100g or 0
-                    fat_per_100g = fat_per_100g or 0
-                    carbs_per_100g = carbs_per_100g or 0
+                    # Если это существующий продукт с некорректными данными, оставляем как есть
             
             # Пересчитываем КБЖУ для указанного веса
             new_calories = (calories_per_100g * grams) / 100 if calories_per_100g else 0
