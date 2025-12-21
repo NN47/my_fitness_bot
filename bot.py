@@ -7470,7 +7470,7 @@ async def water(message: Message):
     # Получаем вес для уведомления
     weight = get_last_weight_kg(user_id)
     
-    progress = min(100, int((daily_total / recommended) * 100)) if recommended > 0 else 0
+    progress = round((daily_total / recommended) * 100) if recommended > 0 else 0
     bar = build_water_progress_bar(daily_total, recommended)
     
     # Формируем текст с информацией о расчете нормы
@@ -7538,7 +7538,7 @@ async def water_today(message: Message):
     
     lines.append(f"\n📊 Итого: {daily_total:.0f} мл")
     lines.append(f"🎯 Норма: {recommended} мл")
-    progress = min(100, int((daily_total / recommended) * 100))
+    progress = round((daily_total / recommended) * 100) if recommended > 0 else 0
     lines.append(f"📈 Прогресс: {progress}%")
     
     # Визуальный прогресс-бар (используем build_water_progress_bar)

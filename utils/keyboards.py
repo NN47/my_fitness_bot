@@ -270,6 +270,17 @@ add_another_set_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+# Меню выбора типа хвата для подтягиваний
+grip_type_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Прямой хват"), KeyboardButton(text="Обратный хват")],
+        [KeyboardButton(text="Нейтральный хват")],
+        [KeyboardButton(text="Пропустить")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 
 def push_menu_stack(bot, reply_markup):
     """Добавляет клавиатуру в стек меню."""

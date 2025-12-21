@@ -108,6 +108,21 @@ def supplement_test_skip_menu(show_back: bool = False) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
+def supplement_test_time_menu(times: list[str], show_back: bool = False) -> ReplyKeyboardMarkup:
+    """Меню для шага времени в тесте добавки. Показывает 'Сохранить' если есть времена, иначе 'Пропустить'."""
+    buttons = []
+    if times and len(times) > 0:
+        buttons.append([KeyboardButton(text="💾 Сохранить")])
+    else:
+        buttons.append([KeyboardButton(text="⏭️ Пропустить")])
+    
+    if show_back:
+        buttons.append([KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отменить")])
+    else:
+        buttons.append([KeyboardButton(text="❌ Отменить")])
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
 def supplement_test_notifications_menu() -> ReplyKeyboardMarkup:
     """Меню выбора уведомлений в тесте."""
     return ReplyKeyboardMarkup(

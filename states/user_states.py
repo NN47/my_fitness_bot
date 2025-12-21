@@ -18,6 +18,7 @@ class WorkoutStates(StatesGroup):
     choosing_category = State()
     choosing_exercise = State()
     entering_custom_exercise = State()
+    choosing_grip_type = State()  # Выбор типа хвата для подтягиваний
     entering_count = State()
     choosing_date = State()
     entering_custom_date = State()
