@@ -18,6 +18,7 @@ from utils.keyboards import (
     push_menu_stack,
     main_menu_button,
     add_another_set_menu,
+    grip_type_menu,
 )
 from states.user_states import WorkoutStates
 from database.repositories import WorkoutRepository
@@ -319,6 +320,13 @@ async def choose_exercise(message: Message, state: FSMContext):
         await message.answer("Введи название упражнения:")
         return
     
+    # Особый случай: подтягивания - спрашиваем тип хвата
+    if exercise == "Подтягивания":
+        await state.set_state(WorkoutStates.choosing_grip_type)
+        push_menu_stack(message.bot, grip_type_menu)
+        await message.answer("Каким хватом выполнял подтягивания?", reply_markup=grip_type_menu)
+        return
+    
     # Особые случаи с временем
     variant = None
     if exercise == "Шаги":
@@ -352,6 +360,38 @@ async def choose_exercise(message: Message, state: FSMContext):
     else:
         variant = "Со своим весом"
     
+    await state.update_data(variant=variant)
+    await state.set_state(WorkoutStates.entering_count)
+    push_menu_stack(message.bot, count_menu)
+    await message.answer("Выбери количество повторений:", reply_markup=count_menu)
+
+
+@router.message(WorkoutStates.choosing_grip_type)
+async def choose_grip_type(message: Message, state: FSMContext):
+    """Обрабатывает выбор типа хвата для подтягиваний."""
+    grip_type = message.text
+    
+    # Обработка кнопок навигации
+    if grip_type in ["⬅️ Назад", "🏠 Главное меню"]:
+        if grip_type == "⬅️ Назад":
+            await state.set_state(WorkoutStates.choosing_exercise)
+            push_menu_stack(message.bot, bodyweight_exercise_menu)
+            await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+        return
+    
+    # Маппинг типов хвата на варианты
+    grip_mapping = {
+        "Прямой хват": "Прямой хват",
+        "Обратный хват": "Обратный хват",
+        "Нейтральный хват": "Нейтральный хват",
+        "Пропустить": "Со своим весом"
+    }
+    
+    if grip_type not in grip_mapping:
+        await message.answer("Выбери тип хвата из меню")
+        return
+    
+    variant = grip_mapping[grip_type]
     await state.update_data(variant=variant)
     await state.set_state(WorkoutStates.entering_count)
     push_menu_stack(message.bot, count_menu)
@@ -493,9 +533,15 @@ async def handle_count_input(message: Message, state: FSMContext):
         # Для упражнений по времени сразу завершаем
         await state.clear()
         push_menu_stack(message.bot, training_menu)
+        
+        # Добавляем variant в сообщение, если это не стандартный вариант
+        variant_display = ""
+        if variant and variant not in ["Со своим весом", "С утяжелителем"]:
+            variant_display = f" ({variant})"
+        
         await message.answer(
             f"✅ Записал! 👍\n"
-            f"💪 {exercise}\n"
+            f"💪 {exercise}{variant_display}\n"
             f"📊 {formatted_count}\n"
             f"🔥 ~{calories:.0f} ккал\n"
             f"📅 {date_label}",
@@ -503,13 +549,18 @@ async def handle_count_input(message: Message, state: FSMContext):
         )
     else:
         # Для обычных упражнений спрашиваем про еще подход
+        # Добавляем variant в сообщение, если это не стандартный вариант
+        variant_display = ""
+        if variant and variant not in ["Со своим весом", "С утяжелителем"]:
+            variant_display = f" ({variant})"
+        
         await message.answer(
             f"✅ Записал! 👍\n"
-            f"💪 {exercise}\n"
+            f"💪 {exercise}{variant_display}\n"
             f"📊 {formatted_count}\n"
             f"🔥 ~{calories:.0f} ккал\n"
             f"📅 {date_label}\n\n"
-            f"Всего {exercise} за {date_label}: {total_formatted}\n\n"
+            f"Всего {exercise}{variant_display} за {date_label}: {total_formatted}\n\n"
             f"Хотите ввести еще подход?",
             reply_markup=add_another_set_menu,
         )
