@@ -42,7 +42,7 @@ async def water(message: Message):
     daily_total = WaterRepository.get_daily_total(user_id, today)
     recommended = get_water_recommended(user_id)
     
-    progress = min(100, int((daily_total / recommended) * 100)) if recommended > 0 else 0
+    progress = round((daily_total / recommended) * 100) if recommended > 0 else 0
     bar = build_water_progress_bar(daily_total, recommended)
     
     weight = WeightRepository.get_last_weight(user_id)
@@ -106,7 +106,7 @@ async def water_today(message: Message):
     
     lines.append(f"\n📊 Итого: {daily_total:.0f} мл")
     lines.append(f"🎯 Норма: {recommended} мл")
-    progress = min(100, int((daily_total / recommended) * 100))
+    progress = round((daily_total / recommended) * 100) if recommended > 0 else 0
     lines.append(f"📈 Прогресс: {progress}%")
     
     bar = build_water_progress_bar(daily_total, recommended)

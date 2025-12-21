@@ -113,11 +113,11 @@ def format_progress_block(user_id: str) -> str:
 
 def format_water_progress_block(user_id: str) -> str:
     """Форматирует блок прогресса воды."""
+    from handlers.water import get_water_recommended
+    
     today = date.today()
     daily_total = WaterRepository.get_daily_total(user_id, today)
-    
-    # TODO: Реализовать расчёт рекомендуемой нормы на основе веса
-    recommended = 2000.0
+    recommended = get_water_recommended(user_id)
     
     percent = 0 if recommended <= 0 else round((daily_total / recommended) * 100)
     bar = build_water_progress_bar(daily_total, recommended)
