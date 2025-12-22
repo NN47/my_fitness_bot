@@ -1297,7 +1297,9 @@ async def handle_meal_weight_edit(message: Message, state: FSMContext):
         # Получаем продукт для редактирования
         product = saved_products[product_num - 1]
         
-        # Получаем КБЖУ на 100г
+        logger.debug(f"Editing product: {product}")
+        
+        # Получаем КБЖУ на 100г (проверяем разные форматы данных)
         calories_per_100g = product.get("calories_per_100g")
         protein_per_100g = product.get("protein_per_100g")
         fat_per_100g = product.get("fat_per_100g")
@@ -1307,16 +1309,49 @@ async def handle_meal_weight_edit(message: Message, state: FSMContext):
         if not calories_per_100g or calories_per_100g == 0:
             orig_grams = product.get("grams", 0)
             if orig_grams > 0:
-                orig_calories = product.get("calories", 0) or 0
-                orig_protein = product.get("protein_g", 0) or 0
-                orig_fat = product.get("fat_total_g", 0) or 0
-                orig_carbs = product.get("carbohydrates_total_g", 0) or 0
+                # Поддерживаем разные форматы: Gemini (kcal, protein, fat, carbs) и CalorieNinjas (calories, protein_g, fat_total_g, carbohydrates_total_g)
+                orig_calories = product.get("kcal") or product.get("calories") or product.get("_calories") or 0
+                orig_protein = product.get("protein") or product.get("protein_g") or product.get("_protein_g") or 0
+                orig_fat = product.get("fat") or product.get("fat_total_g") or product.get("_fat_total_g") or 0
+                orig_carbs = product.get("carbs") or product.get("carbohydrates_total_g") or product.get("_carbohydrates_total_g") or 0
                 
+                logger.debug(f"Original values: grams={orig_grams}, kcal={orig_calories}, protein={orig_protein}, fat={orig_fat}, carbs={orig_carbs}")
+                
+                # Преобразуем в числа
+                try:
+                    orig_calories = float(orig_calories) if orig_calories else 0
+                    orig_protein = float(orig_protein) if orig_protein else 0
+                    orig_fat = float(orig_fat) if orig_fat else 0
+                    orig_carbs = float(orig_carbs) if orig_carbs else 0
+                except (TypeError, ValueError) as e:
+                    logger.error(f"Error converting values to float: {e}, product={product}")
+                    orig_calories = orig_protein = orig_fat = orig_carbs = 0
+                
+                # Вычисляем КБЖУ на 100г, если есть хотя бы калории
                 if orig_calories > 0:
                     calories_per_100g = (orig_calories / orig_grams) * 100
                     protein_per_100g = (orig_protein / orig_grams) * 100
                     fat_per_100g = (orig_fat / orig_grams) * 100
                     carbs_per_100g = (orig_carbs / orig_grams) * 100
+                    logger.debug(f"Calculated per 100g: kcal={calories_per_100g}, protein={protein_per_100g}, fat={fat_per_100g}, carbs={carbs_per_100g}")
+                else:
+                    # Если калории нулевые, но есть другие данные, все равно вычисляем
+                    if orig_grams > 0:
+                        calories_per_100g = 0
+                        protein_per_100g = (orig_protein / orig_grams) * 100 if orig_protein else 0
+                        fat_per_100g = (orig_fat / orig_grams) * 100 if orig_fat else 0
+                        carbs_per_100g = (orig_carbs / orig_grams) * 100 if orig_carbs else 0
+                    else:
+                        logger.warning(f"Product {product.get('name')} has zero grams, cannot calculate per 100g")
+        
+        # Проверяем, что мы получили валидные значения
+        if not calories_per_100g and not protein_per_100g and not fat_per_100g and not carbs_per_100g:
+            logger.error(f"Cannot calculate KBJU per 100g for product: {product}")
+            await message.answer(
+                "❌ Не удалось определить КБЖУ для этого продукта.\n"
+                "Попробуй использовать вариант «Изменить состав продуктов»."
+            )
+            return
         
         # Пересчитываем КБЖУ для нового веса
         new_calories = (calories_per_100g * new_weight) / 100 if calories_per_100g else 0
@@ -1324,27 +1359,53 @@ async def handle_meal_weight_edit(message: Message, state: FSMContext):
         new_fat = (fat_per_100g * new_weight) / 100 if fat_per_100g else 0
         new_carbs = (carbs_per_100g * new_weight) / 100 if carbs_per_100g else 0
         
-        # Обновляем продукт
+        # Обновляем продукт (сохраняем в обоих форматах для совместимости)
         product["grams"] = new_weight
+        # Обновляем в формате Gemini
+        product["kcal"] = new_calories
+        product["protein"] = new_protein
+        product["fat"] = new_fat
+        product["carbs"] = new_carbs
+        # Обновляем в формате CalorieNinjas
         product["calories"] = new_calories
         product["protein_g"] = new_protein
         product["fat_total_g"] = new_fat
         product["carbohydrates_total_g"] = new_carbs
+        # Сохраняем значения на 100г для будущих пересчетов
+        product["calories_per_100g"] = calories_per_100g
+        product["protein_per_100g"] = protein_per_100g
+        product["fat_per_100g"] = fat_per_100g
+        product["carbs_per_100g"] = carbs_per_100g
         
-        # Суммируем КБЖУ всех продуктов
+        # Суммируем КБЖУ всех продуктов (проверяем разные форматы)
         totals = {
-            "calories": sum(p.get("calories", 0) for p in saved_products),
-            "protein_g": sum(p.get("protein_g", 0) for p in saved_products),
-            "fat_total_g": sum(p.get("fat_total_g", 0) for p in saved_products),
-            "carbohydrates_total_g": sum(p.get("carbohydrates_total_g", 0) for p in saved_products),
+            "calories": 0,
+            "protein_g": 0,
+            "fat_total_g": 0,
+            "carbohydrates_total_g": 0,
         }
         
-        # Формируем api_details
+        for p in saved_products:
+            # Поддерживаем разные форматы
+            totals["calories"] += float(p.get("kcal") or p.get("calories") or p.get("_calories") or 0)
+            totals["protein_g"] += float(p.get("protein") or p.get("protein_g") or p.get("_protein_g") or 0)
+            totals["fat_total_g"] += float(p.get("fat") or p.get("fat_total_g") or p.get("_fat_total_g") or 0)
+            totals["carbohydrates_total_g"] += float(p.get("carbs") or p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 0)
+        
+        # Формируем api_details (поддерживаем разные форматы)
         api_details_lines = []
         for p in saved_products:
+            name = p.get('name', 'продукт')
+            grams = float(p.get('grams', 0))
+            # Получаем КБЖУ в любом формате
+            cal = float(p.get('kcal') or p.get('calories') or p.get('_calories') or 0)
+            prot = float(p.get('protein') or p.get('protein_g') or p.get('_protein_g') or 0)
+            fat = float(p.get('fat') or p.get('fat_total_g') or p.get('_fat_total_g') or 0)
+            carbs = float(p.get('carbs') or p.get('carbohydrates_total_g') or p.get('_carbohydrates_total_g') or 0)
+            
             api_details_lines.append(
-                f"• {p.get('name', 'продукт')} ({p.get('grams', 0):.0f} г) — {p.get('calories', 0):.0f} ккал "
-                f"(Б {p.get('protein_g', 0):.1f} / Ж {p.get('fat_total_g', 0):.1f} / У {p.get('carbohydrates_total_g', 0):.1f})"
+                f"• {name} ({grams:.0f} г) — {cal:.0f} ккал "
+                f"(Б {prot:.1f} / Ж {fat:.1f} / У {carbs:.1f})"
             )
         api_details = "\n".join(api_details_lines) if api_details_lines else None
         

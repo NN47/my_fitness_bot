@@ -10,8 +10,7 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💧 Контроль воды")],
-        [KeyboardButton(text="📆 Календарь")],
-        [KeyboardButton(text="Анализ деятельности")],
+        [KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки")],
     ],
     resize_keyboard=True

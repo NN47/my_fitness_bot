@@ -13,15 +13,21 @@ router = Router()
 
 async def generate_activity_analysis(user_id: str, start_date: date, end_date: date, period_name: str) -> str:
     """Генерирует анализ активности за указанный период через Gemini."""
-    from database.repositories import WorkoutRepository, MealRepository, WeightRepository
+    from database.repositories import (
+        WorkoutRepository, MealRepository, WeightRepository,
+        WaterRepository, SupplementRepository, ProcedureRepository
+    )
     from utils.workout_utils import calculate_workout_calories
     from utils.formatters import format_count_with_unit, get_kbju_goal_label
+    
+    days_count = (end_date - start_date).days + 1
     
     # 🔹 Тренировки за период
     workouts = WorkoutRepository.get_workouts_for_period(user_id, start_date, end_date)
     
     workouts_by_ex = {}
     total_workout_calories = 0.0
+    workout_days = set()
     
     for w in workouts:
         key = (w.exercise, w.variant)
@@ -30,6 +36,10 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
         cals = w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
         entry["calories"] += cals
         total_workout_calories += cals
+        workout_days.add(w.date)
+    
+    workout_days_count = len(workout_days)
+    avg_workout_calories = total_workout_calories / workout_days_count if workout_days_count > 0 else 0
     
     if workouts_by_ex:
         workout_lines = []
@@ -40,15 +50,20 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
                 f"- {exercise}{variant_text}: {formatted_count}, ~{data['calories']:.0f} ккал"
             )
         workout_summary = "\n".join(workout_lines)
+        workout_summary += f"\n\nВсего тренировочных дней: {workout_days_count} из {days_count} ({workout_days_count * 100 // days_count if days_count > 0 else 0}%)."
+        workout_summary += f"\nСредний расход калорий за тренировочный день: ~{avg_workout_calories:.0f} ккал."
     else:
         workout_summary = f"За {period_name.lower()} тренировки не записаны."
     
     # 🔹 КБЖУ за период
     meals = []
+    meal_days = set()
     current_date = start_date
     while current_date <= end_date:
         day_meals = MealRepository.get_meals_for_date(user_id, current_date)
-        meals.extend(day_meals)
+        if day_meals:
+            meals.extend(day_meals)
+            meal_days.add(current_date)
         current_date += timedelta(days=1)
     
     total_calories = sum(m.calories or 0 for m in meals)
@@ -56,27 +71,117 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
     total_fat = sum(m.fat or 0 for m in meals)
     total_carbs = sum(m.carbs or 0 for m in meals)
     
-    meals_summary = (
-        f"Калории: {total_calories:.0f} ккал, "
-        f"Белки: {total_protein:.1f} г, "
-        f"Жиры: {total_fat:.1f} г, "
-        f"Углеводы: {total_carbs:.1f} г."
-    )
-    
-    # 🔹 Цель / норма КБЖУ
+    # 🔹 Цель / норма КБЖУ и проценты выполнения
     settings = MealRepository.get_kbju_settings(user_id)
     if settings:
         goal_label = get_kbju_goal_label(settings.goal)
-        days_count = (end_date - start_date).days + 1
+        goal_calories = settings.calories * days_count
+        goal_protein = settings.protein * days_count
+        goal_fat = settings.fat * days_count
+        goal_carbs = settings.carbs * days_count
+        
+        calories_percent = (total_calories / goal_calories * 100) if goal_calories > 0 else 0
+        protein_percent = (total_protein / goal_protein * 100) if goal_protein > 0 else 0
+        fat_percent = (total_fat / goal_fat * 100) if goal_fat > 0 else 0
+        carbs_percent = (total_carbs / goal_carbs * 100) if goal_carbs > 0 else 0
+        
+        meals_summary = (
+            f"Калории: {total_calories:.0f} / {goal_calories:.0f} ккал ({calories_percent:.0f}%), "
+            f"Белки: {total_protein:.1f} / {goal_protein:.1f} г ({protein_percent:.0f}%), "
+            f"Жиры: {total_fat:.1f} / {goal_fat:.1f} г ({fat_percent:.0f}%), "
+            f"Углеводы: {total_carbs:.1f} / {goal_carbs:.1f} г ({carbs_percent:.0f}%)."
+        )
+        
         kbju_goal_summary = (
             f"Цель: {goal_label}. "
-            f"Норма за период: {settings.calories * days_count:.0f} ккал, "
-            f"Б {settings.protein * days_count:.0f} г, "
-            f"Ж {settings.fat * days_count:.0f} г, "
-            f"У {settings.carbs * days_count:.0f} г."
+            f"Дней с записями питания: {len(meal_days)} из {days_count} ({len(meal_days) * 100 // days_count if days_count > 0 else 0}%)."
         )
     else:
+        meals_summary = (
+            f"Калории: {total_calories:.0f} ккал, "
+            f"Белки: {total_protein:.1f} г, "
+            f"Жиры: {total_fat:.1f} г, "
+            f"Углеводы: {total_carbs:.1f} г."
+        )
         kbju_goal_summary = "Цель по КБЖУ ещё не настроена."
+    
+    # 🔹 Статистика по дням недели (для недели и месяца)
+    weekday_stats = ""
+    if days_count >= 7:
+        from collections import defaultdict
+        weekday_workouts = defaultdict(int)
+        weekday_meals = defaultdict(int)
+        weekday_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+        
+        for w in workouts:
+            weekday_workouts[w.date.weekday()] += 1
+        for d in meal_days:
+            weekday_meals[d.weekday()] += 1
+        
+        if weekday_workouts or weekday_meals:
+            weekday_lines = []
+            for day_idx in range(7):
+                workout_count = weekday_workouts.get(day_idx, 0)
+                meal_count = weekday_meals.get(day_idx, 0)
+                if workout_count > 0 or meal_count > 0:
+                    weekday_lines.append(
+                        f"{weekday_names[day_idx]}: тренировок {workout_count}, дней с питанием {meal_count}"
+                    )
+            if weekday_lines:
+                weekday_stats = "\nСтатистика по дням недели:\n" + "\n".join(weekday_lines)
+    
+    # 🔹 Вода за период
+    total_water = 0.0
+    water_days = set()
+    current_date = start_date
+    while current_date <= end_date:
+        day_water = WaterRepository.get_daily_total(user_id, current_date)
+        if day_water > 0:
+            total_water += day_water
+            water_days.add(current_date)
+        current_date += timedelta(days=1)
+    
+    avg_water = total_water / len(water_days) if water_days else 0
+    water_summary = ""
+    if water_days:
+        water_summary = (
+            f"\nВода: всего {total_water:.0f} мл за период, "
+            f"среднее {avg_water:.0f} мл/день, "
+            f"дней с записями: {len(water_days)} из {days_count}."
+        )
+    
+    # 🔹 Добавки за период
+    supplements = SupplementRepository.get_supplements(user_id)
+    supplement_summary = ""
+    if supplements:
+        supplement_entries_count = 0
+        supplement_names = []
+        for sup in supplements:
+            for entry in sup.get("history", []):
+                entry_date = entry["timestamp"].date() if hasattr(entry["timestamp"], "date") else entry["timestamp"]
+                if start_date <= entry_date <= end_date:
+                    supplement_entries_count += 1
+                    if sup["name"] not in supplement_names:
+                        supplement_names.append(sup["name"])
+        
+        if supplement_entries_count > 0:
+            supplement_summary = (
+                f"\nДобавки: {supplement_entries_count} приёмов, "
+                f"активных добавок: {len(supplement_names)} ({', '.join(supplement_names[:3])}"
+                f"{'...' if len(supplement_names) > 3 else ''})."
+            )
+    
+    # 🔹 Процедуры за период
+    procedure_count = 0
+    current_date = start_date
+    while current_date <= end_date:
+        day_procedures = ProcedureRepository.get_procedures_for_day(user_id, current_date)
+        procedure_count += len(day_procedures)
+        current_date += timedelta(days=1)
+    
+    procedure_summary = ""
+    if procedure_count > 0:
+        procedure_summary = f"\nПроцедуры: {procedure_count} записей за период."
     
     # 🔹 Вес и история веса
     weights = WeightRepository.get_weights_for_date_range(user_id, start_date, end_date)
@@ -86,7 +191,8 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
         if len(weights) > 1:
             first_weight = weights[-1]
             change = float(str(current_weight.value).replace(",", ".")) - float(str(first_weight.value).replace(",", "."))
-            change_text = f" ({'+' if change >= 0 else ''}{change:.1f} кг)"
+            change_percent = (change / float(str(first_weight.value).replace(",", ".")) * 100) if float(str(first_weight.value).replace(",", ".")) > 0 else 0
+            change_text = f" ({'+' if change >= 0 else ''}{change:.1f} кг, {change_percent:+.1f}%)"
         else:
             change_text = ""
         history_lines = [
@@ -106,23 +212,52 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
         else:
             weight_summary = "Записей по весу ещё нет."
     
+    # 🔹 Сравнение с предыдущим периодом (для недели и месяца)
+    comparison_summary = ""
+    if days_count >= 7:
+        prev_start = start_date - timedelta(days=days_count)
+        prev_end = start_date - timedelta(days=1)
+        
+        prev_workouts = WorkoutRepository.get_workouts_for_period(user_id, prev_start, prev_end)
+        prev_workout_days = len(set(w.date for w in prev_workouts))
+        
+        prev_meals = []
+        prev_date = prev_start
+        while prev_date <= prev_end:
+            prev_meals.extend(MealRepository.get_meals_for_date(user_id, prev_date))
+            prev_date += timedelta(days=1)
+        prev_calories = sum(m.calories or 0 for m in prev_meals)
+        
+        if prev_workout_days > 0 or prev_calories > 0:
+            workout_change = workout_days_count - prev_workout_days
+            calories_change = total_calories - prev_calories
+            
+            comparison_lines = []
+            if workout_change != 0:
+                comparison_lines.append(f"Тренировочных дней: {workout_change:+d} к предыдущему периоду")
+            if calories_change != 0:
+                comparison_lines.append(f"Калорий: {calories_change:+.0f} ккал к предыдущему периоду")
+            
+            if comparison_lines:
+                comparison_summary = "\n\nСравнение с предыдущим периодом:\n" + "\n".join(comparison_lines)
+    
     # 🔹 Собираем summary для Gemini
     date_range_str = f"{start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}"
     summary = f"""
-Период: {period_name} ({date_range_str}).
+Период: {period_name} ({date_range_str}), всего дней: {days_count}.
 
 Тренировки за период:
 {workout_summary}
-Всего ориентировочно израсходовано: ~{total_workout_calories:.0f} ккал.
+Всего ориентировочно израсходовано: ~{total_workout_calories:.0f} ккал.{weekday_stats}
 
 Питание (КБЖУ) за период:
 {meals_summary}
 
 Норма / цель КБЖУ:
-{kbju_goal_summary}
+{kbju_goal_summary}{water_summary}{supplement_summary}{procedure_summary}
 
 Вес:
-{weight_summary}
+{weight_summary}{comparison_summary}
 """
     
     # 🔹 Промпт для робота Дайри
@@ -135,6 +270,9 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 - Цель по КБЖУ уже указана в данных, не используй формулировки вроде "если твоя цель...".
 - История веса может включать несколько измерений — используй её для оценки тенденции, не говори, что измерение одно, если в данных есть история.
 - Используй HTML-теги <b>текст</b> для выделения важных цифр и фактов жирным шрифтом.
+- Обрати внимание на проценты выполнения целей КБЖУ — выдели их жирным и дай оценку.
+- Если есть сравнение с предыдущим периодом, обязательно упомяни это в анализе.
+- Если есть статистика по дням недели, используй её для выявления паттернов активности.
 
 Всегда начинай анализ с приветствия:
 "Привет, это Дайри на связи! Вот твой отчёт {period_name.lower()}👇"
@@ -142,27 +280,28 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 Данные пользователя за период:
 {summary}
 
-Сделай краткий отчёт по 4 блокам:
-1) Тренировки
-2) Питание (КБЖУ)
-3) Вес
-4) Общий прогресс и мотивация
+Сделай краткий отчёт по 4 блокам. ОБЯЗАТЕЛЬНО используй следующий формат для заголовков блоков (без решеток #, только жирный текст с эмодзи):
+<b>1) 🏋️ Тренировки</b>
+<b>2) 🍱 Питание (КБЖУ)</b>
+<b>3) ⚖️ Вес</b>
+<b>4) 📈 Общий прогресс и мотивация</b>
 
-Пиши структурированно, но компактно. Используй <b>жирный шрифт</b> для выделения важных цифр и фактов.
+Пиши структурированно, но компактно. Используй <b>жирный шрифт</b> для выделения важных цифр, фактов и процентов выполнения целей.
+В блоке "Общий прогресс и мотивация" дай конкретные рекомендации на основе данных: что улучшить, что работает хорошо, на что обратить внимание.
 """
     
     result = gemini_service.analyze(prompt)
     return result
 
 
-@router.message(lambda m: m.text == "Анализ деятельности")
+@router.message(lambda m: m.text == "🤖 ИИ анализ деятельности")
 async def analyze_activity(message: Message):
     """Показывает меню анализа деятельности."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened activity analysis")
     push_menu_stack(message.bot, activity_analysis_menu)
     await message.answer(
-        "📊 <b>Анализ деятельности</b>\n\nВыбери период для анализа:",
+        "🤖 <b>ИИ анализ деятельности</b>\n\nВыбери период для анализа:",
         parse_mode="HTML",
         reply_markup=activity_analysis_menu,
     )
