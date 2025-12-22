@@ -10,7 +10,10 @@ class MealEntryStates(StatesGroup):
     waiting_for_label_photo = State()  # Фото этикетки
     waiting_for_barcode_photo = State()  # Фото штрих-кода
     waiting_for_weight_input = State()  # Вес продукта (для этикетки)
-    editing_meal = State()
+    choosing_edit_type = State()  # Выбор типа редактирования
+    editing_meal_weight = State()  # Редактирование веса продукта
+    editing_meal_composition = State()  # Редактирование состава продуктов
+    editing_meal = State()  # Старое состояние (для обратной совместимости)
 
 
 class WorkoutStates(StatesGroup):

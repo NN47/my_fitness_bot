@@ -401,6 +401,23 @@ async def choose_grip_type(message: Message, state: FSMContext):
 @router.message(WorkoutStates.entering_custom_exercise)
 async def handle_custom_exercise(message: Message, state: FSMContext):
     """Обрабатывает ввод названия упражнения."""
+    # Обработка кнопок навигации
+    if message.text in ["⬅️ Назад", "🏠 Главное меню"]:
+        if message.text == "⬅️ Назад":
+            data = await state.get_data()
+            category = data.get("category", "bodyweight")
+            await state.set_state(WorkoutStates.choosing_exercise)
+            if category == "weighted":
+                push_menu_stack(message.bot, weighted_exercise_menu)
+                await message.answer("Выбери упражнение:", reply_markup=weighted_exercise_menu)
+            else:
+                push_menu_stack(message.bot, bodyweight_exercise_menu)
+                await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+        else:
+            from handlers.common import go_main_menu
+            await go_main_menu(message, state)
+        return
+    
     data = await state.get_data()
     category = data.get("category", "bodyweight")
     
@@ -424,9 +441,27 @@ async def handle_count_input(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
     
     # Проверяем, не является ли это кнопкой меню
-    if message.text in ["✏️ Ввести вручную", "⬅️ Назад", "🏠 Главное меню"]:
-        if message.text == "✏️ Ввести вручную":
-            await message.answer("Введи количество повторений числом:")
+    if message.text == "✏️ Ввести вручную":
+        await message.answer("Введи количество повторений числом:")
+        return
+    
+    if message.text == "⬅️ Назад":
+        # Возвращаемся к выбору упражнения
+        data = await state.get_data()
+        category = data.get("category", "bodyweight")
+        
+        await state.set_state(WorkoutStates.choosing_exercise)
+        if category == "weighted":
+            push_menu_stack(message.bot, weighted_exercise_menu)
+            await message.answer("Выбери упражнение:", reply_markup=weighted_exercise_menu)
+        else:
+            push_menu_stack(message.bot, bodyweight_exercise_menu)
+            await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+        return
+    
+    if message.text == "🏠 Главное меню":
+        from handlers.common import go_main_menu
+        await go_main_menu(message, state)
         return
     
     # Обработка ответа на вопрос "добавить еще подход?"

@@ -61,6 +61,7 @@ from handlers import (
     register_activity_handlers,
     register_kbju_test_handlers,
 )
+from services.notification_scheduler import NotificationScheduler
 
 
 async def main():
@@ -91,10 +92,24 @@ async def main():
     from handlers.procedures import register_procedure_handlers
     register_procedure_handlers(dp)
     
+    # Запускаем планировщик уведомлений
+    logger.info("Запуск планировщика уведомлений...")
+    notification_scheduler = NotificationScheduler(bot)
+    scheduler_task = asyncio.create_task(notification_scheduler.start())
+    
     logger.info("🚀 Бот запущен и готов к работе!")
     
-    # Запускаем polling
-    await dp.start_polling(bot)
+    try:
+        # Запускаем polling
+        await dp.start_polling(bot)
+    finally:
+        # Останавливаем планировщик при завершении
+        notification_scheduler.stop()
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
 
 
 if __name__ == "__main__":

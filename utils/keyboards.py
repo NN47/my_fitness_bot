@@ -197,6 +197,16 @@ kbju_after_meal_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+# Меню выбора типа редактирования КБЖУ
+kbju_edit_type_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="⚖️ Изменить вес продукта")],
+        [KeyboardButton(text="📝 Изменить состав продуктов")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
 # Меню настроек
 settings_menu = ReplyKeyboardMarkup(
     keyboard=[
