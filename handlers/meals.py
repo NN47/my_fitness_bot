@@ -12,6 +12,7 @@ from utils.keyboards import (
     kbju_menu,
     kbju_add_menu,
     kbju_after_meal_menu,
+    kbju_edit_type_menu,
     push_menu_stack,
 )
 from database.repositories import MealRepository
@@ -1077,30 +1078,20 @@ async def edit_last_meal(message: Message, state: FSMContext):
         return
     
     # Сохраняем данные в FSM для редактирования
-    await state.set_state(MealEntryStates.editing_meal)
+    await state.set_state(MealEntryStates.choosing_edit_type)
     await state.update_data(
         meal_id=last_meal_id,
         target_date=meal.date.isoformat(),
         saved_products=products,
     )
     
-    # Формируем список продуктов для редактирования
-    edit_lines = ["✏️ Редактирование приёма пищи\n\nТекущий состав:"]
-    for i, p in enumerate(products, 1):
-        name = p.get("name") or "продукт"
-        grams = p.get("grams", 0)
-        edit_lines.append(f"{i}. {name}, {grams:.0f} г")
-    
-    edit_lines.append("\nВведи новый состав в формате:")
-    edit_lines.append("название, вес г")
-    edit_lines.append("название, вес г")
-    edit_lines.append("\nПример:")
-    edit_lines.append("курица, 200 г")
-    edit_lines.append("рис, 150 г")
-    edit_lines.append("\nМожно изменить название и/или вес. КБЖУ пересчитается автоматически.")
-    
-    push_menu_stack(message.bot, kbju_after_meal_menu)
-    await message.answer("\n".join(edit_lines), reply_markup=kbju_after_meal_menu)
+    # Показываем выбор типа редактирования
+    push_menu_stack(message.bot, kbju_edit_type_menu)
+    await message.answer(
+        "✏️ Редактирование приёма пищи\n\n"
+        "Выбери, что хочешь изменить:",
+        reply_markup=kbju_edit_type_menu,
+    )
 
 
 @router.callback_query(lambda c: c.data.startswith("meal_edit:"))
@@ -1174,24 +1165,328 @@ async def start_meal_edit(callback: CallbackQuery, state: FSMContext):
         target_date=target_date.isoformat(),
         saved_products=products,
     )
-    await state.set_state(MealEntryStates.editing_meal)
+    await state.set_state(MealEntryStates.choosing_edit_type)
     
-    # Формируем список продуктов для редактирования
-    edit_lines = ["✏️ Редактирование приёма пищи\n\nТекущий состав:"]
-    for i, p in enumerate(products, 1):
-        name = p.get("name") or "продукт"
-        grams = p.get("grams", 0)
-        edit_lines.append(f"{i}. {name}, {grams:.0f} г")
+    # Показываем выбор типа редактирования
+    push_menu_stack(callback.message.bot, kbju_edit_type_menu)
+    await callback.message.answer(
+        "✏️ Редактирование приёма пищи\n\n"
+        "Выбери, что хочешь изменить:",
+        reply_markup=kbju_edit_type_menu,
+    )
+
+
+@router.message(MealEntryStates.choosing_edit_type)
+async def handle_edit_type_choice(message: Message, state: FSMContext):
+    """Обрабатывает выбор типа редактирования."""
+    user_id = str(message.from_user.id)
+    text = message.text.strip()
     
-    edit_lines.append("\nВведи новый состав в формате:")
-    edit_lines.append("название, вес г")
-    edit_lines.append("название, вес г")
-    edit_lines.append("\nПример:")
-    edit_lines.append("курица, 200 г")
-    edit_lines.append("рис, 150 г")
-    edit_lines.append("\nМожно изменить название и/или вес. КБЖУ пересчитается автоматически.")
+    # Проверяем, не является ли это кнопкой меню
+    menu_buttons = ["⬅️ Назад", "🏠 Главное меню"]
+    if text in menu_buttons:
+        await state.clear()
+        if text == "⬅️ Назад":
+            from handlers.common import go_back
+            await go_back(message, state)
+        elif text == "🏠 Главное меню":
+            from handlers.common import go_main_menu
+            await go_main_menu(message, state)
+        return
     
-    await callback.message.answer("\n".join(edit_lines))
+    data = await state.get_data()
+    saved_products = data.get("saved_products", [])
+    
+    if not saved_products:
+        await message.answer("❌ Не удалось найти сохраненные данные продуктов.")
+        await state.clear()
+        return
+    
+    if text == "⚖️ Изменить вес продукта":
+        # Показываем пронумерованный список продуктов
+        await state.set_state(MealEntryStates.editing_meal_weight)
+        
+        edit_lines = ["✏️ Изменение веса продукта\n\nТекущий состав:"]
+        for i, p in enumerate(saved_products, 1):
+            name = p.get("name") or "продукт"
+            grams = p.get("grams", 0)
+            edit_lines.append(f"{i}. {name}, {grams:.0f} г")
+        
+        edit_lines.append("\nВведи номер продукта и новый вес в формате:")
+        edit_lines.append("номер вес")
+        edit_lines.append("\nПример:")
+        edit_lines.append("1 200")
+        edit_lines.append("(изменит вес первого продукта на 200 г)")
+        
+        push_menu_stack(message.bot, kbju_after_meal_menu)
+        await message.answer("\n".join(edit_lines), reply_markup=kbju_after_meal_menu)
+        
+    elif text == "📝 Изменить состав продуктов":
+        # Переходим к редактированию состава через ИИ
+        await state.set_state(MealEntryStates.editing_meal_composition)
+        
+        edit_lines = ["✏️ Изменение состава продуктов\n\nТекущий состав:"]
+        for i, p in enumerate(saved_products, 1):
+            name = p.get("name") or "продукт"
+            grams = p.get("grams", 0)
+            edit_lines.append(f"{i}. {name}, {grams:.0f} г")
+        
+        edit_lines.append("\nВведи новый состав текстом (как в «Ввести приём пищи»):")
+        edit_lines.append("Например: 200 г курицы, 100 г йогурта, 30 г орехов")
+        edit_lines.append("\nИИ автоматически определит КБЖУ на основе типичных значений продуктов.")
+        
+        push_menu_stack(message.bot, kbju_after_meal_menu)
+        await message.answer("\n".join(edit_lines), reply_markup=kbju_after_meal_menu)
+    else:
+        await message.answer("Пожалуйста, выбери вариант с кнопки.")
+
+
+@router.message(MealEntryStates.editing_meal_weight)
+async def handle_meal_weight_edit(message: Message, state: FSMContext):
+    """Обрабатывает изменение веса продукта."""
+    user_id = str(message.from_user.id)
+    text = message.text.strip()
+    
+    # Проверяем, не является ли это кнопкой меню
+    menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
+    if text in menu_buttons:
+        await state.clear()
+        if text == "⬅️ Назад":
+            from handlers.common import go_back
+            await go_back(message, state)
+        elif text == "🏠 Главное меню":
+            from handlers.common import go_main_menu
+            await go_main_menu(message, state)
+        else:
+            await message.answer("Редактирование отменено.")
+        return
+    
+    data = await state.get_data()
+    meal_id = data.get("meal_id")
+    target_date_str = data.get("target_date", date.today().isoformat())
+    saved_products = data.get("saved_products", [])
+    
+    if not meal_id or not saved_products:
+        await message.answer("❌ Не удалось найти данные для редактирования.")
+        await state.clear()
+        return
+    
+    # Парсим ввод: "номер вес" или "номер, вес"
+    try:
+        parts = text.replace(",", " ").split()
+        if len(parts) < 2:
+            await message.answer(
+                "❌ Неверный формат. Введи номер продукта и новый вес.\n"
+                "Пример: 1 200 (изменит вес первого продукта на 200 г)"
+            )
+            return
+        
+        product_num = int(parts[0])
+        new_weight = float(parts[1].replace(",", "."))
+        
+        if product_num < 1 or product_num > len(saved_products):
+            await message.answer(
+                f"❌ Неверный номер продукта. Введи число от 1 до {len(saved_products)}."
+            )
+            return
+        
+        if new_weight <= 0:
+            await message.answer("❌ Вес должен быть больше нуля.")
+            return
+        
+        # Получаем продукт для редактирования
+        product = saved_products[product_num - 1]
+        
+        # Получаем КБЖУ на 100г
+        calories_per_100g = product.get("calories_per_100g")
+        protein_per_100g = product.get("protein_per_100g")
+        fat_per_100g = product.get("fat_per_100g")
+        carbs_per_100g = product.get("carbs_per_100g")
+        
+        # Если нет значений на 100г, вычисляем из сохраненных данных
+        if not calories_per_100g or calories_per_100g == 0:
+            orig_grams = product.get("grams", 0)
+            if orig_grams > 0:
+                orig_calories = product.get("calories", 0) or 0
+                orig_protein = product.get("protein_g", 0) or 0
+                orig_fat = product.get("fat_total_g", 0) or 0
+                orig_carbs = product.get("carbohydrates_total_g", 0) or 0
+                
+                if orig_calories > 0:
+                    calories_per_100g = (orig_calories / orig_grams) * 100
+                    protein_per_100g = (orig_protein / orig_grams) * 100
+                    fat_per_100g = (orig_fat / orig_grams) * 100
+                    carbs_per_100g = (orig_carbs / orig_grams) * 100
+        
+        # Пересчитываем КБЖУ для нового веса
+        new_calories = (calories_per_100g * new_weight) / 100 if calories_per_100g else 0
+        new_protein = (protein_per_100g * new_weight) / 100 if protein_per_100g else 0
+        new_fat = (fat_per_100g * new_weight) / 100 if fat_per_100g else 0
+        new_carbs = (carbs_per_100g * new_weight) / 100 if carbs_per_100g else 0
+        
+        # Обновляем продукт
+        product["grams"] = new_weight
+        product["calories"] = new_calories
+        product["protein_g"] = new_protein
+        product["fat_total_g"] = new_fat
+        product["carbohydrates_total_g"] = new_carbs
+        
+        # Суммируем КБЖУ всех продуктов
+        totals = {
+            "calories": sum(p.get("calories", 0) for p in saved_products),
+            "protein_g": sum(p.get("protein_g", 0) for p in saved_products),
+            "fat_total_g": sum(p.get("fat_total_g", 0) for p in saved_products),
+            "carbohydrates_total_g": sum(p.get("carbohydrates_total_g", 0) for p in saved_products),
+        }
+        
+        # Формируем api_details
+        api_details_lines = []
+        for p in saved_products:
+            api_details_lines.append(
+                f"• {p.get('name', 'продукт')} ({p.get('grams', 0):.0f} г) — {p.get('calories', 0):.0f} ккал "
+                f"(Б {p.get('protein_g', 0):.1f} / Ж {p.get('fat_total_g', 0):.1f} / У {p.get('carbohydrates_total_g', 0):.1f})"
+            )
+        api_details = "\n".join(api_details_lines) if api_details_lines else None
+        
+        # Получаем meal для сохранения raw_query
+        meal = MealRepository.get_meal_by_id(meal_id, user_id)
+        raw_query = meal.raw_query if meal and hasattr(meal, 'raw_query') else None
+        
+        # Обновляем запись
+        success = MealRepository.update_meal(
+            meal_id=meal_id,
+            user_id=user_id,
+            description=raw_query,
+            calories=totals["calories"],
+            protein=totals["protein_g"],
+            fat=totals["fat_total_g"],
+            carbs=totals["carbohydrates_total_g"],
+            products_json=json.dumps(saved_products),
+            api_details=api_details,
+        )
+        
+        if not success:
+            await message.answer("❌ Не удалось обновить запись.")
+            await state.clear()
+            return
+        
+        await state.clear()
+        
+        # Показываем обновлённый день
+        if isinstance(target_date_str, str):
+            try:
+                target_date = date.fromisoformat(target_date_str)
+            except ValueError:
+                target_date = date.today()
+        else:
+            target_date = date.today()
+        
+        await message.answer("✅ Вес продукта обновлён! КБЖУ пересчитано.")
+        await show_day_meals(message, user_id, target_date)
+        
+    except (ValueError, IndexError) as e:
+        logger.error(f"Error parsing weight edit input: {e}")
+        await message.answer(
+            "❌ Неверный формат. Введи номер продукта и новый вес.\n"
+            "Пример: 1 200 (изменит вес первого продукта на 200 г)"
+        )
+
+
+@router.message(MealEntryStates.editing_meal_composition)
+async def handle_meal_composition_edit(message: Message, state: FSMContext):
+    """Обрабатывает изменение состава продуктов через ИИ."""
+    user_id = str(message.from_user.id)
+    user_text = message.text.strip()
+    
+    # Проверяем, не является ли это кнопкой меню
+    menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
+    if user_text in menu_buttons:
+        await state.clear()
+        if user_text == "⬅️ Назад":
+            from handlers.common import go_back
+            await go_back(message, state)
+        elif user_text == "🏠 Главное меню":
+            from handlers.common import go_main_menu
+            await go_main_menu(message, state)
+        else:
+            await message.answer("Редактирование отменено.")
+        return
+    
+    if not user_text:
+        await message.answer("Напиши, пожалуйста, новый состав продуктов 🙏")
+        return
+    
+    data = await state.get_data()
+    meal_id = data.get("meal_id")
+    target_date_str = data.get("target_date", date.today().isoformat())
+    
+    if not meal_id:
+        await message.answer("❌ Не удалось найти запись для обновления.")
+        await state.clear()
+        return
+    
+    # Показываем сообщение об анализе
+    await message.answer("🤖 Считаю КБЖУ с помощью ИИ, секунду...")
+    
+    # Получаем КБЖУ через Gemini (как в "ввести прием пищи")
+    kbju_data = gemini_service.estimate_kbju(user_text)
+    
+    if not kbju_data or "total" not in kbju_data:
+        await message.answer(
+            "⚠️ Не получилось определить КБЖУ.\n"
+            "Попробуй ещё раз или используй другой способ редактирования."
+        )
+        return
+    
+    items = kbju_data.get("items", [])
+    total = kbju_data.get("total", {})
+    
+    # Безопасное преобразование значений
+    def safe_float(value) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+    
+    totals_for_db = {
+        "calories": safe_float(total.get("kcal")),
+        "protein": safe_float(total.get("protein")),
+        "fat": safe_float(total.get("fat")),
+        "carbs": safe_float(total.get("carbs")),
+    }
+    
+    # Обновляем запись
+    success = MealRepository.update_meal(
+        meal_id=meal_id,
+        user_id=user_id,
+        description=user_text,
+        calories=totals_for_db["calories"],
+        protein=totals_for_db["protein"],
+        fat=totals_for_db["fat"],
+        carbs=totals_for_db["carbs"],
+        products_json=json.dumps(items),
+    )
+    
+    if not success:
+        await message.answer("❌ Не удалось обновить запись.")
+        await state.clear()
+        return
+    
+    await state.clear()
+    
+    # Показываем обновлённый день
+    if isinstance(target_date_str, str):
+        try:
+            target_date = date.fromisoformat(target_date_str)
+        except ValueError:
+            target_date = date.today()
+    else:
+        target_date = date.today()
+    
+    await message.answer("✅ Состав продуктов обновлён! КБЖУ пересчитано через ИИ.")
+    await show_day_meals(message, user_id, target_date)
 
 
 @router.message(MealEntryStates.editing_meal)

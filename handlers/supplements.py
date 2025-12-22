@@ -793,6 +793,8 @@ async def handle_time_value(message: Message, state: FSMContext):
         if text == "💾 Сохранить":
             current_times = data.get("times", [])
             if current_times and len(current_times) > 0:
+                # Явно сохраняем времена в state перед переходом
+                await state.update_data(times=current_times)
                 # Переходим к следующему шагу - дни
                 await state.set_state(SupplementStates.selecting_days)
                 from utils.supplement_keyboards import supplement_test_skip_menu, days_menu
@@ -937,7 +939,9 @@ async def toggle_day(message: Message, state: FSMContext):
         if supplement_id is None:
             # Проверяем пропуск
             if message.text == "⏭️ Пропустить":
-                await state.update_data(days=[])
+                times = data.get("times", [])
+                # Явно сохраняем дни и времена в state перед переходом
+                await state.update_data(days=[], times=times)
                 # Переходим к следующему шагу - длительность
                 await state.set_state(SupplementStates.choosing_duration)
                 from utils.supplement_keyboards import supplement_test_skip_menu, duration_menu
@@ -998,6 +1002,9 @@ async def toggle_day(message: Message, state: FSMContext):
             # Проверяем "💾 Сохранить" - переход к следующему шагу
             if message.text == "💾 Сохранить":
                 days = data.get("days", [])
+                times = data.get("times", [])
+                # Явно сохраняем дни и времена в state перед переходом
+                await state.update_data(days=days, times=times)
                 # Переходим к следующему шагу - длительность
                 await state.set_state(SupplementStates.choosing_duration)
                 from utils.supplement_keyboards import duration_menu
