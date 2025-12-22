@@ -5,6 +5,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from utils.keyboards import settings_menu, delete_account_confirm_menu, push_menu_stack, main_menu_button
 from database.session import get_db_session
+from states.user_states import SupportStates
 
 logger = logging.getLogger(__name__)
 
@@ -131,18 +132,90 @@ async def delete_account_cancel(message: Message):
 
 
 @router.message(lambda m: m.text == "💬 Поддержка")
-async def support(message: Message):
-    """Показывает информацию о поддержке."""
+async def support(message: Message, state: FSMContext):
+    """Начинает процесс отправки сообщения в поддержку."""
     reset_user_state(message)
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened support")
     
-    push_menu_stack(message.bot, settings_menu)
+    await state.set_state(SupportStates.waiting_for_message)
     await message.answer(
-        "💬 Поддержка\n\n"
-        "Эта функция пока в разработке. Скоро здесь можно будет связаться с поддержкой!",
-        reply_markup=settings_menu,
+        "💬 <b>Поддержка</b>\n\n"
+        "Напишите ваш вопрос или сообщение для поддержки. Я перешлю его администратору.\n\n"
+        "Для отмены используйте кнопку '⬅️ Назад' или '🏠 Главное меню'.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="⬅️ Назад"), main_menu_button]],
+            resize_keyboard=True
+        ),
+        parse_mode="HTML",
     )
+
+
+@router.message(SupportStates.waiting_for_message)
+async def handle_support_message(message: Message, state: FSMContext):
+    """Обрабатывает сообщение пользователя и пересылает его в поддержку."""
+    user_id = str(message.from_user.id)
+    user_text = message.text or message.caption or ""
+    
+    # Проверяем, не является ли это кнопкой меню
+    if message.text in ["⬅️ Назад", "🏠 Главное меню", "⚙️ Настройки"]:
+        await state.clear()
+        if message.text == "🏠 Главное меню":
+            from handlers.common import go_main_menu
+            await go_main_menu(message, state)
+        elif message.text == "⚙️ Настройки":
+            await settings(message, state)
+        else:  # "⬅️ Назад"
+            push_menu_stack(message.bot, settings_menu)
+            await message.answer(
+                "❌ Отправка сообщения отменена.",
+                reply_markup=settings_menu,
+            )
+        return
+    
+    if not user_text.strip():
+        await message.answer("Пожалуйста, введите текст сообщения для поддержки.")
+        return
+    
+    # ID администратора поддержки
+    SUPPORT_USER_ID = 6065083722
+    
+    # Формируем сообщение для администратора
+    user_info = f"👤 <b>Пользователь:</b>\n"
+    user_info += f"ID: <code>{user_id}</code>\n"
+    if message.from_user.username:
+        user_info += f"Username: @{message.from_user.username}\n"
+    if message.from_user.first_name:
+        user_info += f"Имя: {message.from_user.first_name}\n"
+    if message.from_user.last_name:
+        user_info += f"Фамилия: {message.from_user.last_name}\n"
+    user_info += f"Язык: {message.from_user.language_code or 'не указан'}\n\n"
+    user_info += f"💬 <b>Сообщение:</b>\n{user_text}"
+    
+    try:
+        # Отправляем сообщение администратору
+        await message.bot.send_message(
+            chat_id=SUPPORT_USER_ID,
+            text=user_info,
+            parse_mode="HTML"
+        )
+        
+        # Подтверждаем пользователю
+        await state.clear()
+        push_menu_stack(message.bot, settings_menu)
+        await message.answer(
+            "✅ <b>Сообщение отправлено!</b>\n\n"
+            "Ваше сообщение успешно доставлено в поддержку. Мы ответим вам в ближайшее время.",
+            reply_markup=settings_menu,
+            parse_mode="HTML",
+        )
+        logger.info(f"Support message from user {user_id} sent to admin {SUPPORT_USER_ID}")
+    except Exception as e:
+        logger.error(f"Error sending support message: {e}")
+        await message.answer(
+            "❌ Произошла ошибка при отправке сообщения. Попробуйте позже.",
+            reply_markup=settings_menu,
+        )
 
 
 @router.message(lambda m: m.text == "🔒 Политика конфиденциальности")

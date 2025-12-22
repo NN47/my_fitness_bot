@@ -75,3 +75,8 @@ class ProcedureStates(StatesGroup):
 class WaterStates(StatesGroup):
     """Состояния для работы с водой."""
     entering_amount = State()
+
+
+class SupportStates(StatesGroup):
+    """Состояния для работы с поддержкой."""
+    waiting_for_message = State()
