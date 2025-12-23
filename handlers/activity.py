@@ -1,5 +1,6 @@
 """Обработчики для анализа деятельности."""
 import logging
+import re
 from datetime import date, timedelta
 from aiogram import Router
 from aiogram.types import Message
@@ -291,6 +292,13 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 """
     
     result = gemini_service.analyze(prompt)
+    
+    # Заменяем markdown звездочки на HTML-теги для жирного шрифта
+    # Заменяем **текст** на <b>текст</b>
+    result = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', result)
+    # Заменяем оставшиеся одиночные звездочки в конце (если есть)
+    result = re.sub(r'\*+$', '', result)
+    
     return result
 
 
