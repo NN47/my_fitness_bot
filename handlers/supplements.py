@@ -764,39 +764,9 @@ async def edit_supplement_time(message: Message, state: FSMContext):
             f"⏰ Добавление времени приёма\n\n"
             f"💡 Введите время в формате ЧЧ:ММ\n"
             f"Например: 09:00 или 14:30\n\n"
-            f"Нажмите «➕ Добавить», чтобы начать ввод времени",
+            f"Нажмите «💾 Сохранить», когда закончите добавлять время",
             reply_markup=time_first_menu(),
         )
-
-
-@router.message(SupplementStates.entering_time, lambda m: m.text == "➕ Добавить")
-async def handle_add_time_button(message: Message, state: FSMContext):
-    """Обрабатывает нажатие кнопки '➕ Добавить' при редактировании времени добавки."""
-    data = await state.get_data()
-    times = data.get("times", [])
-    supplement_id = data.get("supplement_id")
-    
-    # Если это редактирование существующей добавки (не создание новой)
-    if supplement_id is not None:
-        if times:
-            push_menu_stack(message.bot, time_edit_menu(times))
-            times_list = "\n".join(times)
-            await message.answer(
-                f"⏰ Добавление времени\n\n"
-                f"Текущее расписание:\n{times_list}\n\n"
-                f"💡 Введите время в формате ЧЧ:ММ\n"
-                f"Например: 09:00 или 14:30",
-                reply_markup=time_edit_menu(times),
-            )
-        else:
-            push_menu_stack(message.bot, time_first_menu())
-            await message.answer(
-                f"⏰ Добавление времени приёма\n\n"
-                f"💡 Введите время в формате ЧЧ:ММ\n"
-                f"Например: 09:00 или 14:30",
-                reply_markup=time_first_menu(),
-            )
-    # Если это создание новой добавки, обработка происходит в handle_time_value
 
 
 @router.message(SupplementStates.entering_time)
