@@ -131,6 +131,16 @@ async def show_kbju_goal(message: Message, state: FSMContext):
 @router.message(lambda m: m.text == "➕ Добавить")
 async def calories_add(message: Message, state: FSMContext):
     """Начинает процесс добавления приёма пищи."""
+    # Проверяем, что пользователь НЕ находится в состоянии редактирования добавок
+    from states.user_states import SupplementStates
+    current_state = await state.get_state()
+    
+    # Если пользователь редактирует время добавки, не обрабатываем эту кнопку здесь
+    # В aiogram get_state() возвращает строку вида "SupplementStates:entering_time"
+    # Сравниваем строки, используя строковое представление состояния
+    if current_state and "entering_time" in str(current_state) and "SupplementStates" in str(current_state):
+        return  # Пропускаем обработку, чтобы более специфичный обработчик в supplements.py мог обработать
+    
     reset_user_state(message)
     await start_kbju_add_flow(message, date.today(), state)
 
