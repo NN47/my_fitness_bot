@@ -752,15 +752,51 @@ async def edit_supplement_time(message: Message, state: FSMContext):
         push_menu_stack(message.bot, time_edit_menu(times))
         times_list = "\n".join(times)
         await message.answer(
-            f"Текущее расписание:\n{times_list}\n\nℹ️ Нажмите ❌ чтобы удалить время",
+            f"⏰ Редактирование времени приёма\n\n"
+            f"Текущее расписание:\n{times_list}\n\n"
+            f"💡 Введите время в формате ЧЧ:ММ (например: 09:00)\n\n"
+            f"ℹ️ Нажмите ❌ чтобы удалить время",
             reply_markup=time_edit_menu(times),
         )
     else:
         push_menu_stack(message.bot, time_first_menu())
         await message.answer(
-            f"ℹ️ Добавьте первое время приема",
+            f"⏰ Добавление времени приёма\n\n"
+            f"💡 Введите время в формате ЧЧ:ММ\n"
+            f"Например: 09:00 или 14:30\n\n"
+            f"Нажмите «➕ Добавить», чтобы начать ввод времени",
             reply_markup=time_first_menu(),
         )
+
+
+@router.message(SupplementStates.entering_time, lambda m: m.text == "➕ Добавить")
+async def handle_add_time_button(message: Message, state: FSMContext):
+    """Обрабатывает нажатие кнопки '➕ Добавить' при редактировании времени добавки."""
+    data = await state.get_data()
+    times = data.get("times", [])
+    supplement_id = data.get("supplement_id")
+    
+    # Если это редактирование существующей добавки (не создание новой)
+    if supplement_id is not None:
+        if times:
+            push_menu_stack(message.bot, time_edit_menu(times))
+            times_list = "\n".join(times)
+            await message.answer(
+                f"⏰ Добавление времени\n\n"
+                f"Текущее расписание:\n{times_list}\n\n"
+                f"💡 Введите время в формате ЧЧ:ММ\n"
+                f"Например: 09:00 или 14:30",
+                reply_markup=time_edit_menu(times),
+            )
+        else:
+            push_menu_stack(message.bot, time_first_menu())
+            await message.answer(
+                f"⏰ Добавление времени приёма\n\n"
+                f"💡 Введите время в формате ЧЧ:ММ\n"
+                f"Например: 09:00 или 14:30",
+                reply_markup=time_first_menu(),
+            )
+    # Если это создание новой добавки, обработка происходит в handle_time_value
 
 
 @router.message(SupplementStates.entering_time)
@@ -895,32 +931,67 @@ async def handle_time_value(message: Message, state: FSMContext):
         )
         return
     
-    menu_buttons = ["⬅️ Назад", "➕ Добавить"]
-    if any(text.startswith(btn) for btn in menu_buttons) or text.startswith("❌"):
-        if text.startswith("❌"):
-            # Удаление времени
-            time_value = text.replace("❌ ", "").strip()
-            times = data.get("times", []).copy()
-            if time_value in times:
-                times.remove(time_value)
-            await state.update_data(times=times)
-            if times:
-                push_menu_stack(message.bot, time_edit_menu(times))
-                times_list = "\n".join(times)
-                await message.answer(
-                    f"Обновленное расписание:\n{times_list}",
-                    reply_markup=time_edit_menu(times),
-                )
-            else:
-                push_menu_stack(message.bot, time_first_menu())
-                await message.answer(
-                    "Расписание очищено. Добавьте время.",
-                    reply_markup=time_first_menu(),
-                )
+    
+    # Обрабатываем кнопку "⬅️ Назад"
+    if text == "⬅️ Назад":
+        await state.set_state(SupplementStates.editing_supplement)
+        data = await state.get_data()
+        push_menu_stack(message.bot, supplement_edit_menu(show_save=True))
+        await message.answer(
+            f"💊 {data.get('name', 'Добавка')}\n"
+            f"⏰ Время: {', '.join(data.get('times', [])) or 'не выбрано'}\n"
+            f"📅 Дни: {', '.join(data.get('days', [])) or 'не выбрано'}\n"
+            f"⏳ Длительность: {data.get('duration', 'постоянно')}",
+            reply_markup=supplement_edit_menu(show_save=True),
+        )
         return
     
+    # Обрабатываем удаление времени (кнопки начинающиеся с "❌")
+    if text.startswith("❌"):
+        # Удаление времени
+        time_value = text.replace("❌ ", "").strip()
+        times = data.get("times", []).copy()
+        if time_value in times:
+            times.remove(time_value)
+        await state.update_data(times=times)
+        if times:
+            push_menu_stack(message.bot, time_edit_menu(times))
+            times_list = "\n".join(times)
+            await message.answer(
+                f"✅ Время удалено\n\n"
+                f"Обновленное расписание:\n{times_list}\n\n"
+                f"💡 Введите время в формате ЧЧ:ММ (например: 09:00) или нажмите «💾 Сохранить»",
+                reply_markup=time_edit_menu(times),
+            )
+        else:
+            push_menu_stack(message.bot, time_first_menu())
+            await message.answer(
+                "✅ Расписание очищено\n\n"
+                "💡 Введите время в формате ЧЧ:ММ (например: 09:00)",
+                reply_markup=time_first_menu(),
+            )
+        return
+    
+    # Проверяем формат времени
     if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", text):
-        await message.answer("Пожалуйста, укажите время в формате ЧЧ:ММ. Например: 09:00")
+        data = await state.get_data()
+        times = data.get("times", [])
+        if times:
+            push_menu_stack(message.bot, time_edit_menu(times))
+            await message.answer(
+                "❌ Неверный формат времени\n\n"
+                "💡 Пожалуйста, укажите время в формате ЧЧ:ММ\n"
+                "Например: 09:00 или 14:30",
+                reply_markup=time_edit_menu(times),
+            )
+        else:
+            push_menu_stack(message.bot, time_first_menu())
+            await message.answer(
+                "❌ Неверный формат времени\n\n"
+                "💡 Пожалуйста, укажите время в формате ЧЧ:ММ\n"
+                "Например: 09:00 или 14:30",
+                reply_markup=time_first_menu(),
+            )
         return
     
     times = data.get("times", []).copy()
@@ -932,7 +1003,9 @@ async def handle_time_value(message: Message, state: FSMContext):
     push_menu_stack(message.bot, time_edit_menu(times))
     times_list = "\n".join(times)
     await message.answer(
-        f"💊 {data.get('name', 'Добавка')}\n\nРасписание приема:\n{times_list}\n\nℹ️ Нажмите ❌ чтобы удалить время",
+        f"✅ Время добавлено: {text}\n\n"
+        f"📋 Расписание приёма:\n{times_list}\n\n"
+        f"💡 Введите ещё одно время (ЧЧ:ММ) или нажмите «💾 Сохранить»",
         reply_markup=time_edit_menu(times),
     )
 
