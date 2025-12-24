@@ -57,7 +57,7 @@ def time_edit_menu(times: list[str]) -> ReplyKeyboardMarkup:
     buttons: list[list[KeyboardButton]] = []
     for t in times:
         buttons.append([KeyboardButton(text=f"❌ {t}")])
-    buttons.append([KeyboardButton(text="➕ Добавить"), KeyboardButton(text="💾 Сохранить")])
+    buttons.append([KeyboardButton(text="💾 Сохранить")])
     buttons.append([KeyboardButton(text="⬅️ Назад")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -93,7 +93,7 @@ def duration_menu() -> ReplyKeyboardMarkup:
 def time_first_menu() -> ReplyKeyboardMarkup:
     """Меню для первого времени."""
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="➕ Добавить"), KeyboardButton(text="⬅️ Назад")]],
+        keyboard=[[KeyboardButton(text="💾 Сохранить"), KeyboardButton(text="⬅️ Назад")]],
         resize_keyboard=True,
     )
 
