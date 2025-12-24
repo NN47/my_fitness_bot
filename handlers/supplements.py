@@ -511,10 +511,11 @@ async def choose_supplement_to_edit(message: Message, state: FSMContext):
     supplements_list = SupplementRepository.get_supplements(user_id)
     
     # Проверяем, не является ли это кнопкой редактирования или меню
-    edit_buttons = ["✏️ Редактировать время", "📅 Редактировать дни", "⏳ Длительность приема", 
-                    "🔔 Уведомления", "✏️ Изменить название", "❌ Отменить"]
-    menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "💾 Сохранить"]
-    if message.text in edit_buttons or message.text in menu_buttons:
+    # Кнопки редактирования ("✏️ Редактировать время", "📅 Редактировать дни", 
+    # "⏳ Длительность приема", "🔔 Уведомления", "✏️ Изменить название") 
+    # обрабатываются отдельными обработчиками с фильтром состояния
+    menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "💾 Сохранить", "❌ Отменить"]
+    if message.text in menu_buttons:
         if message.text == "💾 Сохранить":
             # Сохранение обрабатывается отдельным обработчиком
             return
@@ -715,7 +716,7 @@ async def save_supplement(message: Message, state: FSMContext):
         await message.answer("❌ Не удалось сохранить добавку. Попробуйте позже.")
 
 
-@router.message(lambda m: m.text == "✏️ Редактировать время")
+@router.message(SupplementStates.editing_supplement, lambda m: m.text == "✏️ Редактировать время")
 async def edit_supplement_time(message: Message, state: FSMContext):
     """Начинает редактирование времени приёма."""
     data = await state.get_data()
@@ -911,7 +912,7 @@ async def handle_time_value(message: Message, state: FSMContext):
     )
 
 
-@router.message(lambda m: m.text == "📅 Редактировать дни")
+@router.message(SupplementStates.editing_supplement, lambda m: m.text == "📅 Редактировать дни")
 async def edit_days(message: Message, state: FSMContext):
     """Начинает редактирование дней приёма."""
     data = await state.get_data()
@@ -1094,9 +1095,10 @@ async def toggle_day(message: Message, state: FSMContext):
         await message.answer("❌ Произошла ошибка. Попробуй ещё раз.")
 
 
-@router.message(lambda m: m.text == "⏳ Длительность приема")
+@router.message(SupplementStates.editing_supplement, lambda m: m.text == "⏳ Длительность приема")
 async def choose_duration(message: Message, state: FSMContext):
     """Показывает меню выбора длительности."""
+    await state.set_state(SupplementStates.choosing_duration)
     push_menu_stack(message.bot, duration_menu())
     await message.answer("Выберите длительность приема", reply_markup=duration_menu())
 
@@ -1402,7 +1404,7 @@ async def save_supplement_from_test(message: Message, state: FSMContext):
         await state.clear()
 
 
-@router.message(lambda m: m.text == "🔔 Уведомления")
+@router.message(SupplementStates.editing_supplement, lambda m: m.text == "🔔 Уведомления")
 async def toggle_notifications(message: Message, state: FSMContext):
     """Переключает уведомления (для редактирования)."""
     data = await state.get_data()
@@ -1422,7 +1424,7 @@ async def toggle_notifications(message: Message, state: FSMContext):
         )
 
 
-@router.message(lambda m: m.text == "✏️ Изменить название")
+@router.message(SupplementStates.editing_supplement, lambda m: m.text == "✏️ Изменить название")
 async def rename_supplement(message: Message, state: FSMContext):
     """Начинает изменение названия добавки."""
     await state.set_state(SupplementStates.entering_name)
