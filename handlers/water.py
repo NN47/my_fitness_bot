@@ -66,6 +66,35 @@ async def water(message: Message):
     await message.answer(intro_text, reply_markup=water_menu)
 
 
+@router.message(lambda m: m.text == "💧 +250 мл")
+async def quick_add_water_250(message: Message, state: FSMContext):
+    """Быстро добавляет 250 мл воды одной кнопкой из главного меню."""
+    user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} used quick water +250 button")
+    
+    # Сбрасываем состояние, если пользователь был в каком-то другом шаге
+    await state.clear()
+    
+    entry_date = date.today()
+    amount = 250.0
+    WaterRepository.save_water_entry(user_id, amount, entry_date)
+    
+    daily_total = WaterRepository.get_daily_total(user_id, entry_date)
+    recommended = get_water_recommended(user_id)
+    progress = round((daily_total / recommended) * 100) if recommended > 0 else 0
+    bar = build_water_progress_bar(daily_total, recommended)
+    
+    text = (
+        f"✅ Добавил {amount:.0f} мл воды\n\n"
+        f"💧 Всего за сегодня: {daily_total:.0f} мл\n"
+        f"🎯 Норма: {recommended:.0f} мл\n"
+        f"📈 Прогресс: {progress}%\n"
+        f"{bar}"
+    )
+    
+    await message.answer(text)
+
+
 @router.message(lambda m: m.text == "➕ Добавить воду")
 async def add_water(message: Message, state: FSMContext):
     """Обработчик добавления воды."""

@@ -10,6 +10,15 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💧 Контроль воды")],
+        # Быстрые действия на день
+        [
+            KeyboardButton(text="💧 +250 мл"),
+            KeyboardButton(text="🍱 Быстрый перекус"),
+        ],
+        [
+            KeyboardButton(text="🏋️ Сегодня тренировка"),
+            KeyboardButton(text="😴 Сегодня выходной"),
+        ],
         [KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки")],
     ],

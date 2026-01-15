@@ -24,6 +24,7 @@ async def start(message: Message):
     """Обработчик команды /start."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} started the bot")
+    is_new_user = False
     
     # Создаём или обновляем пользователя в БД
     with get_db_session() as session:
@@ -33,6 +34,7 @@ async def start(message: Message):
             session.add(user)
             session.commit()
             logger.info(f"New user {user_id} registered")
+            is_new_user = True
     
     # Формируем приветствие с прогрессом
     progress_text = format_progress_block(user_id)
@@ -40,7 +42,42 @@ async def start(message: Message):
     workouts_text = format_today_workouts_block(user_id, include_date=False)
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     
-    welcome_text = f"{today_line}\n\n{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
+    if is_new_user:
+        # Мини-онбординг для новых пользователей
+        welcome_intro = (
+            "👋 Привет! Я твой фитнес-бот-помощник.\n\n"
+            "Что я умею:\n"
+            "• следить за КБЖУ и приёмами пищи\n"
+            "• учитывать тренировки и расход калорий\n"
+            "• помогать контролировать воду и вес\n"
+            "• анализировать твою активность с помощью ИИ\n\n"
+            "С чего начать прямо сейчас:\n"
+            "1️⃣ В разделе «🍱 КБЖУ» задай цель или просто добавь первый приём пищи\n"
+            "2️⃣ В «💧 Контроль воды» начни отмечать выпитую воду\n"
+            "3️⃣ В «⚖️ Вес / 📏 Замеры» укажи текущий вес для более точных рекомендаций\n"
+        )
+        welcome_text = (
+            f"{today_line}\n\n"
+            f"{welcome_intro}\n"
+            f"{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
+        )
+    else:
+        # Для существующих пользователей показываем краткий дайджест
+        try:
+            summary_text = get_today_summary_text(user_id)
+        except Exception:
+            summary_text = ""
+        if summary_text:
+            welcome_text = (
+                f"{today_line}\n\n"
+                f"{summary_text}\n\n"
+                f"{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
+            )
+        else:
+            welcome_text = (
+                f"{today_line}\n\n"
+                f"{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
+            )
     
     push_menu_stack(message.bot, main_menu)
     await message.answer(welcome_text, reply_markup=main_menu, parse_mode="HTML")
