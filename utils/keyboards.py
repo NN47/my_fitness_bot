@@ -1,5 +1,5 @@
 """Клавиатуры для бота."""
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 # Главная кнопка меню
 main_menu_button = KeyboardButton(text="🏠 Главное меню")
@@ -10,19 +10,24 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💧 Контроль воды")],
-        # Быстрые действия на день
-        [
-            KeyboardButton(text="💧 +250 мл"),
-            KeyboardButton(text="🍱 Быстрый перекус"),
-        ],
-        [
-            KeyboardButton(text="🏋️ Сегодня тренировка"),
-            KeyboardButton(text="😴 Сегодня выходной"),
-        ],
         [KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки")],
     ],
     resize_keyboard=True
+)
+
+# Inline-кнопки быстрых действий под текстом
+quick_actions_inline = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="💧 +250 мл", callback_data="quick_water_250"),
+            InlineKeyboardButton(text="🍱 Быстрый перекус", callback_data="quick_snack"),
+        ],
+        [
+            InlineKeyboardButton(text="🏋️ Сегодня тренировка", callback_data="quick_today_workout"),
+            InlineKeyboardButton(text="😴 Сегодня выходной", callback_data="quick_rest_day"),
+        ],
+    ]
 )
 
 # Меню тренировок

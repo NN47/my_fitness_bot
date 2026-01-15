@@ -88,6 +88,39 @@ async def quick_rest_day(message: Message, state: FSMContext):
     await message.answer(text)
 
 
+@router.callback_query(lambda c: c.data == "quick_today_workout")
+async def quick_today_workout_cb(callback: CallbackQuery, state: FSMContext):
+    """Быстрый вход в добавление тренировки на сегодня по inline-кнопке."""
+    await callback.answer()
+    message = callback.message
+    user_id = str(callback.from_user.id)
+    logger.info(f"User {user_id} used quick 'today workout' inline button")
+    
+    await state.clear()
+    await show_training_menu(message, state)
+
+
+@router.callback_query(lambda c: c.data == "quick_rest_day")
+async def quick_rest_day_cb(callback: CallbackQuery, state: FSMContext):
+    """Отмечаем день как день отдыха по inline-кнопке."""
+    await callback.answer()
+    message = callback.message
+    user_id = str(callback.from_user.id)
+    logger.info(f"User {user_id} marked today as rest day via quick inline button")
+    
+    await state.clear()
+    
+    today_label = date.today().strftime("%d.%m.%Y")
+    text = (
+        f"😴 День отдыха — {today_label}\n\n"
+        "Отдых тоже часть прогресса 💪\n"
+        "Можешь всё равно отметить лёгкую активность: прогулку, шаги, растяжку.\n\n"
+        "Не забывай про воду «💧 +250 мл» и питание «🍱 Быстрый перекус» 😉"
+    )
+    
+    await message.answer(text)
+
+
 @router.message(lambda m: m.text == "➕ Добавить тренировку")
 async def add_training_entry(message: Message, state: FSMContext):
     """Начинает процесс добавления тренировки."""

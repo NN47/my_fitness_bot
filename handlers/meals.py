@@ -96,6 +96,30 @@ async def quick_snack(message: Message, state: FSMContext):
     await message.answer(text, reply_markup=kbju_add_menu)
 
 
+@router.callback_query(lambda c: c.data == "quick_snack")
+async def quick_snack_cb(callback: CallbackQuery, state: FSMContext):
+    """Упрощённый вход в добавление перекуса через ИИ по inline-кнопке."""
+    await callback.answer()
+    message = callback.message
+    user_id = str(callback.from_user.id)
+    logger.info(f"User {user_id} used quick snack inline button")
+    
+    await state.set_state(MealEntryStates.waiting_for_ai_food_input)
+    
+    text = (
+        "🍱 Быстрый перекус\n\n"
+        "Напиши коротко, чем перекусил(а) — одним сообщением.\n\n"
+        "Примеры:\n"
+        "• йогурт 150 г и горсть орехов\n"
+        "• яблоко и протеиновый батончик\n"
+        "• творог 100 г с ягодами\n\n"
+        "Я оценю КБЖУ с помощью ИИ и добавлю это как приём пищи."
+    )
+    
+    push_menu_stack(message.bot, kbju_add_menu)
+    await message.answer(text, reply_markup=kbju_add_menu)
+
+
 @router.message(lambda m: m.text == "🎯 Цель / Норма КБЖУ")
 async def show_kbju_goal(message: Message, state: FSMContext):
     """Показывает текущую цель КБЖУ или предлагает пройти тест."""

@@ -4,7 +4,7 @@ from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from utils.keyboards import main_menu, push_menu_stack
+from utils.keyboards import main_menu, push_menu_stack, quick_actions_inline
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,10 @@ async def go_main_menu(message: Message, state: FSMContext):
     welcome_text = f"{today_line}\n\n{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
     
     push_menu_stack(message.bot, main_menu)
-    await message.answer(welcome_text, reply_markup=main_menu, parse_mode="HTML")
+    # Сначала отправляем текст с кратким днёвным статусом и inline-кнопками быстрых действий
+    await message.answer(welcome_text, reply_markup=quick_actions_inline, parse_mode="HTML")
+    # Затем — отдельное сообщение с основной клавиатурой
+    await message.answer("⬇️ Главное меню", reply_markup=main_menu)
 
 
 @router.message(lambda m: m.text == "⬅️ Назад")

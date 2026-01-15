@@ -3,7 +3,7 @@ import logging
 from datetime import date
 from collections import defaultdict
 from aiogram import Router
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from states.user_states import WaterStates
 from utils.keyboards import water_menu, water_amount_menu, push_menu_stack, main_menu_button
@@ -73,6 +73,36 @@ async def quick_add_water_250(message: Message, state: FSMContext):
     logger.info(f"User {user_id} used quick water +250 button")
     
     # Сбрасываем состояние, если пользователь был в каком-то другом шаге
+    await state.clear()
+    
+    entry_date = date.today()
+    amount = 250.0
+    WaterRepository.save_water_entry(user_id, amount, entry_date)
+    
+    daily_total = WaterRepository.get_daily_total(user_id, entry_date)
+    recommended = get_water_recommended(user_id)
+    progress = round((daily_total / recommended) * 100) if recommended > 0 else 0
+    bar = build_water_progress_bar(daily_total, recommended)
+    
+    text = (
+        f"✅ Добавил {amount:.0f} мл воды\n\n"
+        f"💧 Всего за сегодня: {daily_total:.0f} мл\n"
+        f"🎯 Норма: {recommended:.0f} мл\n"
+        f"📈 Прогресс: {progress}%\n"
+        f"{bar}"
+    )
+    
+    await message.answer(text)
+
+
+@router.callback_query(lambda c: c.data == "quick_water_250")
+async def quick_add_water_250_cb(callback: CallbackQuery, state: FSMContext):
+    """Быстро добавляет 250 мл воды по inline-кнопке под текстом."""
+    await callback.answer()
+    message = callback.message
+    user_id = str(callback.from_user.id)
+    logger.info(f"User {user_id} used quick water +250 inline button")
+    
     await state.clear()
     
     entry_date = date.today()
