@@ -27,6 +27,10 @@ quick_actions_inline = InlineKeyboardMarkup(
             InlineKeyboardButton(text="🏋️ Сегодня тренировка", callback_data="quick_today_workout"),
             InlineKeyboardButton(text="😴 Сегодня выходной", callback_data="quick_rest_day"),
         ],
+        [
+            InlineKeyboardButton(text="💊 Добавки", callback_data="quick_supplements"),
+            InlineKeyboardButton(text="⚖️ Вес", callback_data="quick_weight"),
+        ],
     ]
 )
 
