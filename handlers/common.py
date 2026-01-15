@@ -76,6 +76,24 @@ async def ignore_callback(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data == "quick_supplements")
+async def quick_supplements(callback: CallbackQuery, state: FSMContext):
+    """Быстрое открытие меню добавок."""
+    await callback.answer()
+    # Импортируем обработчик добавок
+    from handlers.supplements import supplements
+    await supplements(callback.message, state)
+
+
+@router.callback_query(lambda c: c.data == "quick_weight")
+async def quick_weight(callback: CallbackQuery, state: FSMContext):
+    """Быстрое открытие меню веса и замеров."""
+    await callback.answer()
+    # Импортируем обработчик веса
+    from handlers.weight import weight_and_measurements
+    await weight_and_measurements(callback.message)
+
+
 def register_common_handlers(dp):
     """Регистрирует общие обработчики."""
     dp.include_router(router)
