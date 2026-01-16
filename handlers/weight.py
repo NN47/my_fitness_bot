@@ -9,7 +9,12 @@ from utils.keyboards import push_menu_stack, main_menu_button, training_date_men
 from database.repositories import WeightRepository
 from states.user_states import WeightStates
 from utils.validators import parse_weight, parse_date
-from utils.calendar_utils import build_weight_calendar_keyboard, build_weight_day_actions_keyboard
+from utils.calendar_utils import (
+    build_weight_calendar_keyboard,
+    build_weight_day_actions_keyboard,
+    build_measurement_calendar_keyboard,
+    build_measurement_day_actions_keyboard,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +36,7 @@ weight_menu = ReplyKeyboardMarkup(
 measurements_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить замеры")],
+        [KeyboardButton(text="📆 Календарь замеров")],
         [KeyboardButton(text="🗑 Удалить замеры")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
@@ -94,22 +100,26 @@ async def my_measurements(message: Message):
     
     text = "📊 История замеров:\n\n"
     for i, m in enumerate(measurements, 1):
-        parts = []
-        if m.chest:
-            parts.append(f"Грудь: {m.chest} см")
-        if m.waist:
-            parts.append(f"Талия: {m.waist} см")
-        if m.hips:
-            parts.append(f"Бёдра: {m.hips} см")
-        if m.biceps:
-            parts.append(f"Бицепс: {m.biceps} см")
-        if m.thigh:
-            parts.append(f"Бедро: {m.thigh} см")
-        
-        text += f"{i}. {m.date.strftime('%d.%m.%Y')} — {', '.join(parts)}\n"
+        text += f"{i}. {m.date.strftime('%d.%m.%Y')} — {format_measurements_summary(m)}\n"
     
     push_menu_stack(message.bot, measurements_menu)
     await message.answer(text, reply_markup=measurements_menu)
+
+
+def format_measurements_summary(measurements) -> str:
+    """Формирует строку замеров для отображения."""
+    parts = []
+    if measurements.chest:
+        parts.append(f"Грудь: {measurements.chest} см")
+    if measurements.waist:
+        parts.append(f"Талия: {measurements.waist} см")
+    if measurements.hips:
+        parts.append(f"Бёдра: {measurements.hips} см")
+    if measurements.biceps:
+        parts.append(f"Бицепс: {measurements.biceps} см")
+    if measurements.thigh:
+        parts.append(f"Бедро: {measurements.thigh} см")
+    return ", ".join(parts) if parts else "нет данных"
 
 
 @router.message(lambda m: m.text == "➕ Добавить вес")
@@ -418,16 +428,37 @@ async def handle_measurements_input(message: Message, state: FSMContext):
     else:
         entry_date = date.today()
     
+    measurement_id = data.get("measurement_id")
+
     try:
-        WeightRepository.save_measurements(user_id, measurements_mapped, entry_date)
-        logger.info(f"User {user_id} saved measurements on {entry_date}")
-        
-        await state.clear()
-        push_menu_stack(message.bot, measurements_menu)
-        await message.answer(
-            f"✅ Замеры сохранены: {measurements_mapped} ({entry_date.strftime('%d.%m.%Y')})",
-            reply_markup=measurements_menu,
-        )
+        if measurement_id:
+            success = WeightRepository.update_measurement(
+                measurement_id,
+                user_id,
+                measurements_mapped,
+            )
+            if success:
+                logger.info(f"User {user_id} updated measurements {measurement_id} on {entry_date}")
+                await state.clear()
+                await message.answer(
+                    f"✅ Замеры обновлены!\n\n"
+                    f"📅 {entry_date.strftime('%d.%m.%Y')}\n"
+                    f"📏 {', '.join(measurements_mapped.keys())}",
+                )
+                await show_day_measurements(message, user_id, entry_date)
+            else:
+                await message.answer("⚠️ Не удалось обновить замеры.")
+                await state.clear()
+        else:
+            WeightRepository.save_measurements(user_id, measurements_mapped, entry_date)
+            logger.info(f"User {user_id} saved measurements on {entry_date}")
+
+            await state.clear()
+            push_menu_stack(message.bot, measurements_menu)
+            await message.answer(
+                f"✅ Замеры сохранены: {measurements_mapped} ({entry_date.strftime('%d.%m.%Y')})",
+                reply_markup=measurements_menu,
+            )
     except Exception as e:
         logger.error(f"Error saving measurements: {e}", exc_info=True)
         await message.answer("⚠️ Ошибка при сохранении. Повтори попытку позже.")
@@ -517,6 +548,14 @@ async def show_weight_calendar(message: Message):
     await show_weight_calendar_view(message, user_id)
 
 
+@router.message(lambda m: m.text == "📆 Календарь замеров")
+async def show_measurements_calendar(message: Message):
+    """Показывает календарь замеров."""
+    user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} opened measurements calendar")
+    await show_measurements_calendar_view(message, user_id)
+
+
 async def show_weight_calendar_view(message: Message, user_id: str, year: Optional[int] = None, month: Optional[int] = None):
     """Показывает календарь веса."""
     today = date.today()
@@ -525,6 +564,18 @@ async def show_weight_calendar_view(message: Message, user_id: str, year: Option
     keyboard = build_weight_calendar_keyboard(user_id, year, month)
     await message.answer(
         "📆 Календарь веса\n\nВыбери день, чтобы посмотреть, изменить или удалить вес:",
+        reply_markup=keyboard,
+    )
+
+
+async def show_measurements_calendar_view(message: Message, user_id: str, year: Optional[int] = None, month: Optional[int] = None):
+    """Показывает календарь замеров."""
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    keyboard = build_measurement_calendar_keyboard(user_id, year, month)
+    await message.answer(
+        "📆 Календарь замеров\n\nВыбери день, чтобы посмотреть, изменить или удалить замеры:",
         reply_markup=keyboard,
     )
 
@@ -549,6 +600,26 @@ async def back_to_weight_calendar(callback: CallbackQuery):
     await show_weight_calendar_view(callback.message, user_id, year, month)
 
 
+@router.callback_query(lambda c: c.data.startswith("meas_cal_nav:"))
+async def navigate_measurements_calendar(callback: CallbackQuery):
+    """Навигация по календарю замеров."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_measurements_calendar_view(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("meas_cal_back:"))
+async def back_to_measurements_calendar(callback: CallbackQuery):
+    """Возврат к календарю замеров."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_measurements_calendar_view(callback.message, user_id, year, month)
+
+
 @router.callback_query(lambda c: c.data.startswith("weight_cal_day:"))
 async def select_weight_calendar_day(callback: CallbackQuery):
     """Выбор дня в календаре веса."""
@@ -557,6 +628,16 @@ async def select_weight_calendar_day(callback: CallbackQuery):
     target_date = date.fromisoformat(parts[1])
     user_id = str(callback.from_user.id)
     await show_day_weight(callback.message, user_id, target_date)
+
+
+@router.callback_query(lambda c: c.data.startswith("meas_cal_day:"))
+async def select_measurements_calendar_day(callback: CallbackQuery):
+    """Выбор дня в календаре замеров."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+    await show_day_measurements(callback.message, user_id, target_date)
 
 
 async def show_day_weight(message: Message, user_id: str, target_date: date):
@@ -575,6 +656,28 @@ async def show_day_weight(message: Message, user_id: str, target_date: date):
     await message.answer(
         text,
         reply_markup=build_weight_day_actions_keyboard(weight, target_date),
+    )
+
+
+async def show_day_measurements(message: Message, user_id: str, target_date: date):
+    """Показывает замеры за день."""
+    measurements = WeightRepository.get_measurement_for_date(user_id, target_date)
+
+    if not measurements:
+        await message.answer(
+            f"{target_date.strftime('%d.%m.%Y')}: нет записи замеров.",
+            reply_markup=build_measurement_day_actions_keyboard(None, target_date),
+        )
+        return
+
+    text = (
+        f"📅 {target_date.strftime('%d.%m.%Y')}\n\n"
+        f"📏 Замеры: {format_measurements_summary(measurements)}"
+    )
+
+    await message.answer(
+        text,
+        reply_markup=build_measurement_day_actions_keyboard(measurements, target_date),
     )
 
 
@@ -606,6 +709,36 @@ async def add_weight_from_calendar(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\nВведи свой вес в килограммах (например: 72.5):")
 
 
+@router.callback_query(lambda c: c.data.startswith("meas_cal_add:"))
+async def add_measurements_from_calendar(callback: CallbackQuery, state: FSMContext):
+    """Добавляет или обновляет замеры из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+
+    existing_measurements = WeightRepository.get_measurement_for_date(user_id, target_date)
+
+    if existing_measurements:
+        await state.update_data(entry_date=target_date.isoformat(), measurement_id=existing_measurements.id)
+        await state.set_state(WeightStates.entering_measurements)
+        await callback.message.answer(
+            f"✏️ Изменение замеров\n\n"
+            f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n"
+            f"Текущие замеры: {format_measurements_summary(existing_measurements)}\n\n"
+            "Введи замеры в формате:\n"
+            "грудь=100, талия=80, руки=35"
+        )
+    else:
+        await state.update_data(entry_date=target_date.isoformat())
+        await state.set_state(WeightStates.entering_measurements)
+        await callback.message.answer(
+            f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\n"
+            "Введи замеры в формате:\n"
+            "грудь=100, талия=80, руки=35"
+        )
+
+
 @router.callback_query(lambda c: c.data.startswith("weight_cal_edit:"))
 async def edit_weight_from_calendar(callback: CallbackQuery, state: FSMContext):
     """Редактирует вес из календаря."""
@@ -630,6 +763,31 @@ async def edit_weight_from_calendar(callback: CallbackQuery, state: FSMContext):
     )
 
 
+@router.callback_query(lambda c: c.data.startswith("meas_cal_edit:"))
+async def edit_measurements_from_calendar(callback: CallbackQuery, state: FSMContext):
+    """Редактирует замеры из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+
+    measurements = WeightRepository.get_measurement_for_date(user_id, target_date)
+    if not measurements:
+        await callback.message.answer("❌ Не найдены замеры для редактирования.")
+        return
+
+    await state.update_data(entry_date=target_date.isoformat(), measurement_id=measurements.id)
+    await state.set_state(WeightStates.entering_measurements)
+
+    await callback.message.answer(
+        f"✏️ Редактирование замеров\n\n"
+        f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n"
+        f"Текущие замеры: {format_measurements_summary(measurements)}\n\n"
+        "Введи замеры в формате:\n"
+        "грудь=100, талия=80, руки=35"
+    )
+
+
 @router.callback_query(lambda c: c.data.startswith("weight_cal_del:"))
 async def delete_weight_from_calendar(callback: CallbackQuery):
     """Удаляет вес из календаря."""
@@ -647,6 +805,27 @@ async def delete_weight_from_calendar(callback: CallbackQuery):
     if success:
         await callback.message.answer("✅ Вес удалён")
         await show_day_weight(callback.message, user_id, target_date)
+    else:
+        await callback.message.answer("❌ Не удалось удалить запись")
+
+
+@router.callback_query(lambda c: c.data.startswith("meas_cal_del:"))
+async def delete_measurements_from_calendar(callback: CallbackQuery):
+    """Удаляет замеры из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+
+    measurements = WeightRepository.get_measurement_for_date(user_id, target_date)
+    if not measurements:
+        await callback.message.answer("❌ Не найдены замеры для удаления.")
+        return
+
+    success = WeightRepository.delete_measurement(measurements.id, user_id)
+    if success:
+        await callback.message.answer("✅ Замеры удалены")
+        await show_day_measurements(callback.message, user_id, target_date)
     else:
         await callback.message.answer("❌ Не удалось удалить запись")
 

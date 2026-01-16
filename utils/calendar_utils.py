@@ -267,3 +267,60 @@ def build_weight_day_actions_keyboard(weight, target_date: date) -> InlineKeyboa
     )
     
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_month_measurement_days(user_id: str, year: int, month: int) -> set[int]:
+    """Получает дни месяца, в которые были замеры."""
+    return WeightRepository.get_month_measurement_days(user_id, year, month)
+
+
+def build_measurement_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    """Строит клавиатуру календаря замеров."""
+    return build_calendar_keyboard(
+        user_id=user_id,
+        year=year,
+        month=month,
+        callback_prefix="meas_cal",
+        marker="📏",
+        get_days_func=get_month_measurement_days,
+    )
+
+
+def build_measurement_day_actions_keyboard(measurement, target_date: date) -> InlineKeyboardMarkup:
+    """Строит клавиатуру действий для дня в календаре замеров."""
+    from aiogram.types import InlineKeyboardButton
+
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if measurement:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="✏️ Редактировать",
+                    callback_data=f"meas_cal_edit:{target_date.isoformat()}",
+                ),
+                InlineKeyboardButton(
+                    text="🗑 Удалить",
+                    callback_data=f"meas_cal_del:{target_date.isoformat()}",
+                ),
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить замеры" if not measurement else "➕ Изменить замеры",
+                callback_data=f"meas_cal_add:{target_date.isoformat()}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к календарю",
+                callback_data=f"meas_cal_back:{target_date.year}-{target_date.month:02d}",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
