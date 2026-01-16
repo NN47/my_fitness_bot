@@ -7,7 +7,14 @@ from typing import Optional
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from utils.keyboards import push_menu_stack, main_menu_button, training_date_menu
+from utils.keyboards import (
+    LEGACY_MAIN_MENU_BUTTON_TEXT,
+    MAIN_MENU_BUTTON_ALIASES,
+    MAIN_MENU_BUTTON_TEXT,
+    main_menu_button,
+    push_menu_stack,
+    training_date_menu,
+)
 from utils.supplement_keyboards import (
     supplements_main_menu,
     supplements_choice_menu,
@@ -182,8 +189,8 @@ async def log_supplement_intake(message: Message, state: FSMContext):
     supplements_list = SupplementRepository.get_supplements(user_id)
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "❌ Отменить", "🏠 Главное меню"]
-    if message.text in menu_buttons:
+    menu_buttons = ["⬅️ Назад", "❌ Отменить"]
+    if message.text in menu_buttons or message.text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
         if message.text == "⬅️ Назад" or message.text == "❌ Отменить":
             await supplements(message)
@@ -402,7 +409,16 @@ async def show_supplement_details(message: Message, sup: dict, index: int):
 
 @router.message(
     SupplementStates.viewing_history,
-    ~F.text.in_(["✏️ Редактировать добавку", "🗑 Удалить добавку", "✅ Отметить добавку", "⬅️ Назад", "🏠 Главное меню"])
+    ~F.text.in_(
+        [
+            "✏️ Редактировать добавку",
+            "🗑 Удалить добавку",
+            "✅ Отметить добавку",
+            "⬅️ Назад",
+            MAIN_MENU_BUTTON_TEXT,
+            LEGACY_MAIN_MENU_BUTTON_TEXT,
+        ]
+    )
 )
 async def choose_supplement_for_view(message: Message, state: FSMContext):
     """Обрабатывает выбор добавки для просмотра."""
@@ -523,7 +539,12 @@ async def choose_supplement_to_edit(message: Message, state: FSMContext):
     # не должен обрабатывать сообщения (кнопки редактирования уже исключены фильтром)
     if data.get("supplement_id") is not None:
         # Обрабатываем только меню кнопки
-        menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "❌ Отменить"]
+        if message.text in MAIN_MENU_BUTTON_ALIASES:
+            await state.clear()
+            from handlers.common import go_main_menu
+            await go_main_menu(message, state)
+            return
+        menu_buttons = ["⬅️ Назад", "❌ Отменить"]
         if message.text in menu_buttons:
             if message.text == "❌ Отменить":
                 await state.clear()
@@ -539,7 +560,12 @@ async def choose_supplement_to_edit(message: Message, state: FSMContext):
     supplements_list = SupplementRepository.get_supplements(user_id)
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "💾 Сохранить", "❌ Отменить"]
+    if message.text in MAIN_MENU_BUTTON_ALIASES:
+        await state.clear()
+        from handlers.common import go_main_menu
+        await go_main_menu(message, state)
+        return
+    menu_buttons = ["⬅️ Назад", "💾 Сохранить", "❌ Отменить"]
     if message.text in menu_buttons:
         if message.text == "💾 Сохранить":
             # Сохранение обрабатывается отдельным обработчиком

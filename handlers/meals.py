@@ -9,6 +9,7 @@ from typing import Optional
 from aiogram.fsm.context import FSMContext
 from states.user_states import MealEntryStates
 from utils.keyboards import (
+    MAIN_MENU_BUTTON_ALIASES,
     kbju_menu,
     kbju_add_menu,
     kbju_after_meal_menu,
@@ -1240,13 +1241,13 @@ async def handle_edit_type_choice(message: Message, state: FSMContext):
     text = message.text.strip()
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "🏠 Главное меню"]
-    if text in menu_buttons:
+    menu_buttons = ["⬅️ Назад"]
+    if text in menu_buttons or text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
         if text == "⬅️ Назад":
             from handlers.common import go_back
             await go_back(message, state)
-        elif text == "🏠 Главное меню":
+        elif text in MAIN_MENU_BUTTON_ALIASES:
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
         return
@@ -1305,13 +1306,13 @@ async def handle_meal_weight_edit(message: Message, state: FSMContext):
     text = message.text.strip()
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
-    if text in menu_buttons:
+    menu_buttons = ["⬅️ Назад", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
+    if text in menu_buttons or text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
         if text == "⬅️ Назад":
             from handlers.common import go_back
             await go_back(message, state)
-        elif text == "🏠 Главное меню":
+        elif text in MAIN_MENU_BUTTON_ALIASES:
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
         else:
@@ -1517,13 +1518,13 @@ async def handle_meal_composition_edit(message: Message, state: FSMContext):
     user_text = message.text.strip()
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
-    if user_text in menu_buttons:
+    menu_buttons = ["⬅️ Назад", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
+    if user_text in menu_buttons or user_text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
         if user_text == "⬅️ Назад":
             from handlers.common import go_back
             await go_back(message, state)
-        elif user_text == "🏠 Главное меню":
+        elif user_text in MAIN_MENU_BUTTON_ALIASES:
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
         else:
@@ -1620,13 +1621,13 @@ async def handle_meal_edit_input(message: Message, state: FSMContext):
     new_text = message.text.strip()
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "🏠 Главное меню", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
-    if new_text in menu_buttons:
+    menu_buttons = ["⬅️ Назад", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
+    if new_text in menu_buttons or new_text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
         if new_text == "⬅️ Назад":
             from handlers.common import go_back
             await go_back(message, state)
-        elif new_text == "🏠 Главное меню":
+        elif new_text in MAIN_MENU_BUTTON_ALIASES:
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
         else:

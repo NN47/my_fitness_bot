@@ -4,14 +4,20 @@ from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from utils.keyboards import main_menu, push_menu_stack, quick_actions_inline
+from utils.keyboards import (
+    MAIN_MENU_BUTTON_ALIASES,
+    MAIN_MENU_BUTTON_TEXT,
+    main_menu,
+    push_menu_stack,
+    quick_actions_inline,
+)
 
 logger = logging.getLogger(__name__)
 
 router = Router()
 
 
-@router.message(lambda m: m.text == "🏠 Главное меню")
+@router.message(lambda m: m.text in MAIN_MENU_BUTTON_ALIASES)
 async def go_main_menu(message: Message, state: FSMContext):
     """Обработчик кнопки 'Главное меню'."""
     from datetime import date
@@ -60,7 +66,7 @@ async def go_back(message: Message, state: FSMContext):
         # Если стек пуст или только главное меню - возвращаемся в главное
         await state.clear()
         push_menu_stack(message.bot, main_menu)
-        await message.answer("🏠 Главное меню", reply_markup=main_menu)
+        await message.answer(MAIN_MENU_BUTTON_TEXT, reply_markup=main_menu)
 
 
 @router.callback_query(lambda c: c.data == "cal_close")

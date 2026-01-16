@@ -3,7 +3,14 @@ import logging
 from aiogram import Router
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
-from utils.keyboards import settings_menu, delete_account_confirm_menu, push_menu_stack, main_menu_button
+from utils.keyboards import (
+    MAIN_MENU_BUTTON_ALIASES,
+    MAIN_MENU_BUTTON_TEXT,
+    delete_account_confirm_menu,
+    main_menu_button,
+    push_menu_stack,
+    settings_menu,
+)
 from database.session import get_db_session
 from states.user_states import SupportStates
 
@@ -142,7 +149,7 @@ async def support(message: Message, state: FSMContext):
     await message.answer(
         "💬 <b>Поддержка</b>\n\n"
         "Напишите ваш вопрос или сообщение для поддержки. Я перешлю его администратору.\n\n"
-        "Для отмены используйте кнопку '⬅️ Назад' или '🏠 Главное меню'.",
+        f"Для отмены используйте кнопку '⬅️ Назад' или '{MAIN_MENU_BUTTON_TEXT}'.",
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[[KeyboardButton(text="⬅️ Назад"), main_menu_button]],
             resize_keyboard=True
@@ -158,9 +165,9 @@ async def handle_support_message(message: Message, state: FSMContext):
     user_text = message.text or message.caption or ""
     
     # Проверяем, не является ли это кнопкой меню
-    if message.text in ["⬅️ Назад", "🏠 Главное меню", "⚙️ Настройки"]:
+    if message.text in ["⬅️ Назад", "⚙️ Настройки"] or message.text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
-        if message.text == "🏠 Главное меню":
+        if message.text in MAIN_MENU_BUTTON_ALIASES:
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
         elif message.text == "⚙️ Настройки":
