@@ -34,6 +34,9 @@ quick_actions_inline = InlineKeyboardMarkup(
             InlineKeyboardButton(text="💆 Процедуры", callback_data="quick_procedure"),
             InlineKeyboardButton(text="💊 Добавки", callback_data="quick_supplements"),
         ],
+        [
+            InlineKeyboardButton(text="🤖 Рекомендации", callback_data="quick_recommendations"),
+        ],
     ]
 )
 
