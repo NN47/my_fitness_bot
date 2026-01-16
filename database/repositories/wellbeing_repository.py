@@ -48,6 +48,67 @@ class WellbeingRepository:
             return entry.id
 
     @staticmethod
+    def update_quick_entry(
+        entry_id: int,
+        user_id: str,
+        mood: str,
+        influence: str,
+        difficulty: Optional[str],
+        entry_date: date,
+    ) -> bool:
+        """Обновляет быстрый опрос."""
+        with get_db_session() as session:
+            entry = (
+                session.query(WellbeingEntry)
+                .filter(WellbeingEntry.id == entry_id)
+                .filter(WellbeingEntry.user_id == str(user_id))
+                .first()
+            )
+            if not entry:
+                return False
+            entry.entry_type = "quick"
+            entry.mood = mood
+            entry.influence = influence
+            entry.difficulty = difficulty
+            entry.date = entry_date
+            session.commit()
+            return True
+
+    @staticmethod
+    def update_comment_entry(entry_id: int, user_id: str, comment: str, entry_date: date) -> bool:
+        """Обновляет комментарий о самочувствии."""
+        with get_db_session() as session:
+            entry = (
+                session.query(WellbeingEntry)
+                .filter(WellbeingEntry.id == entry_id)
+                .filter(WellbeingEntry.user_id == str(user_id))
+                .first()
+            )
+            if not entry:
+                return False
+            entry.entry_type = "comment"
+            entry.comment = comment
+            entry.date = entry_date
+            session.commit()
+            return True
+
+    @staticmethod
+    def delete_entry(entry_id: int, user_id: str) -> bool:
+        """Удаляет запись самочувствия."""
+        with get_db_session() as session:
+            entry = (
+                session.query(WellbeingEntry)
+                .filter(WellbeingEntry.id == entry_id)
+                .filter(WellbeingEntry.user_id == str(user_id))
+                .first()
+            )
+            if not entry:
+                return False
+            session.delete(entry)
+            session.commit()
+            return True
+
+    @staticmethod
     def get_entries_for_period(user_id: str, start_date: date, end_date: date) -> list[WellbeingEntry]:
         """Получает записи самочувствия за период."""
         with get_db_session() as session:
@@ -58,4 +119,27 @@ class WellbeingRepository:
                 .filter(WellbeingEntry.date <= end_date)
                 .order_by(WellbeingEntry.date.desc(), WellbeingEntry.created_at.desc())
                 .all()
+            )
+
+    @staticmethod
+    def get_entries_for_date(user_id: str, target_date: date) -> list[WellbeingEntry]:
+        """Получает записи самочувствия за день."""
+        with get_db_session() as session:
+            return (
+                session.query(WellbeingEntry)
+                .filter(WellbeingEntry.user_id == str(user_id))
+                .filter(WellbeingEntry.date == target_date)
+                .order_by(WellbeingEntry.created_at.asc())
+                .all()
+            )
+
+    @staticmethod
+    def get_entry_by_id(entry_id: int, user_id: str) -> Optional[WellbeingEntry]:
+        """Получает запись самочувствия по ID."""
+        with get_db_session() as session:
+            return (
+                session.query(WellbeingEntry)
+                .filter(WellbeingEntry.id == entry_id)
+                .filter(WellbeingEntry.user_id == str(user_id))
+                .first()
             )
