@@ -83,7 +83,7 @@ async def start(message: Message):
     # Сначала отправляем основной текст с inline-кнопками быстрых действий
     await message.answer(welcome_text, reply_markup=quick_actions_inline, parse_mode="HTML")
     # Отдельным сообщением показываем главное меню (reply-клавиатура)
-    await message.answer("⬇️ Главное меню", reply_markup=main_menu)
+    await message.answer("⬇️ Главное меню\nУправляй ботом через кнопки ниже.", reply_markup=main_menu)
 
 
 def register_start_handlers(dp):
