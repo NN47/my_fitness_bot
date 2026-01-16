@@ -80,3 +80,12 @@ class WaterStates(StatesGroup):
 class SupportStates(StatesGroup):
     """Состояния для работы с поддержкой."""
     waiting_for_message = State()
+
+
+class WellbeingStates(StatesGroup):
+    """Состояния для отметки самочувствия."""
+    choosing_mode = State()
+    quick_mood = State()
+    quick_influence = State()
+    quick_difficulty = State()
+    comment = State()
