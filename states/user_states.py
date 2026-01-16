@@ -89,3 +89,7 @@ class WellbeingStates(StatesGroup):
     quick_influence = State()
     quick_difficulty = State()
     comment = State()
+    editing_quick_mood = State()
+    editing_quick_influence = State()
+    editing_quick_difficulty = State()
+    editing_comment = State()

@@ -25,6 +25,7 @@ wellbeing_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🟢 Быстрый опрос (20 секунд)")],
         [KeyboardButton(text="✍️ Оставить комментарий")],
+        [KeyboardButton(text="📆 Календарь самочувствия")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
