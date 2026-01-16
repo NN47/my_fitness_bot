@@ -694,6 +694,8 @@ async def handle_label_photo(message: Message, state: FSMContext):
         entry_date=entry_date.isoformat(),
     )
     
+    push_menu_stack(message.bot, kbju_add_menu)
+
     # Формируем сообщение в зависимости от того, найден ли вес
     if found_weight and package_weight is not None:
         weight = safe_float(package_weight)
@@ -706,7 +708,8 @@ async def handle_label_photo(message: Message, state: FSMContext):
                 f"💪 Белки: {protein_100g:.1f} г\n"
                 f"🥑 Жиры: {fat_100g:.1f} г\n"
                 f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
-                f"📦 В упаковке {weight:.0f} г, сколько Вы съели?"
+                f"📦 В упаковке {weight:.0f} г, сколько Вы съели?",
+                reply_markup=kbju_add_menu,
             )
         else:
             await message.answer(
@@ -717,7 +720,8 @@ async def handle_label_photo(message: Message, state: FSMContext):
                 f"💪 Белки: {protein_100g:.1f} г\n"
                 f"🥑 Жиры: {fat_100g:.1f} г\n"
                 f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
-                f"❓ Вес в упаковке не найден, сколько вы съели?"
+                f"❓ Вес в упаковке не найден, сколько вы съели?",
+                reply_markup=kbju_add_menu,
             )
     else:
         await message.answer(
@@ -728,7 +732,8 @@ async def handle_label_photo(message: Message, state: FSMContext):
             f"💪 Белки: {protein_100g:.1f} г\n"
             f"🥑 Жиры: {fat_100g:.1f} г\n"
             f"🍩 Углеводы: {carbs_100g:.1f} г\n\n"
-            f"❓ Вес в упаковке не найден, сколько вы съели?"
+            f"❓ Вес в упаковке не найден, сколько вы съели?",
+            reply_markup=kbju_add_menu,
         )
 
 
@@ -857,6 +862,11 @@ async def handle_barcode_photo(message: Message, state: FSMContext):
 @router.message(MealEntryStates.waiting_for_weight_input)
 async def handle_weight_input(message: Message, state: FSMContext):
     """Обрабатывает ввод веса для этикетки или штрих-кода."""
+    if message.text == "⬅️ Назад":
+        from handlers.common import go_back
+        await go_back(message, state)
+        return
+
     user_id = str(message.from_user.id)
     data = await state.get_data()
     
