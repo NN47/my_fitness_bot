@@ -324,8 +324,8 @@ activity_analysis_menu = ReplyKeyboardMarkup(
 # Меню для добавления еще подхода
 add_another_set_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="✅ Да, добавить еще подход")],
-        [KeyboardButton(text="❌ Нет, завершить")],
+        [KeyboardButton(text="💪Добавить еще подход")],
+        [KeyboardButton(text="✅ Завершить упражнение")],
     ],
     resize_keyboard=True,
 )
