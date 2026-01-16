@@ -2,6 +2,7 @@
 import logging
 import re
 from datetime import date, timedelta
+from collections import Counter
 from aiogram import Router
 from aiogram.types import Message
 from utils.keyboards import activity_analysis_menu, push_menu_stack
@@ -16,7 +17,8 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
     """Генерирует анализ активности за указанный период через Gemini."""
     from database.repositories import (
         WorkoutRepository, MealRepository, WeightRepository,
-        WaterRepository, SupplementRepository, ProcedureRepository
+        WaterRepository, SupplementRepository, ProcedureRepository,
+        WellbeingRepository
     )
     from utils.workout_utils import calculate_workout_calories
     from utils.formatters import format_count_with_unit, get_kbju_goal_label
@@ -183,6 +185,47 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
     procedure_summary = ""
     if procedure_count > 0:
         procedure_summary = f"\nПроцедуры: {procedure_count} записей за период."
+
+    # 🔹 Самочувствие за период
+    wellbeing_entries = WellbeingRepository.get_entries_for_period(user_id, start_date, end_date)
+    wellbeing_summary = ""
+    if wellbeing_entries:
+        quick_entries = [entry for entry in wellbeing_entries if entry.entry_type == "quick"]
+        comment_entries = [
+            entry for entry in wellbeing_entries if entry.entry_type == "comment" and entry.comment
+        ]
+        mood_counts = Counter(entry.mood for entry in quick_entries if entry.mood)
+        influence_counts = Counter(entry.influence for entry in quick_entries if entry.influence)
+        difficulty_counts = Counter(entry.difficulty for entry in quick_entries if entry.difficulty)
+
+        mood_summary = ", ".join(
+            f"{mood} — {count}" for mood, count in mood_counts.most_common()
+        )
+        influence_summary = ", ".join(
+            f"{influence} — {count}" for influence, count in influence_counts.most_common()
+        )
+        difficulty_summary = ", ".join(
+            f"{difficulty} — {count}" for difficulty, count in difficulty_counts.most_common()
+        )
+
+        wellbeing_parts = [
+            f"Записей самочувствия: {len(wellbeing_entries)} "
+            f"(быстрых опросов: {len(quick_entries)}, комментариев: {len(comment_entries)})."
+        ]
+        if mood_summary:
+            wellbeing_parts.append(f"Настроение: {mood_summary}.")
+        if influence_summary:
+            wellbeing_parts.append(f"Что влияло чаще всего: {influence_summary}.")
+        if difficulty_summary:
+            wellbeing_parts.append(f"Сложности: {difficulty_summary}.")
+        if comment_entries:
+            latest_comment = comment_entries[0]
+            wellbeing_parts.append(
+                f"Последний комментарий ({latest_comment.date.strftime('%d.%m')}): {latest_comment.comment}."
+            )
+        wellbeing_summary = "\n" + " ".join(wellbeing_parts)
+    else:
+        wellbeing_summary = "\nСамочувствие: записей за период нет."
     
     # 🔹 Вес и история веса
     weights = WeightRepository.get_weights_for_date_range(user_id, start_date, end_date)
@@ -255,7 +298,7 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 {meals_summary}
 
 Норма / цель КБЖУ:
-{kbju_goal_summary}{water_summary}{supplement_summary}{procedure_summary}
+{kbju_goal_summary}{water_summary}{supplement_summary}{procedure_summary}{wellbeing_summary}
 
 Вес:
 {weight_summary}{comparison_summary}
@@ -288,7 +331,17 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 <b>4) 📈 Общий прогресс и мотивация</b>
 
 Пиши структурированно, но компактно. Используй <b>жирный шрифт</b> для выделения важных цифр, фактов и процентов выполнения целей.
+Учитывай блок самочувствия и отражай его выводы в "Общий прогресс и мотивация" (или там, где это уместно).
 В блоке "Общий прогресс и мотивация" дай конкретные рекомендации на основе данных: что улучшить, что работает хорошо, на что обратить внимание.
+
+Рекомендации обязательно делай в стиле кнопки "🤖 Рекомендации":
+- Фокус на калориях и белке (это база и приоритет).
+- Режим питания без жёсткости (первый приём через 1–2 часа после пробуждения, последний — за 3–5 часов до сна).
+- Вода регулярно (утром, между приёмами пищи, до/после еды).
+- 8–10 тысяч шагов в день.
+- Алкоголь снижает прогресс (если пьёшь — отмечай, это тормозит жиросжигание).
+- Отслеживай главное: вес раз в неделю, питание/тренировки по ходу, объём талии раз в неделю.
+- Дневник самочувствия помогает видеть закономерности и не срываться.
 """
     
     result = gemini_service.analyze(prompt)

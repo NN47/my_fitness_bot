@@ -46,3 +46,16 @@ class WellbeingRepository:
             session.commit()
             session.refresh(entry)
             return entry.id
+
+    @staticmethod
+    def get_entries_for_period(user_id: str, start_date: date, end_date: date) -> list[WellbeingEntry]:
+        """Получает записи самочувствия за период."""
+        with get_db_session() as session:
+            return (
+                session.query(WellbeingEntry)
+                .filter(WellbeingEntry.user_id == str(user_id))
+                .filter(WellbeingEntry.date >= start_date)
+                .filter(WellbeingEntry.date <= end_date)
+                .order_by(WellbeingEntry.date.desc(), WellbeingEntry.created_at.desc())
+                .all()
+            )
