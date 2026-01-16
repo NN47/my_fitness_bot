@@ -27,7 +27,6 @@ weight_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить вес")],
         [KeyboardButton(text="📆 Календарь")],
-        [KeyboardButton(text="🗑 Удалить вес")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
@@ -37,7 +36,6 @@ measurements_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить замеры")],
         [KeyboardButton(text="📆 Календарь замеров")],
-        [KeyboardButton(text="🗑 Удалить замеры")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
