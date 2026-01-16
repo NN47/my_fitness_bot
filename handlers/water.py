@@ -11,6 +11,7 @@ from utils.keyboards import (
     main_menu_button,
     push_menu_stack,
     water_amount_menu,
+    water_quick_add_inline,
     water_menu,
 )
 from utils.progress_formatters import build_water_progress_bar
@@ -68,8 +69,9 @@ async def water(message: Message):
         "Отслеживай количество выпитой воды в течение дня."
     )
     
+    await message.answer(intro_text, reply_markup=water_quick_add_inline)
     push_menu_stack(message.bot, water_menu)
-    await message.answer(intro_text, reply_markup=water_menu)
+    await message.answer("Выбери действие в меню ниже.", reply_markup=water_menu)
 
 
 @router.message(lambda m: m.text == "💧 +250 мл")
@@ -129,6 +131,43 @@ async def quick_add_water_250_cb(callback: CallbackQuery, state: FSMContext):
     )
     
     await message.answer(text)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("quick_water_add_"))
+async def quick_add_water_amount_cb(callback: CallbackQuery, state: FSMContext):
+    """Добавляет воду по inline-кнопке в меню воды."""
+    await callback.answer()
+    message = callback.message
+    user_id = str(callback.from_user.id)
+    amount_text = callback.data.replace("quick_water_add_", "")
+    
+    try:
+        amount = float(amount_text)
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("Не удалось определить количество воды. Попробуй ещё раз.")
+        return
+    
+    await state.clear()
+    
+    entry_date = date.today()
+    WaterRepository.save_water_entry(user_id, amount, entry_date)
+    
+    daily_total = WaterRepository.get_daily_total(user_id, entry_date)
+    recommended = get_water_recommended(user_id)
+    progress = round((daily_total / recommended) * 100) if recommended > 0 else 0
+    bar = build_water_progress_bar(daily_total, recommended)
+    
+    text = (
+        f"✅ Добавил {amount:.0f} мл воды\n\n"
+        f"💧 Всего за сегодня: {daily_total:.0f} мл\n"
+        f"🎯 Норма: {recommended:.0f} мл\n"
+        f"📈 Прогресс: {progress}%\n"
+        f"{bar}"
+    )
+    
+    await message.answer(text, reply_markup=water_menu)
 
 
 @router.message(lambda m: m.text == "➕ Добавить воду")
