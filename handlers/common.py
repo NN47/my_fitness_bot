@@ -93,11 +93,11 @@ async def quick_supplements(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(lambda c: c.data == "quick_weight")
 async def quick_weight(callback: CallbackQuery, state: FSMContext):
-    """Быстрое открытие меню веса и замеров."""
+    """Быстрое открытие ввода веса."""
     await callback.answer()
     # Импортируем обработчик веса
-    from handlers.weight import weight_and_measurements
-    await weight_and_measurements(callback.message)
+    from handlers.weight import add_weight_start
+    await add_weight_start(callback.message, state)
 
 
 def register_common_handlers(dp):
