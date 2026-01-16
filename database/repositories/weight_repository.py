@@ -190,6 +190,27 @@ class WeightRepository:
                 logger.info(f"Deleted measurement {measurement_id} for user {user_id}")
                 return True
             return False
+
+    @staticmethod
+    def update_measurement(measurement_id: int, user_id: str, measurements: dict) -> bool:
+        """Обновляет замеры."""
+        with get_db_session() as session:
+            measurement = (
+                session.query(Measurement)
+                .filter(Measurement.id == measurement_id)
+                .filter(Measurement.user_id == user_id)
+                .first()
+            )
+            if measurement:
+                measurement.chest = measurements.get("chest")
+                measurement.waist = measurements.get("waist")
+                measurement.hips = measurements.get("hips")
+                measurement.biceps = measurements.get("biceps")
+                measurement.thigh = measurements.get("thigh")
+                session.commit()
+                logger.info(f"Updated measurement {measurement_id} for user {user_id}")
+                return True
+            return False
     
     @staticmethod
     def get_weight_for_date(user_id: str, target_date: date) -> Optional[Weight]:
@@ -220,3 +241,33 @@ class WeightRepository:
                 .all()
             )
             return {w.date.day for w in weights}
+
+    @staticmethod
+    def get_measurement_for_date(user_id: str, target_date: date) -> Optional[Measurement]:
+        """Получает замеры за конкретный день."""
+        with get_db_session() as session:
+            return (
+                session.query(Measurement)
+                .filter(Measurement.user_id == user_id, Measurement.date == target_date)
+                .order_by(Measurement.id.desc())
+                .first()
+            )
+
+    @staticmethod
+    def get_month_measurement_days(user_id: str, year: int, month: int) -> Set[int]:
+        """Получает дни месяца, в которые были замеры."""
+        first_day = date(year, month, 1)
+        _, days_in_month = calendar.monthrange(year, month)
+        last_day = date(year, month, days_in_month)
+
+        with get_db_session() as session:
+            measurements = (
+                session.query(Measurement.date)
+                .filter(
+                    Measurement.user_id == user_id,
+                    Measurement.date >= first_day,
+                    Measurement.date <= last_day,
+                )
+                .all()
+            )
+            return {m.date.day for m in measurements}
