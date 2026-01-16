@@ -2229,7 +2229,7 @@ async def proceed_after_date_selection(message: Message):
         await message.answer(f"📅 Выбрана дата: {date_text}")
         message.bot.current_category = None
         message.bot.current_exercise = None
-        await answer_with_menu(message, "Теперь выбери категорию упражнения:", reply_markup=exercise_category_menu)
+        await answer_with_menu(message, "Выбери категорию упражнений:", reply_markup=exercise_category_menu)
     elif context == "weight":
         message.bot.expecting_weight = True
         await message.answer(f"📅 Выбрана дата: {date_text}")
