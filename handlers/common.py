@@ -87,8 +87,8 @@ async def quick_supplements(callback: CallbackQuery, state: FSMContext):
     """Быстрый переход к отметке добавки."""
     await callback.answer()
     # Импортируем обработчик отметки добавки
-    from handlers.supplements import start_log_supplement
-    await start_log_supplement(callback.message, state)
+    from handlers.supplements import start_log_supplement_flow
+    await start_log_supplement_flow(callback.message, state, str(callback.from_user.id))
 
 
 @router.callback_query(lambda c: c.data == "quick_weight")

@@ -160,12 +160,10 @@ async def handle_supplement_name(message: Message, state: FSMContext):
     )
 
 
-@router.message(lambda m: m.text == "✅ Отметить приём")
-async def start_log_supplement(message: Message, state: FSMContext):
+async def start_log_supplement_flow(message: Message, state: FSMContext, user_id: str):
     """Начинает процесс отметки приёма добавки."""
-    user_id = str(message.from_user.id)
     supplements_list = SupplementRepository.get_supplements(user_id)
-    
+
     if not supplements_list:
         push_menu_stack(message.bot, supplements_main_menu(has_items=False))
         await message.answer(
@@ -173,13 +171,20 @@ async def start_log_supplement(message: Message, state: FSMContext):
             reply_markup=supplements_main_menu(has_items=False),
         )
         return
-    
+
     await state.set_state(SupplementStates.logging_intake)
     push_menu_stack(message.bot, supplements_choice_menu(supplements_list))
     await message.answer(
         "Выбери добавку, приём которой нужно отметить:",
         reply_markup=supplements_choice_menu(supplements_list),
     )
+
+
+@router.message(lambda m: m.text == "✅ Отметить приём")
+async def start_log_supplement(message: Message, state: FSMContext):
+    """Начинает процесс отметки приёма добавки."""
+    user_id = str(message.from_user.id)
+    await start_log_supplement_flow(message, state, user_id)
 
 
 @router.message(SupplementStates.logging_intake)
