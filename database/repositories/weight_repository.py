@@ -1,7 +1,8 @@
 """Репозиторий для работы с весом и замерами."""
 import logging
+import calendar
 from datetime import date, timedelta
-from typing import Optional
+from typing import Optional, Set
 from database.session import get_db_session
 from database.models import Weight, Measurement
 
@@ -104,6 +105,23 @@ class WeightRepository:
             return None
     
     @staticmethod
+    def update_weight(weight_id: int, user_id: str, value: str) -> bool:
+        """Обновляет вес."""
+        with get_db_session() as session:
+            weight = (
+                session.query(Weight)
+                .filter(Weight.id == weight_id)
+                .filter(Weight.user_id == user_id)
+                .first()
+            )
+            if weight:
+                weight.value = value
+                session.commit()
+                logger.info(f"Updated weight {weight_id} for user {user_id}")
+                return True
+            return False
+    
+    @staticmethod
     def delete_weight(weight_id: int, user_id: str) -> bool:
         """Удаляет вес."""
         with get_db_session() as session:
@@ -172,3 +190,33 @@ class WeightRepository:
                 logger.info(f"Deleted measurement {measurement_id} for user {user_id}")
                 return True
             return False
+    
+    @staticmethod
+    def get_weight_for_date(user_id: str, target_date: date) -> Optional[Weight]:
+        """Получает вес за конкретный день."""
+        with get_db_session() as session:
+            return (
+                session.query(Weight)
+                .filter(Weight.user_id == user_id, Weight.date == target_date)
+                .order_by(Weight.id.desc())
+                .first()
+            )
+    
+    @staticmethod
+    def get_month_weight_days(user_id: str, year: int, month: int) -> Set[int]:
+        """Получает дни месяца, в которые был записан вес."""
+        first_day = date(year, month, 1)
+        _, days_in_month = calendar.monthrange(year, month)
+        last_day = date(year, month, days_in_month)
+        
+        with get_db_session() as session:
+            weights = (
+                session.query(Weight.date)
+                .filter(
+                    Weight.user_id == user_id,
+                    Weight.date >= first_day,
+                    Weight.date <= last_day,
+                )
+                .all()
+            )
+            return {w.date.day for w in weights}

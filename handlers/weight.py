@@ -2,12 +2,14 @@
 import logging
 from datetime import date, timedelta, datetime
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from typing import Optional
 from utils.keyboards import push_menu_stack, main_menu_button, training_date_menu, other_day_menu
 from database.repositories import WeightRepository
 from states.user_states import WeightStates
 from utils.validators import parse_weight, parse_date
+from utils.calendar_utils import build_weight_calendar_keyboard, build_weight_day_actions_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 weight_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить вес")],
+        [KeyboardButton(text="📆 Календарь")],
         [KeyboardButton(text="🗑 Удалить вес")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
@@ -111,19 +114,30 @@ async def my_measurements(message: Message):
 
 @router.message(lambda m: m.text == "➕ Добавить вес")
 async def add_weight_start(message: Message, state: FSMContext):
-    """Начинает процесс добавления веса."""
+    """Начинает процесс добавления веса за сегодня."""
     user_id = str(message.from_user.id)
-    logger.info(f"User {user_id} started adding weight")
+    logger.info(f"User {user_id} started adding weight for today")
     
-    await state.set_state(WeightStates.choosing_date_for_weight)
+    target_date = date.today()
     
-    push_menu_stack(message.bot, training_date_menu)
-    await message.answer(
-        "За какой день добавить вес?\n\n"
-        "📅 Сегодня\n"
-        "📆 Другой день",
-        reply_markup=training_date_menu,
-    )
+    # Проверяем, есть ли уже вес за сегодня
+    existing_weight = WeightRepository.get_weight_for_date(user_id, target_date)
+    
+    if existing_weight:
+        # Если вес уже есть, переходим в режим редактирования
+        await state.update_data(entry_date=target_date.isoformat(), weight_id=existing_weight.id)
+        await state.set_state(WeightStates.entering_weight)
+        await message.answer(
+            f"✏️ Изменение веса\n\n"
+            f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n"
+            f"Текущий вес: {existing_weight.value} кг\n\n"
+            f"Введи новый вес в килограммах (например: 72.5):"
+        )
+    else:
+        # Если веса нет, создаем новую запись
+        await state.update_data(entry_date=target_date.isoformat())
+        await state.set_state(WeightStates.entering_weight)
+        await message.answer(f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\nВведи свой вес в килограммах (например: 72.5):")
 
 
 @router.message(WeightStates.choosing_date_for_weight)
@@ -187,6 +201,7 @@ async def handle_weight_input(message: Message, state: FSMContext):
     # Получаем дату из состояния (обновляем data на случай, если дата была установлена выше)
     data = await state.get_data()
     entry_date_str = data.get("entry_date", date.today().isoformat())
+    weight_id = data.get("weight_id")
     
     if isinstance(entry_date_str, str):
         try:
@@ -197,21 +212,40 @@ async def handle_weight_input(message: Message, state: FSMContext):
     else:
         entry_date = date.today()
     
-    # Сохраняем вес
+    # Сохраняем или обновляем вес
     try:
-        WeightRepository.save_weight(user_id, str(weight_value), entry_date)
-        logger.info(f"User {user_id} saved weight: {weight_value} kg on {entry_date}")
-        
-        await state.clear()
-        push_menu_stack(message.bot, weight_menu)
-        await message.answer(
-            f"✅ Вес сохранён!\n\n"
-            f"⚖️ {weight_value:.1f} кг\n"
-            f"📅 {entry_date.strftime('%d.%m.%Y')}",
-            reply_markup=weight_menu,
-        )
+        if weight_id:
+            # Редактирование существующей записи
+            success = WeightRepository.update_weight(weight_id, user_id, str(weight_value))
+            if success:
+                logger.info(f"User {user_id} updated weight {weight_id}: {weight_value} kg on {entry_date}")
+                await state.clear()
+                # Показываем обновленный день в календаре, если это было из календаря
+                await message.answer(
+                    f"✅ Вес обновлён!\n\n"
+                    f"⚖️ {weight_value:.1f} кг\n"
+                    f"📅 {entry_date.strftime('%d.%m.%Y')}",
+                )
+                # Если это было из календаря, показываем день снова
+                await show_day_weight(message, user_id, entry_date)
+            else:
+                await message.answer("⚠️ Не удалось обновить запись.")
+                await state.clear()
+        else:
+            # Создание новой записи
+            WeightRepository.save_weight(user_id, str(weight_value), entry_date)
+            logger.info(f"User {user_id} saved weight: {weight_value} kg on {entry_date}")
+            
+            await state.clear()
+            push_menu_stack(message.bot, weight_menu)
+            await message.answer(
+                f"✅ Вес сохранён!\n\n"
+                f"⚖️ {weight_value:.1f} кг\n"
+                f"📅 {entry_date.strftime('%d.%m.%Y')}",
+                reply_markup=weight_menu,
+            )
     except Exception as e:
-        logger.error(f"Error saving weight: {e}", exc_info=True)
+        logger.error(f"Error saving/updating weight: {e}", exc_info=True)
         await message.answer("⚠️ Ошибка при сохранении. Повтори попытку позже.")
         await state.clear()
 
@@ -473,6 +507,148 @@ async def handle_measurements_delete_choice(message: Message, state: FSMContext)
     await state.clear()
     push_menu_stack(message.bot, measurements_menu)
     await message.answer("Выбери действие:", reply_markup=measurements_menu)
+
+
+@router.message(lambda m: m.text == "📆 Календарь")
+async def show_weight_calendar(message: Message):
+    """Показывает календарь веса."""
+    user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} opened weight calendar")
+    await show_weight_calendar_view(message, user_id)
+
+
+async def show_weight_calendar_view(message: Message, user_id: str, year: Optional[int] = None, month: Optional[int] = None):
+    """Показывает календарь веса."""
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    keyboard = build_weight_calendar_keyboard(user_id, year, month)
+    await message.answer(
+        "📆 Календарь веса\n\nВыбери день, чтобы посмотреть, изменить или удалить вес:",
+        reply_markup=keyboard,
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("weight_cal_nav:"))
+async def navigate_weight_calendar(callback: CallbackQuery):
+    """Навигация по календарю веса."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_weight_calendar_view(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("weight_cal_back:"))
+async def back_to_weight_calendar(callback: CallbackQuery):
+    """Возврат к календарю веса."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    year, month = map(int, parts[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_weight_calendar_view(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("weight_cal_day:"))
+async def select_weight_calendar_day(callback: CallbackQuery):
+    """Выбор дня в календаре веса."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+    await show_day_weight(callback.message, user_id, target_date)
+
+
+async def show_day_weight(message: Message, user_id: str, target_date: date):
+    """Показывает вес за день."""
+    weight = WeightRepository.get_weight_for_date(user_id, target_date)
+    
+    if not weight:
+        await message.answer(
+            f"{target_date.strftime('%d.%m.%Y')}: нет записи веса.",
+            reply_markup=build_weight_day_actions_keyboard(None, target_date),
+        )
+        return
+    
+    text = f"📅 {target_date.strftime('%d.%m.%Y')}\n\n⚖️ Вес: {weight.value} кг"
+    
+    await message.answer(
+        text,
+        reply_markup=build_weight_day_actions_keyboard(weight, target_date),
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("weight_cal_add:"))
+async def add_weight_from_calendar(callback: CallbackQuery, state: FSMContext):
+    """Добавляет или обновляет вес из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+    
+    # Проверяем, есть ли уже вес за этот день
+    existing_weight = WeightRepository.get_weight_for_date(user_id, target_date)
+    
+    if existing_weight:
+        # Если вес уже есть, переходим в режим редактирования
+        await state.update_data(entry_date=target_date.isoformat(), weight_id=existing_weight.id)
+        await state.set_state(WeightStates.entering_weight)
+        await callback.message.answer(
+            f"✏️ Изменение веса\n\n"
+            f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n"
+            f"Текущий вес: {existing_weight.value} кг\n\n"
+            f"Введи новый вес в килограммах (например: 72.5):"
+        )
+    else:
+        # Если веса нет, создаем новую запись
+        await state.update_data(entry_date=target_date.isoformat())
+        await state.set_state(WeightStates.entering_weight)
+        await callback.message.answer(f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\nВведи свой вес в килограммах (например: 72.5):")
+
+
+@router.callback_query(lambda c: c.data.startswith("weight_cal_edit:"))
+async def edit_weight_from_calendar(callback: CallbackQuery, state: FSMContext):
+    """Редактирует вес из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+    
+    weight = WeightRepository.get_weight_for_date(user_id, target_date)
+    if not weight:
+        await callback.message.answer("❌ Не найдена запись веса для редактирования.")
+        return
+    
+    await state.update_data(entry_date=target_date.isoformat(), weight_id=weight.id)
+    await state.set_state(WeightStates.entering_weight)
+    
+    await callback.message.answer(
+        f"✏️ Редактирование веса\n\n"
+        f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n"
+        f"Текущий вес: {weight.value} кг\n\n"
+        f"Введи новый вес в килограммах (например: 72.5):"
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("weight_cal_del:"))
+async def delete_weight_from_calendar(callback: CallbackQuery):
+    """Удаляет вес из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    user_id = str(callback.from_user.id)
+    
+    weight = WeightRepository.get_weight_for_date(user_id, target_date)
+    if not weight:
+        await callback.message.answer("❌ Не найдена запись веса для удаления.")
+        return
+    
+    success = WeightRepository.delete_weight(weight.id, user_id)
+    if success:
+        await callback.message.answer("✅ Вес удалён")
+        await show_day_weight(callback.message, user_id, target_date)
+    else:
+        await callback.message.answer("❌ Не удалось удалить запись")
 
 
 def register_weight_handlers(dp):
