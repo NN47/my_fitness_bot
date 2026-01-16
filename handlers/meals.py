@@ -915,7 +915,7 @@ async def handle_weight_input(message: Message, state: FSMContext):
         # Определяем источник по наличию barcode
         if barcode:
             lines = [f"📷 Сканирование штрих-кода: {product_name}\n"]
-            raw_query = f"[Штрих-код: {barcode}]"
+            raw_query = f"[Штрих-код: {barcode}] {product_name}"
         else:
             lines = [f"📋 Анализ этикетки: {product_name}\n"]
             raw_query = f"[Этикетка: {product_name}]"
@@ -931,7 +931,7 @@ async def handle_weight_input(message: Message, state: FSMContext):
         product_name = data.get("product_name", "Продукт")
         barcode = data.get("barcode", "")
         lines = [f"📷 Сканирование штрих-кода: {product_name}\n"]
-        raw_query = f"[Штрих-код: {barcode}]"
+        raw_query = f"[Штрих-код: {barcode}] {product_name}"
     
     lines.append(f"📦 Вес: {weight_grams:.0f} г\n")
     lines.append("КБЖУ:")
@@ -941,6 +941,34 @@ async def handle_weight_input(message: Message, state: FSMContext):
         f"🥑 Жиры: {totals_for_db['fat']:.1f} г\n"
         f"🍩 Углеводы: {totals_for_db['carbs']:.1f} г"
     )
+
+    products_json = None
+    if kbju_per_100g:
+        kcal_100g = safe_float(kbju_per_100g.get("kcal"))
+        protein_100g = safe_float(kbju_per_100g.get("protein"))
+        fat_100g = safe_float(kbju_per_100g.get("fat"))
+        carbs_100g = safe_float(kbju_per_100g.get("carbs"))
+
+        products_json = json.dumps(
+            [
+                {
+                    "name": product_name,
+                    "grams": weight_grams,
+                    "kcal": totals_for_db["calories"],
+                    "protein": totals_for_db["protein"],
+                    "fat": totals_for_db["fat"],
+                    "carbs": totals_for_db["carbs"],
+                    "calories": totals_for_db["calories"],
+                    "protein_g": totals_for_db["protein"],
+                    "fat_total_g": totals_for_db["fat"],
+                    "carbohydrates_total_g": totals_for_db["carbs"],
+                    "calories_per_100g": kcal_100g,
+                    "protein_per_100g": protein_100g,
+                    "fat_per_100g": fat_100g,
+                    "carbs_per_100g": carbs_100g,
+                }
+            ]
+        )
     
     # Сохраняем в БД
     saved_meal = MealRepository.save_meal(
@@ -951,6 +979,7 @@ async def handle_weight_input(message: Message, state: FSMContext):
         fat=totals_for_db["fat"],
         carbs=totals_for_db["carbs"],
         entry_date=entry_date,
+        products_json=products_json,
     )
     
     # Сохраняем ID последнего приёма для редактирования
