@@ -61,13 +61,15 @@ async def show_training_menu(message: Message, state: FSMContext):
 
 @router.message(lambda m: m.text == "🏋️ Сегодня тренировка")
 async def quick_today_workout(message: Message, state: FSMContext):
-    """Быстрый вход в добавление тренировки на сегодня."""
+    """Быстрый вход к списку тренировок за сегодня."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} used quick 'today workout' button")
     
     # Очищаем предыдущее состояние и сразу открываем меню тренировок
     await state.clear()
-    await show_training_menu(message, state)
+    await show_day_workouts(message, user_id, date.today())
+    push_menu_stack(message.bot, training_menu)
+    await message.answer("⬇️ Меню тренировок", reply_markup=training_menu)
 
 
 @router.message(lambda m: m.text == "😴 Сегодня выходной")
@@ -91,14 +93,16 @@ async def quick_rest_day(message: Message, state: FSMContext):
 
 @router.callback_query(lambda c: c.data == "quick_today_workout")
 async def quick_today_workout_cb(callback: CallbackQuery, state: FSMContext):
-    """Быстрый вход в добавление тренировки на сегодня по inline-кнопке."""
+    """Быстрый вход к списку тренировок за сегодня по inline-кнопке."""
     await callback.answer()
     message = callback.message
     user_id = str(callback.from_user.id)
     logger.info(f"User {user_id} used quick 'today workout' inline button")
     
     await state.clear()
-    await show_training_menu(message, state)
+    await show_day_workouts(message, user_id, date.today())
+    push_menu_stack(message.bot, training_menu)
+    await message.answer("⬇️ Меню тренировок", reply_markup=training_menu)
 
 
 @router.callback_query(lambda c: c.data == "quick_rest_day")
