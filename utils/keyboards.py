@@ -10,9 +10,9 @@ main_menu_button = KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)
 # Главное меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
-        [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
-        [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💧 Контроль воды")],
+        [KeyboardButton(text="💧 Контроль воды"), KeyboardButton(text="🍱 КБЖУ")],
+        [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="⚖️ Вес / 📏 Замеры")],
+        [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки"), main_menu_button],
     ],
@@ -28,11 +28,11 @@ quick_actions_inline = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton(text="🏋️ Сегодня тренировка", callback_data="quick_today_workout"),
-            InlineKeyboardButton(text="😴 Сегодня выходной", callback_data="quick_rest_day"),
+            InlineKeyboardButton(text="⚖️ Вес", callback_data="quick_weight"),
         ],
         [
+            InlineKeyboardButton(text="💆 Процедуры", callback_data="quick_procedure"),
             InlineKeyboardButton(text="💊 Добавки", callback_data="quick_supplements"),
-            InlineKeyboardButton(text="⚖️ Вес", callback_data="quick_weight"),
         ],
     ]
 )

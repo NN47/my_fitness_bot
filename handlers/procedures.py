@@ -55,8 +55,19 @@ async def add_procedure(message: Message, state: FSMContext):
     """Начинает процесс добавления процедуры."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} started adding procedure")
-    
-    await state.update_data(entry_date=date.today().isoformat())
+    await start_add_procedure(message, state)
+
+
+@router.callback_query(lambda c: c.data == "quick_procedure")
+async def quick_add_procedure_cb(callback: CallbackQuery, state: FSMContext):
+    """Быстрое добавление процедуры через inline-кнопку."""
+    await callback.answer()
+    await start_add_procedure(callback.message, state)
+
+
+async def start_add_procedure(message: Message, state: FSMContext, *, entry_date: Optional[date] = None):
+    """Запускает процесс добавления процедуры."""
+    await state.update_data(entry_date=(entry_date or date.today()).isoformat())
     await state.set_state(ProcedureStates.entering_name)
     
     push_menu_stack(message.bot, procedures_menu)
