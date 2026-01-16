@@ -4,7 +4,7 @@ import logging
 from datetime import date
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import MONTH_NAMES
-from database.repositories import WorkoutRepository, MealRepository, SupplementRepository, ProcedureRepository
+from database.repositories import WorkoutRepository, MealRepository, SupplementRepository, ProcedureRepository, WeightRepository
 
 logger = logging.getLogger(__name__)
 
@@ -210,3 +210,60 @@ def build_procedure_calendar_keyboard(user_id: str, year: int, month: int) -> In
         marker="💆",
         get_days_func=get_month_procedure_days,
     )
+
+
+def get_month_weight_days(user_id: str, year: int, month: int) -> set[int]:
+    """Получает дни месяца, в которые был записан вес."""
+    return WeightRepository.get_month_weight_days(user_id, year, month)
+
+
+def build_weight_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    """Строит клавиатуру календаря веса."""
+    return build_calendar_keyboard(
+        user_id=user_id,
+        year=year,
+        month=month,
+        callback_prefix="weight_cal",
+        marker="⚖️",
+        get_days_func=get_month_weight_days,
+    )
+
+
+def build_weight_day_actions_keyboard(weight, target_date: date) -> InlineKeyboardMarkup:
+    """Строит клавиатуру действий для дня в календаре веса."""
+    from aiogram.types import InlineKeyboardButton
+    
+    rows: list[list[InlineKeyboardButton]] = []
+    
+    if weight:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="✏️ Редактировать",
+                    callback_data=f"weight_cal_edit:{target_date.isoformat()}",
+                ),
+                InlineKeyboardButton(
+                    text="🗑 Удалить",
+                    callback_data=f"weight_cal_del:{target_date.isoformat()}",
+                ),
+            ]
+        )
+    
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить вес" if not weight else "➕ Изменить вес",
+                callback_data=f"weight_cal_add:{target_date.isoformat()}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к календарю",
+                callback_data=f"weight_cal_back:{target_date.year}-{target_date.month:02d}",
+            )
+        ]
+    )
+    
+    return InlineKeyboardMarkup(inline_keyboard=rows)
