@@ -72,25 +72,6 @@ async def quick_today_workout(message: Message, state: FSMContext):
     await message.answer("⬇️ Меню тренировок", reply_markup=training_menu)
 
 
-@router.message(lambda m: m.text == "😴 Сегодня выходной")
-async def quick_rest_day(message: Message, state: FSMContext):
-    """Быстро отмечаем день как день отдыха (без записи в БД, только поддерживающее сообщение)."""
-    user_id = str(message.from_user.id)
-    logger.info(f"User {user_id} marked today as rest day via quick button")
-    
-    await state.clear()
-    
-    today_label = date.today().strftime("%d.%m.%Y")
-    text = (
-        f"😴 День отдыха — {today_label}\n\n"
-        "Отдых тоже часть прогресса 💪\n"
-        "Можешь всё равно отметить лёгкую активность: прогулку, шаги, растяжку.\n\n"
-        "Не забывай про воду «💧 +250 мл» и питание «🍱 Быстрый перекус» 😉"
-    )
-    
-    await message.answer(text)
-
-
 @router.callback_query(lambda c: c.data == "quick_today_workout")
 async def quick_today_workout_cb(callback: CallbackQuery, state: FSMContext):
     """Быстрый вход к списку тренировок за сегодня по inline-кнопке."""
@@ -103,27 +84,6 @@ async def quick_today_workout_cb(callback: CallbackQuery, state: FSMContext):
     await show_day_workouts(message, user_id, date.today())
     push_menu_stack(message.bot, training_menu)
     await message.answer("⬇️ Меню тренировок", reply_markup=training_menu)
-
-
-@router.callback_query(lambda c: c.data == "quick_rest_day")
-async def quick_rest_day_cb(callback: CallbackQuery, state: FSMContext):
-    """Отмечаем день как день отдыха по inline-кнопке."""
-    await callback.answer()
-    message = callback.message
-    user_id = str(callback.from_user.id)
-    logger.info(f"User {user_id} marked today as rest day via quick inline button")
-    
-    await state.clear()
-    
-    today_label = date.today().strftime("%d.%m.%Y")
-    text = (
-        f"😴 День отдыха — {today_label}\n\n"
-        "Отдых тоже часть прогресса 💪\n"
-        "Можешь всё равно отметить лёгкую активность: прогулку, шаги, растяжку.\n\n"
-        "Не забывай про воду «💧 +250 мл» и питание «🍱 Быстрый перекус» 😉"
-    )
-    
-    await message.answer(text)
 
 
 @router.message(lambda m: m.text == "➕ Добавить тренировку")
