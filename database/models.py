@@ -127,3 +127,16 @@ class WaterEntry(Base):
     date = Column(Date, default=date.today)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
+
+class WellbeingEntry(Base):
+    """Модель отметки самочувствия."""
+    __tablename__ = "wellbeing_entries"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    entry_type = Column(String, nullable=False)
+    mood = Column(String, nullable=True)
+    influence = Column(String, nullable=True)
+    difficulty = Column(String, nullable=True)
+    comment = Column(Text, nullable=True)
+    date = Column(Date, default=date.today)
+    created_at = Column(DateTime, default=datetime.utcnow)

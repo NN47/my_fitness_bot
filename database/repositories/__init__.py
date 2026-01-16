@@ -5,6 +5,7 @@ from .weight_repository import WeightRepository
 from .water_repository import WaterRepository
 from .supplement_repository import SupplementRepository
 from .procedure_repository import ProcedureRepository
+from .wellbeing_repository import WellbeingRepository
 
 __all__ = [
     "MealRepository",
@@ -13,4 +14,5 @@ __all__ = [
     "WaterRepository",
     "SupplementRepository",
     "ProcedureRepository",
+    "WellbeingRepository",
 ]

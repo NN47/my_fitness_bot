@@ -6,6 +6,7 @@ MAIN_MENU_BUTTON_TEXT = "🔄 Главное меню"
 LEGACY_MAIN_MENU_BUTTON_TEXT = "🏠 Главное меню"
 MAIN_MENU_BUTTON_ALIASES = {MAIN_MENU_BUTTON_TEXT, LEGACY_MAIN_MENU_BUTTON_TEXT}
 main_menu_button = KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)
+WELLBEING_BUTTON_TEXT = "🙂 Самочувствие"
 
 # Главное меню
 main_menu = ReplyKeyboardMarkup(
@@ -13,10 +14,58 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="💧 Контроль воды"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="⚖️ Вес / 📏 Замеры")],
         [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💊 Добавки")],
-        [KeyboardButton(text="🤖 ИИ анализ деятельности")],
+        [KeyboardButton(text=WELLBEING_BUTTON_TEXT), KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки"), main_menu_button],
     ],
     resize_keyboard=True
+)
+
+# Меню самочувствия
+wellbeing_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🟢 Быстрый опрос (20 секунд)")],
+        [KeyboardButton(text="✍️ Оставить комментарий")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+wellbeing_quick_mood_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="😄 Отлично"), KeyboardButton(text="🙂 Нормально")],
+        [KeyboardButton(text="😐 Так себе"), KeyboardButton(text="😣 Плохо")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+wellbeing_quick_influence_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Сон"), KeyboardButton(text="Питание")],
+        [KeyboardButton(text="Нагрузка / тренировка"), KeyboardButton(text="Стресс")],
+        [KeyboardButton(text="Всё было нормально")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+wellbeing_quick_difficulty_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Мало энергии")],
+        [KeyboardButton(text="Голод / тяга к сладкому")],
+        [KeyboardButton(text="Настроение / мотивация")],
+        [KeyboardButton(text="Физический дискомфорт")],
+        [KeyboardButton(text="Всё ок")],
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+wellbeing_comment_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
 )
 
 # Inline-кнопки быстрых действий под текстом
