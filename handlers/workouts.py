@@ -357,7 +357,7 @@ async def choose_exercise(message: Message, state: FSMContext):
     
     # Особые случаи с временем
     variant = None
-    if exercise == "Шаги":
+    if exercise in {"Шаги", "Шаги (Ходьба)"}:
         variant = "Количество шагов"
         await state.update_data(variant=variant)
         await state.set_state(WorkoutStates.entering_count)
@@ -593,7 +593,14 @@ async def handle_count_input(message: Message, state: FSMContext):
     
     # Определяем, нужно ли спрашивать про еще подход
     # Для упражнений по времени (Пробежка, Йога, Планка, Шаги) не спрашиваем
-    exercises_without_sets = ["Пробежка", "Йога", "Планка", "Шаги", "Скакалка"]
+    exercises_without_sets = [
+        "Пробежка",
+        "Йога",
+        "Планка",
+        "Шаги",
+        "Шаги (Ходьба)",
+        "Скакалка",
+    ]
     
     if exercise in exercises_without_sets:
         # Для упражнений по времени сразу завершаем

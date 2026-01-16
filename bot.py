@@ -2497,7 +2497,7 @@ bodyweight_exercises = [
     "Приседания",
     "Пресс",
     "Берпи",
-    "Шаги",
+    "Шаги (Ходьба)",
     "Пробежка",
     "Скакалка",
     "Становая тяга без утяжелителя",
@@ -2983,7 +2983,7 @@ async def choose_exercise(message: Message):
         return
 
     # особые случаи (оставляем как есть)
-    if message.text == "Шаги":
+    if message.text in {"Шаги", "Шаги (Ходьба)"}:
         message.bot.current_variant = "Количество шагов"
         await message.answer("Сколько шагов сделал? Введи число:")
         return
