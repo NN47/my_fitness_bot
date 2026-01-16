@@ -6,7 +6,13 @@ from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from states.user_states import WaterStates
-from utils.keyboards import water_menu, water_amount_menu, push_menu_stack, main_menu_button
+from utils.keyboards import (
+    MAIN_MENU_BUTTON_ALIASES,
+    main_menu_button,
+    push_menu_stack,
+    water_amount_menu,
+    water_menu,
+)
 from utils.progress_formatters import build_water_progress_bar
 from database.repositories import WaterRepository, WeightRepository
 
@@ -213,7 +219,7 @@ async def process_water_amount(message: Message, state: FSMContext):
     text = message.text.strip()
     
     # Проверяем, не является ли это кнопкой меню
-    if text in ["⬅️ Назад", "🏠 Главное меню", "📊 Статистика за сегодня", "📆 История", "➕ Добавить воду"]:
+    if text in ["⬅️ Назад", "📊 Статистика за сегодня", "📆 История", "➕ Добавить воду"] or text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
         if text == "⬅️ Назад":
             # Возвращаемся в меню воды

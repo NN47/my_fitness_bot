@@ -2,7 +2,10 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 # Главная кнопка меню
-main_menu_button = KeyboardButton(text="🏠 Главное меню")
+MAIN_MENU_BUTTON_TEXT = "🔄 Главное меню"
+LEGACY_MAIN_MENU_BUTTON_TEXT = "🏠 Главное меню"
+MAIN_MENU_BUTTON_ALIASES = {MAIN_MENU_BUTTON_TEXT, LEGACY_MAIN_MENU_BUTTON_TEXT}
+main_menu_button = KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)
 
 # Главное меню
 main_menu = ReplyKeyboardMarkup(
@@ -11,7 +14,7 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💧 Контроль воды")],
         [KeyboardButton(text="🤖 ИИ анализ деятельности")],
-        [KeyboardButton(text="⚙️ Настройки")],
+        [KeyboardButton(text="⚙️ Настройки"), main_menu_button],
     ],
     resize_keyboard=True
 )

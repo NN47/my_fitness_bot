@@ -6,6 +6,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from utils.keyboards import (
+    MAIN_MENU_BUTTON_ALIASES,
     training_menu,
     training_date_menu,
     other_day_menu,
@@ -435,11 +436,14 @@ async def choose_grip_type(message: Message, state: FSMContext):
     grip_type = message.text
     
     # Обработка кнопок навигации
-    if grip_type in ["⬅️ Назад", "🏠 Главное меню"]:
+    if grip_type == "⬅️ Назад" or grip_type in MAIN_MENU_BUTTON_ALIASES:
         if grip_type == "⬅️ Назад":
             await state.set_state(WorkoutStates.choosing_exercise)
             push_menu_stack(message.bot, bodyweight_exercise_menu)
             await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+        else:
+            from handlers.common import go_main_menu
+            await go_main_menu(message, state)
         return
     
     # Маппинг типов хвата на варианты
@@ -465,7 +469,7 @@ async def choose_grip_type(message: Message, state: FSMContext):
 async def handle_custom_exercise(message: Message, state: FSMContext):
     """Обрабатывает ввод названия упражнения."""
     # Обработка кнопок навигации
-    if message.text in ["⬅️ Назад", "🏠 Главное меню"]:
+    if message.text == "⬅️ Назад" or message.text in MAIN_MENU_BUTTON_ALIASES:
         if message.text == "⬅️ Назад":
             data = await state.get_data()
             category = data.get("category", "bodyweight")
@@ -522,7 +526,7 @@ async def handle_count_input(message: Message, state: FSMContext):
             await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
         return
     
-    if message.text == "🏠 Главное меню":
+    if message.text in MAIN_MENU_BUTTON_ALIASES:
         from handlers.common import go_main_menu
         await go_main_menu(message, state)
         return
