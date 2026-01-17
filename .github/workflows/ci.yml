@@ -30,6 +30,13 @@ jobs:
           python -m compileall -q .
 
       - name: Import main.py (sanity check)
+        env:
+          API_TOKEN: "dummy"
+          DATABASE_URL: "postgresql://user:pass@localhost:5432/db"
+          GEMINI_API_KEY: "dummy"
+          GEMINI_API_KEY2: "dummy"
+          GEMINI_API_KEY3: "dummy"
+          NUTRITION_API_KEY: "dummy"
         run: |
           python - << 'EOF'
           import main
