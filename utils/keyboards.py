@@ -77,14 +77,6 @@ quick_actions_inline = InlineKeyboardMarkup(
             InlineKeyboardButton(text="🍱 Быстрый перекус", callback_data="quick_snack"),
         ],
         [
-            InlineKeyboardButton(text="🏋️ Сегодня тренировка", callback_data="quick_today_workout"),
-            InlineKeyboardButton(text="⚖️ Вес", callback_data="quick_weight"),
-        ],
-        [
-            InlineKeyboardButton(text="💆 Процедуры", callback_data="quick_procedure"),
-            InlineKeyboardButton(text="💊 Добавки", callback_data="quick_supplements"),
-        ],
-        [
             InlineKeyboardButton(text="🤖 Рекомендации", callback_data="quick_recommendations"),
         ],
     ]
