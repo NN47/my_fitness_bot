@@ -290,6 +290,43 @@ def build_procedure_calendar_keyboard(user_id: str, year: int, month: int) -> In
     )
 
 
+def build_procedure_day_actions_keyboard(procedures, target_date: date) -> InlineKeyboardMarkup:
+    """Строит клавиатуру действий для дня в календаре процедур."""
+    from aiogram.types import InlineKeyboardButton
+
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if procedures:
+        for proc in procedures:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"🗑 {proc.name}",
+                        callback_data=f"proc_cal_del:{target_date.isoformat()}:{proc.id}",
+                    )
+                ]
+            )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить процедуру",
+                callback_data=f"proc_cal_add:{target_date.isoformat()}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к календарю",
+                callback_data=f"proc_cal_back:{target_date.year}-{target_date.month:02d}",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def get_month_weight_days(user_id: str, year: int, month: int) -> set[int]:
     """Получает дни месяца, в которые был записан вес."""
     return WeightRepository.get_month_weight_days(user_id, year, month)
