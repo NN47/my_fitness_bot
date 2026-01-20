@@ -73,8 +73,13 @@ wellbeing_comment_menu = ReplyKeyboardMarkup(
 quick_actions_inline = InlineKeyboardMarkup(
     inline_keyboard=[
         [
-            InlineKeyboardButton(text="💧 +250 мл", callback_data="quick_water_250"),
-            InlineKeyboardButton(text="🍱 Быстрый перекус", callback_data="quick_snack"),
+            InlineKeyboardButton(text="💧", callback_data="quick_water_250"),
+            InlineKeyboardButton(text="🍱", callback_data="quick_meal_add"),
+            InlineKeyboardButton(text="🏋️", callback_data="quick_workout_add"),
+            InlineKeyboardButton(text="💊", callback_data="quick_supplements"),
+            InlineKeyboardButton(text="🙂", callback_data="quick_wellbeing"),
+            InlineKeyboardButton(text="⚖️", callback_data="quick_weight"),
+            InlineKeyboardButton(text="💆", callback_data="quick_procedure"),
         ],
         [
             InlineKeyboardButton(text="💡 Рекомендации", callback_data="quick_recommendations"),
