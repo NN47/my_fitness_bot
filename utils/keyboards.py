@@ -77,7 +77,7 @@ quick_actions_inline = InlineKeyboardMarkup(
             InlineKeyboardButton(text="🍱 Быстрый перекус", callback_data="quick_snack"),
         ],
         [
-            InlineKeyboardButton(text="🤖 Рекомендации", callback_data="quick_recommendations"),
+            InlineKeyboardButton(text="💡 Рекомендации", callback_data="quick_recommendations"),
         ],
     ]
 )
