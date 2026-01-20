@@ -133,3 +133,14 @@ def supplement_test_notifications_menu() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
+
+
+def supplement_history_time_menu() -> ReplyKeyboardMarkup:
+    """Меню для ввода времени приёма в истории."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⏭️ Пропустить")],
+            [KeyboardButton(text="⬅️ Назад"), KeyboardButton(text="❌ Отменить")],
+        ],
+        resize_keyboard=True,
+    )

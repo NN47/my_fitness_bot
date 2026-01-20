@@ -217,13 +217,20 @@ async def log_supplement_intake(message: Message, state: FSMContext):
         )
         return
     
-    await state.update_data(supplement_name=target["name"], supplement_id=target["id"])
-    await state.set_state(SupplementStates.choosing_date_for_intake)
-    
-    push_menu_stack(message.bot, training_date_menu)
+    target_date = date.today()
+    await state.update_data(
+        supplement_name=target["name"],
+        supplement_id=target["id"],
+        entry_date=target_date.isoformat(),
+    )
+    await state.set_state(SupplementStates.entering_history_time)
+    from utils.supplement_keyboards import supplement_history_time_menu
+    push_menu_stack(message.bot, supplement_history_time_menu())
     await message.answer(
-        "За какой день отметить приём?\n\n📅 Сегодня\n📆 Другой день",
-        reply_markup=training_date_menu,
+        f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\n"
+        "Укажи время приёма в формате ЧЧ:ММ. Например: 09:30\n"
+        "Или нажми «⏭️ Пропустить», чтобы оставить время по умолчанию.",
+        reply_markup=supplement_history_time_menu(),
     )
 
 
@@ -264,9 +271,13 @@ async def handle_intake_date_choice(message: Message, state: FSMContext):
     
     await state.update_data(entry_date=target_date.isoformat())
     await state.set_state(SupplementStates.entering_history_time)
+    from utils.supplement_keyboards import supplement_history_time_menu
+    push_menu_stack(message.bot, supplement_history_time_menu())
     await message.answer(
         f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\n"
-        "Укажи время приёма в формате ЧЧ:ММ. Например: 09:30"
+        "Укажи время приёма в формате ЧЧ:ММ. Например: 09:30\n"
+        "Или нажми «⏭️ Пропустить», чтобы оставить время по умолчанию.",
+        reply_markup=supplement_history_time_menu(),
     )
 
 
@@ -280,6 +291,30 @@ async def handle_history_time(message: Message, state: FSMContext):
         return
     
     time_text = message.text.strip()
+    if time_text == "⏭️ Пропустить":
+        data = await state.get_data()
+        entry_date_str = data.get("entry_date", date.today().isoformat())
+        original_timestamp = data.get("original_timestamp")
+        default_timestamp = None
+        if isinstance(original_timestamp, str):
+            try:
+                default_timestamp = datetime.fromisoformat(original_timestamp)
+            except (ValueError, TypeError):
+                default_timestamp = None
+        if default_timestamp is None:
+            if isinstance(entry_date_str, str):
+                try:
+                    entry_date = date.fromisoformat(entry_date_str)
+                except ValueError:
+                    entry_date = date.today()
+            else:
+                entry_date = date.today()
+            default_timestamp = datetime.combine(entry_date, datetime.now().time())
+        await state.update_data(timestamp=default_timestamp.isoformat())
+        await state.set_state(SupplementStates.entering_history_amount)
+        await message.answer("Укажи количество для приёма (например: 1 или 2.5):")
+        return
+
     if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", time_text):
         await message.answer("Пожалуйста, укажи время в формате ЧЧ:ММ (например, 08:15)")
         return
@@ -719,13 +754,20 @@ async def mark_supplement_from_details(message: Message, state: FSMContext):
         )
         return
     
-    await state.update_data(supplement_name=target.get("name", ""), supplement_id=target.get("id"))
-    await state.set_state(SupplementStates.choosing_date_for_intake)
-    
-    push_menu_stack(message.bot, training_date_menu)
+    target_date = date.today()
+    await state.update_data(
+        supplement_name=target.get("name", ""),
+        supplement_id=target.get("id"),
+        entry_date=target_date.isoformat(),
+    )
+    await state.set_state(SupplementStates.entering_history_time)
+    from utils.supplement_keyboards import supplement_history_time_menu
+    push_menu_stack(message.bot, supplement_history_time_menu())
     await message.answer(
-        "За какой день отметить приём?\n\n📅 Сегодня\n📆 Другой день",
-        reply_markup=training_date_menu,
+        f"📅 Дата: {target_date.strftime('%d.%m.%Y')}\n\n"
+        "Укажи время приёма в формате ЧЧ:ММ. Например: 09:30\n"
+        "Или нажми «⏭️ Пропустить», чтобы оставить время по умолчанию.",
+        reply_markup=supplement_history_time_menu(),
     )
 
 
@@ -1740,12 +1782,15 @@ async def edit_supplement_entry(callback: CallbackQuery, state: FSMContext):
         original_timestamp=original_timestamp.isoformat(),
     )
     await state.set_state(SupplementStates.entering_history_time)
-    
+    from utils.supplement_keyboards import supplement_history_time_menu
+    push_menu_stack(callback.message.bot, supplement_history_time_menu())
     await callback.message.answer(
         f"Редактирование записи на {target_date.strftime('%d.%m.%Y')}.\n\n"
         f"Текущее время: {original_timestamp.strftime('%H:%M')}\n"
         f"Текущее количество: {original_amount or 'не указано'}\n\n"
-        "Укажи новое время приёма в формате ЧЧ:ММ:"
+        "Укажи новое время приёма в формате ЧЧ:ММ\n"
+        "или нажми «⏭️ Пропустить», чтобы оставить текущее время.",
+        reply_markup=supplement_history_time_menu(),
     )
 
 
