@@ -2,7 +2,7 @@
 import logging
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from utils.keyboards import (
     MAIN_MENU_BUTTON_ALIASES,
@@ -48,7 +48,7 @@ async def go_main_menu(message: Message, state: FSMContext):
     await message.answer("⬇️ Главное меню\nУправляй ботом через кнопки ниже.", reply_markup=main_menu)
 
 
-@router.message(lambda m: m.text == "⬅️ Назад")
+@router.message(StateFilter(None), lambda m: m.text == "⬅️ Назад")
 async def go_back(message: Message, state: FSMContext):
     """Обработчик кнопки 'Назад' - возвращает на шаг назад."""
     logger.info(f"User {message.from_user.id} pressed back button")
