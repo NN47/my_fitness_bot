@@ -121,6 +121,14 @@ async def quick_snack_cb(callback: CallbackQuery, state: FSMContext):
     await message.answer(text, reply_markup=kbju_add_menu)
 
 
+@router.callback_query(lambda c: c.data == "quick_meal_add")
+async def quick_meal_add(callback: CallbackQuery, state: FSMContext):
+    """Быстрый переход в добавление приёма пищи через inline-кнопку."""
+    await callback.answer()
+    reset_user_state(callback.message)
+    await start_kbju_add_flow(callback.message, date.today(), state)
+
+
 @router.message(lambda m: m.text == "🎯 Цель / Норма КБЖУ")
 async def show_kbju_goal(message: Message, state: FSMContext):
     """Показывает текущую цель КБЖУ или предлагает пройти тест."""

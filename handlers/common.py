@@ -91,6 +91,14 @@ async def quick_supplements(callback: CallbackQuery, state: FSMContext):
     await start_log_supplement_flow(callback.message, state, str(callback.from_user.id))
 
 
+@router.callback_query(lambda c: c.data == "quick_workout_add")
+async def quick_workout_add(callback: CallbackQuery, state: FSMContext):
+    """Быстрый переход к добавлению тренировки."""
+    await callback.answer()
+    from handlers.workouts import add_training_entry
+    await add_training_entry(callback.message, state)
+
+
 @router.callback_query(lambda c: c.data == "quick_weight")
 async def quick_weight(callback: CallbackQuery, state: FSMContext):
     """Быстрое открытие ввода веса."""
@@ -98,6 +106,14 @@ async def quick_weight(callback: CallbackQuery, state: FSMContext):
     # Импортируем обработчик веса
     from handlers.weight import add_weight_start
     await add_weight_start(callback.message, state)
+
+
+@router.callback_query(lambda c: c.data == "quick_wellbeing")
+async def quick_wellbeing(callback: CallbackQuery, state: FSMContext):
+    """Быстрый переход к самочувствию."""
+    await callback.answer()
+    from handlers.wellbeing import start_wellbeing
+    await start_wellbeing(callback.message, state)
 
 
 @router.callback_query(lambda c: c.data == "quick_recommendations")
