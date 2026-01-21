@@ -172,6 +172,7 @@ async def start_log_supplement_flow(message: Message, state: FSMContext, user_id
         )
         return
 
+    await state.update_data(from_calendar=False)
     await state.set_state(SupplementStates.logging_intake)
     push_menu_stack(message.bot, supplements_choice_menu(supplements_list))
     await message.answer(
@@ -361,6 +362,7 @@ async def handle_history_amount(message: Message, state: FSMContext):
     supplement_name = data.get("supplement_name")
     timestamp_str = data.get("timestamp")
     entry_date_str = data.get("entry_date")
+    from_calendar = data.get("from_calendar", False)
     
     if not supplement_id or not timestamp_str:
         await message.answer("Ошибка: не найдены данные о добавке или времени.")
@@ -379,7 +381,7 @@ async def handle_history_amount(message: Message, state: FSMContext):
     
     if entry_id:
         # Если это редактирование из календаря, показываем обновлённый день
-        if entry_date_str:
+        if from_calendar and entry_date_str:
             try:
                 entry_date = date.fromisoformat(entry_date_str)
                 await state.clear()
@@ -1680,7 +1682,7 @@ async def add_supplement_from_calendar(callback: CallbackQuery, state: FSMContex
         await callback.message.answer("Сначала создай добавку, чтобы отмечать приём.")
         return
     
-    await state.update_data(entry_date=target_date.isoformat())
+    await state.update_data(entry_date=target_date.isoformat(), from_calendar=True)
     await state.set_state(SupplementStates.logging_intake)
     
     push_menu_stack(callback.message.bot, supplements_choice_menu(supplements_list))
