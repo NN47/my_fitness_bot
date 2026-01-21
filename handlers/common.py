@@ -91,7 +91,10 @@ async def go_main_menu(message: Message, state: FSMContext):
     
     push_menu_stack(message.bot, main_menu)
     # Сначала отправляем текст с кратким днёвным статусом и inline-кнопками быстрых действий
-    await message.answer(welcome_text, reply_markup=quick_actions_inline, parse_mode="HTML")
+    try:
+        await message.answer(welcome_text, reply_markup=quick_actions_inline, parse_mode="HTML")
+    except Exception:
+        logger.exception("Failed to send main menu summary for user %s", user_id)
     # Затем — отдельное сообщение с основной клавиатурой без уведомления
     await message.answer("⬇️ Главное меню", reply_markup=main_menu, disable_notification=True)
 

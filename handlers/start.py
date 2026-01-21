@@ -81,7 +81,10 @@ async def start(message: Message):
     
     push_menu_stack(message.bot, main_menu)
     # Сначала отправляем основной текст с inline-кнопками быстрых действий
-    await message.answer(welcome_text, reply_markup=quick_actions_inline, parse_mode="HTML")
+    try:
+        await message.answer(welcome_text, reply_markup=quick_actions_inline, parse_mode="HTML")
+    except Exception:
+        logger.exception("Failed to send start summary for user %s", user_id)
     # Отдельным сообщением показываем главное меню (reply-клавиатура) без уведомления
     await message.answer("⬇️ Главное меню", reply_markup=main_menu, disable_notification=True)
 
