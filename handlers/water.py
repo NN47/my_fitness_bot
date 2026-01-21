@@ -143,7 +143,7 @@ async def quick_add_water_amount_cb(callback: CallbackQuery, state: FSMContext):
     
     try:
         amount = float(amount_text)
-        if amount <= 0:
+        if amount == 0:
             raise ValueError
     except ValueError:
         await message.answer("Не удалось определить количество воды. Попробуй ещё раз.")
@@ -267,7 +267,7 @@ async def process_water_amount(message: Message, state: FSMContext):
     
     try:
         amount = float(text.replace(",", "."))
-        if amount <= 0:
+        if amount == 0:
             raise ValueError
     except (ValueError, AttributeError):
         await message.answer(
