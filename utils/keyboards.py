@@ -307,8 +307,7 @@ procedures_menu = ReplyKeyboardMarkup(
 water_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить воду")],
-        [KeyboardButton(text="📊 Статистика за сегодня")],
-        [KeyboardButton(text="📆 История")],
+        [KeyboardButton(text="📆 Календарь воды")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,

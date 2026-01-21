@@ -1,5 +1,6 @@
 """Репозиторий для работы с водой."""
 import logging
+import calendar
 from datetime import date, datetime
 from typing import Optional
 from sqlalchemy import func
@@ -68,6 +69,25 @@ class WaterRepository:
                 .limit(limit)
                 .all()
             )
+
+    @staticmethod
+    def get_month_water_days(user_id: str, year: int, month: int) -> set[int]:
+        """Получает дни месяца, в которые была вода."""
+        first_day = date(year, month, 1)
+        _, days_in_month = calendar.monthrange(year, month)
+        last_day = date(year, month, days_in_month)
+
+        with get_db_session() as session:
+            entries = (
+                session.query(WaterEntry.date)
+                .filter(
+                    WaterEntry.user_id == user_id,
+                    WaterEntry.date >= first_day,
+                    WaterEntry.date <= last_day,
+                )
+                .all()
+            )
+            return {entry.date.day for entry in entries}
     
     @staticmethod
     def delete_entry(entry_id: int, user_id: str) -> bool:
