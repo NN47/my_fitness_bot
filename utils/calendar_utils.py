@@ -10,6 +10,7 @@ from database.repositories import (
     SupplementRepository,
     ProcedureRepository,
     WeightRepository,
+    WaterRepository,
 )
 from database.repositories.wellbeing_repository import WellbeingRepository
 
@@ -320,6 +321,61 @@ def build_procedure_day_actions_keyboard(procedures, target_date: date) -> Inlin
             InlineKeyboardButton(
                 text="⬅️ Назад к календарю",
                 callback_data=f"proc_cal_back:{target_date.year}-{target_date.month:02d}",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_month_water_days(user_id: str, year: int, month: int) -> set[int]:
+    """Получает дни месяца, в которые была вода."""
+    return WaterRepository.get_month_water_days(user_id, year, month)
+
+
+def build_water_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    """Строит календарь воды."""
+    return build_calendar_keyboard(
+        user_id=user_id,
+        year=year,
+        month=month,
+        callback_prefix="water_cal",
+        marker="💧",
+        get_days_func=get_month_water_days,
+    )
+
+
+def build_water_day_actions_keyboard(entries: list, target_date: date) -> InlineKeyboardMarkup:
+    """Строит клавиатуру действий для дня в календаре воды."""
+    from aiogram.types import InlineKeyboardButton
+
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for entry in entries:
+        time_text = entry.timestamp.strftime("%H:%M") if entry.timestamp else ""
+        label = f"{entry.amount:.0f} мл {time_text}".strip()
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🗑 {label}",
+                    callback_data=f"water_cal_del:{target_date.isoformat()}:{entry.id}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить воду",
+                callback_data=f"water_cal_add:{target_date.isoformat()}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к календарю",
+                callback_data=f"water_cal_back:{target_date.year}-{target_date.month:02d}",
             )
         ]
     )
