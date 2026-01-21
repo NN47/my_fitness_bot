@@ -45,7 +45,7 @@ async def go_main_menu(message: Message, state: FSMContext):
     # Сначала отправляем текст с кратким днёвным статусом и inline-кнопками быстрых действий
     await message.answer(welcome_text, reply_markup=quick_actions_inline, parse_mode="HTML")
     # Затем — отдельное сообщение с основной клавиатурой без уведомления
-    await message.answer("⬇️ Главное меню", reply_markup=main_menu, disable_notification=True)
+    await message.answer("\u200b", reply_markup=main_menu, disable_notification=True)
 
 
 @router.message(StateFilter(None), lambda m: m.text == "⬅️ Назад")
