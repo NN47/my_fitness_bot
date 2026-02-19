@@ -7,14 +7,15 @@ LEGACY_MAIN_MENU_BUTTON_TEXT = "🏠 Главное меню"
 MAIN_MENU_BUTTON_ALIASES = {MAIN_MENU_BUTTON_TEXT, LEGACY_MAIN_MENU_BUTTON_TEXT}
 main_menu_button = KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)
 WELLBEING_BUTTON_TEXT = "🙂 Самочувствие"
+WELLBEING_AND_PROCEDURES_BUTTON_TEXT = "🙂 Самочувствие / 💆 Процедуры"
 
 # Главное меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💧 Контроль воды"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="⚖️ Вес / 📏 Замеры")],
-        [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💊 Добавки")],
-        [KeyboardButton(text=WELLBEING_BUTTON_TEXT), KeyboardButton(text="🤖 Рекомендации")],
+        [KeyboardButton(text=WELLBEING_AND_PROCEDURES_BUTTON_TEXT), KeyboardButton(text="💊 Добавки")],
+        [KeyboardButton(text="🤖 Рекомендации")],
         [KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки"), main_menu_button],
     ],
@@ -28,6 +29,14 @@ wellbeing_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="✍️ Оставить комментарий")],
         [KeyboardButton(text="📆 Календарь самочувствия")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
+    ],
+    resize_keyboard=True,
+)
+
+wellbeing_and_procedures_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text=WELLBEING_BUTTON_TEXT), KeyboardButton(text="💆 Процедуры")],
+        [main_menu_button],
     ],
     resize_keyboard=True,
 )

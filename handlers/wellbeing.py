@@ -11,6 +11,8 @@ from database.repositories.wellbeing_repository import WellbeingRepository
 from states.user_states import WellbeingStates
 from utils.keyboards import (
     WELLBEING_BUTTON_TEXT,
+    WELLBEING_AND_PROCEDURES_BUTTON_TEXT,
+    wellbeing_and_procedures_menu,
     wellbeing_menu,
     wellbeing_quick_mood_menu,
     wellbeing_quick_influence_menu,
@@ -46,6 +48,17 @@ QUICK_FINISH_RESPONSES = [
     "Спасибо, это помогает видеть картину точнее.",
     "Отметка сохранена. Двигаемся дальше.",
 ]
+
+
+@router.message(lambda m: m.text == WELLBEING_AND_PROCEDURES_BUTTON_TEXT)
+async def wellbeing_and_procedures(message: Message, state: FSMContext):
+    """Показывает объединенное меню самочувствия и процедур."""
+    await state.clear()
+    push_menu_stack(message.bot, wellbeing_and_procedures_menu)
+    await message.answer(
+        "🙂 Самочувствие / 💆 Процедуры\n\nВыбери раздел:",
+        reply_markup=wellbeing_and_procedures_menu,
+    )
 
 COMMENT_FINISH_RESPONSES = [
     "Сохранил. Я учту это в анализе и рекомендациях.",
