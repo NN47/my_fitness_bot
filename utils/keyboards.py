@@ -10,7 +10,6 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💧 Контроль воды")],
-        [KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки")],
     ],
     resize_keyboard=True
@@ -19,6 +18,9 @@ main_menu = ReplyKeyboardMarkup(
 # Inline-кнопки быстрых действий под текстом
 quick_actions_inline = InlineKeyboardMarkup(
     inline_keyboard=[
+        [
+            InlineKeyboardButton(text="ℹ️", callback_data="quick_recommendations"),
+        ],
         [
             InlineKeyboardButton(text="💧 +250 мл", callback_data="quick_water_250"),
             InlineKeyboardButton(text="🍱 Быстрый перекус", callback_data="quick_snack"),

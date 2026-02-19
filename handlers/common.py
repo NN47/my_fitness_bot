@@ -94,6 +94,14 @@ async def quick_weight(callback: CallbackQuery, state: FSMContext):
     await weight_and_measurements(callback.message)
 
 
+@router.callback_query(lambda c: c.data == "quick_recommendations")
+async def quick_recommendations(callback: CallbackQuery):
+    """Быстрое открытие меню рекомендаций (ИИ анализ)."""
+    await callback.answer()
+    from handlers.activity import analyze_activity
+    await analyze_activity(callback.message)
+
+
 def register_common_handlers(dp):
     """Регистрирует общие обработчики."""
     dp.include_router(router)
