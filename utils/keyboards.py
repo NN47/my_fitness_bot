@@ -15,7 +15,6 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="💧 Контроль воды"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="⚖️ Вес / 📏 Замеры")],
         [KeyboardButton(text=WELLBEING_AND_PROCEDURES_BUTTON_TEXT), KeyboardButton(text="💊 Добавки")],
-        [KeyboardButton(text="🤖 Рекомендации")],
         [KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки"), main_menu_button],
     ],
@@ -87,6 +86,9 @@ quick_actions_inline = InlineKeyboardMarkup(
             InlineKeyboardButton(text="🍱", callback_data="quick_meal_add"),
             InlineKeyboardButton(text="🏋️", callback_data="quick_workout_add"),
             InlineKeyboardButton(text="⚖️", callback_data="quick_weight"),
+        ],
+        [
+            InlineKeyboardButton(text="ℹ️", callback_data="quick_recommendations"),
         ],
     ]
 )
