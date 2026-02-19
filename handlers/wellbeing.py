@@ -56,7 +56,7 @@ async def wellbeing_and_procedures(message: Message, state: FSMContext):
     await state.clear()
     push_menu_stack(message.bot, wellbeing_and_procedures_menu)
     await message.answer(
-        "🙂 Самочувствие / 💆 Процедуры\n\nВыбери раздел:",
+        f"{WELLBEING_AND_PROCEDURES_BUTTON_TEXT}\n\nВыбери раздел:",
         reply_markup=wellbeing_and_procedures_menu,
     )
 

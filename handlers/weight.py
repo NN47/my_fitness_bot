@@ -5,7 +5,13 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from typing import Optional
-from utils.keyboards import push_menu_stack, main_menu_button, training_date_menu, other_day_menu
+from utils.keyboards import (
+    WEIGHT_AND_MEASUREMENTS_BUTTON_TEXT,
+    push_menu_stack,
+    main_menu_button,
+    training_date_menu,
+    other_day_menu,
+)
 from database.repositories import WeightRepository
 from states.user_states import WeightStates
 from utils.validators import parse_weight, parse_date
@@ -50,14 +56,14 @@ weight_and_measurements_menu = ReplyKeyboardMarkup(
 )
 
 
-@router.message(lambda m: m.text == "⚖️ Вес / 📏 Замеры")
+@router.message(lambda m: m.text == WEIGHT_AND_MEASUREMENTS_BUTTON_TEXT)
 async def weight_and_measurements(message: Message):
     """Показывает меню веса и замеров."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened weight and measurements menu")
     push_menu_stack(message.bot, weight_and_measurements_menu)
     await message.answer(
-        "⚖️ Вес / 📏 Замеры\n\nВыбери действие:",
+        f"{WEIGHT_AND_MEASUREMENTS_BUTTON_TEXT}\n\nВыбери действие:",
         reply_markup=weight_and_measurements_menu,
     )
 

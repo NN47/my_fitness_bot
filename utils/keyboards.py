@@ -7,14 +7,15 @@ LEGACY_MAIN_MENU_BUTTON_TEXT = "🏠 Главное меню"
 MAIN_MENU_BUTTON_ALIASES = {MAIN_MENU_BUTTON_TEXT, LEGACY_MAIN_MENU_BUTTON_TEXT}
 main_menu_button = KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)
 WELLBEING_BUTTON_TEXT = "🙂 Самочувствие"
-WELLBEING_AND_PROCEDURES_BUTTON_TEXT = "🙂 Самочувствие / 💆 Процедуры"
+WELLBEING_AND_PROCEDURES_BUTTON_TEXT = "🙂 Самочувствие/\n💆 Процедуры"
+WEIGHT_AND_MEASUREMENTS_BUTTON_TEXT = "⚖️ Вес/\n📏 Замеры"
 
 # Главное меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="💊 Добавки"), KeyboardButton(text="💧 Контроль воды")],
-        [KeyboardButton(text=WELLBEING_AND_PROCEDURES_BUTTON_TEXT), KeyboardButton(text="⚖️ Вес / 📏 Замеры")],
+        [KeyboardButton(text=WELLBEING_AND_PROCEDURES_BUTTON_TEXT), KeyboardButton(text=WEIGHT_AND_MEASUREMENTS_BUTTON_TEXT)],
         [KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки"), main_menu_button],
     ],
