@@ -87,7 +87,7 @@ async def go_main_menu(message: Message, state: FSMContext):
     workouts_text = format_today_workouts_block(user_id, include_date=False)
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     
-    welcome_text = f"{today_line}\n\n{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
+    welcome_text = f"{today_line}\n\n{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
     
     push_menu_stack(message.bot, main_menu)
     # Сначала отправляем текст с кратким днёвным статусом и inline-кнопками быстрых действий

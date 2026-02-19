@@ -59,7 +59,7 @@ async def start(message: Message):
         welcome_text = (
             f"{today_line}\n\n"
             f"{welcome_intro}\n"
-            f"{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
+            f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
         )
     else:
         # Для существующих пользователей показываем краткий дайджест
@@ -71,12 +71,12 @@ async def start(message: Message):
             welcome_text = (
                 f"{today_line}\n\n"
                 f"{summary_text}\n\n"
-                f"{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
+                f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
             )
         else:
             welcome_text = (
                 f"{today_line}\n\n"
-                f"{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
+                f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
             )
     
     push_menu_stack(message.bot, main_menu)
