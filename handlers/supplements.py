@@ -62,7 +62,6 @@ async def supplements(message: Message):
         return
     
     dairi_description = (
-        "Привет, это Дайри на связи! 🤖\n\n"
         "💊 Раздел «Добавки»\n\n"
         "Здесь ты можешь записывать свои добавки: лекарства, витамины, БАДы и любые другие препараты. "
         "Я помогу тебе отслеживать их приём, настроить расписание и получать статистику.\n\n"
@@ -79,12 +78,12 @@ async def supplements(message: Message):
         return
     
     # Если добавки есть, показываем описание и список
-    lines = [dairi_description + "📋 Твои добавки:\n"]
+    lines = [dairi_description + "📋 Твои добавки:"]
     for item in supplements_list:
         days = ", ".join(item["days"]) if item["days"] else "не выбрано"
         times = ", ".join(item["times"]) if item["times"] else "не выбрано"
         lines.append(
-            f"\n💊 {item['name']} \n⏰ Время приема: {times}\n📅 Дни приема: {days}\n⏳ Длительность: {item['duration']}"
+            f"💊 {item['name']} \n⏰ Время приема: {times}\n📅 Дни приема: {days}\n⏳ Длительность: {item['duration']}"
         )
     
     push_menu_stack(message.bot, supplements_main_menu(has_items=True))
