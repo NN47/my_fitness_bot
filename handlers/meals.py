@@ -68,7 +68,7 @@ async def calories(message: Message, state: FSMContext):
     
     push_menu_stack(message.bot, kbju_menu)
     await message.answer(
-        f"🍱 КБЖУ\n\n{progress_text}\n\nВыбери действие:",
+        f"{progress_text}\n\nВыбери действие:",
         reply_markup=kbju_menu,
         parse_mode="HTML",
     )
