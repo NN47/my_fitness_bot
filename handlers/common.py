@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
+async def _build_recommendations_link(message: Message) -> str:
+    """Возвращает HTML-ссылку на рекомендации от Дайри."""
+    me = await message.bot.get_me()
+    return f'🔗 <a href="https://t.me/{me.username}?start=recommendations">Рекомендации от Дайри</a>'
+
 
 def _build_recommendations_text() -> str:
     return (
@@ -86,8 +91,13 @@ async def go_main_menu(message: Message, state: FSMContext):
     water_progress_text = format_water_progress_block(user_id)
     workouts_text = format_today_workouts_block(user_id, include_date=False)
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
-    
-    welcome_text = f"{today_line}\n\n{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
+    recommendations_link = await _build_recommendations_link(message)
+
+    welcome_text = (
+        f"{today_line}\n\n"
+        f"{recommendations_link}\n\n"
+        f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
+    )
     
     push_menu_stack(message.bot, main_menu)
     # Сначала отправляем текст с кратким днёвным статусом и inline-кнопками быстрых действий
