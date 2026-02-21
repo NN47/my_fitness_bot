@@ -24,7 +24,12 @@ def is_main_menu_button(text: str | None) -> bool:
     if not text:
         return False
     normalized = text.strip()
-    return normalized in MAIN_MENU_BUTTON_ALIASES or normalized.endswith("Главное меню")
+    lowered = normalized.casefold()
+    return (
+        normalized in MAIN_MENU_BUTTON_ALIASES
+        or normalized.endswith("Главное меню")
+        or "главное меню" in lowered
+    )
 
 
 def _build_recommendations_text() -> str:
@@ -122,7 +127,11 @@ async def go_main_menu(message: Message, state: FSMContext):
     workouts_text = format_today_workouts_block(user_id, include_date=False)
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     
-    tips_link = await _get_tips_link(message)
+    try:
+        tips_link = await _get_tips_link(message)
+    except Exception:
+        logger.exception("Failed to build tips link for user %s", user_id)
+        tips_link = "ℹ️ Рекомендации от Дайри: /start tips"
     welcome_text = f"{today_line}\n\n{workouts_text}\n\n{progress_text}\n\n{water_progress_text}\n\n{tips_link}"
     
     push_menu_stack(message.bot, main_menu)

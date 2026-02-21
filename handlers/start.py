@@ -5,6 +5,7 @@ from aiogram import Router
 from aiogram.types import Message
 from aiogram.filters import Command
 from aiogram.filters.command import CommandObject
+from aiogram.fsm.context import FSMContext
 from utils.keyboards import main_menu, push_menu_stack, quick_actions_inline
 from handlers.common import send_tips_with_cooldown, _get_tips_link
 from utils.progress_formatters import (
@@ -22,8 +23,11 @@ router = Router()
 
 
 @router.message(Command("start"))
-async def start(message: Message, command: CommandObject):
+async def start(message: Message, state: FSMContext, command: CommandObject | None = None):
     """Обработчик команды /start."""
+    # /start должен всегда сбрасывать незавершённые сценарии
+    await state.clear()
+
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} started the bot")
     start_param = (command.args or "").strip() if command else ""
@@ -88,7 +92,11 @@ async def start(message: Message, command: CommandObject):
                 f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
             )
 
-    tips_link = await _get_tips_link(message)
+    try:
+        tips_link = await _get_tips_link(message)
+    except Exception:
+        logger.exception("Failed to build tips link for user %s", user_id)
+        tips_link = "ℹ️ Рекомендации от Дайри: /start tips"
     welcome_text = f"{welcome_text}\n\n{tips_link}"
 
     push_menu_stack(message.bot, main_menu)
