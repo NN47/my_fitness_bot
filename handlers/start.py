@@ -3,6 +3,7 @@ import logging
 from datetime import date
 from aiogram import Router
 from aiogram.types import Message
+from aiogram.types.link_preview_options import LinkPreviewOptions
 from aiogram.filters import Command
 from utils.keyboards import main_menu, push_menu_stack, quick_actions_inline
 from utils.progress_formatters import (
@@ -100,7 +101,12 @@ async def start(message: Message):
     push_menu_stack(message.bot, main_menu)
     # Сначала отправляем основной текст с inline-кнопками быстрых действий
     try:
-        await message.answer(welcome_text, reply_markup=quick_actions_inline, parse_mode="HTML")
+        await message.answer(
+            welcome_text,
+            reply_markup=quick_actions_inline,
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
     except Exception:
         logger.exception("Failed to send start summary for user %s", user_id)
     # Отдельным сообщением показываем главное меню (reply-клавиатура) без уведомления
