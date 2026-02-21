@@ -2,6 +2,7 @@
 import logging
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
+from aiogram.types.link_preview_options import LinkPreviewOptions
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from utils.keyboards import (
@@ -102,7 +103,12 @@ async def go_main_menu(message: Message, state: FSMContext):
     push_menu_stack(message.bot, main_menu)
     # Сначала отправляем текст с кратким днёвным статусом и inline-кнопками быстрых действий
     try:
-        await message.answer(welcome_text, reply_markup=quick_actions_inline, parse_mode="HTML")
+        await message.answer(
+            welcome_text,
+            reply_markup=quick_actions_inline,
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
     except Exception:
         logger.exception("Failed to send main menu summary for user %s", user_id)
     # Затем — отдельное сообщение с основной клавиатурой без уведомления
