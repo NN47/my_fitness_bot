@@ -21,7 +21,6 @@ from services.nutrition_service import nutrition_service
 from services.gemini_service import gemini_service
 from utils.validators import parse_date
 from datetime import datetime
-from handlers.common import _get_tips_link
 
 logger = logging.getLogger(__name__)
 
@@ -1043,10 +1042,8 @@ async def send_today_results(message: Message, user_id: str):
     
     from utils.meal_formatters import format_today_meals, build_meals_actions_keyboard
     text = format_today_meals(meals, daily_totals, day_str)
-    tips_link = await _get_tips_link(message)
-    text = f"{text}\n\n{tips_link}"
     keyboard = build_meals_actions_keyboard(meals, today)
-
+    
     await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 

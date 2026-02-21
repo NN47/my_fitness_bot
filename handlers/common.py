@@ -1,6 +1,5 @@
 """Общие обработчики (назад, главное меню и т.д.)."""
 import logging
-from datetime import datetime, timedelta, timezone
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command, StateFilter
@@ -16,80 +15,54 @@ from utils.keyboards import (
 logger = logging.getLogger(__name__)
 
 router = Router()
-TIPS_COOLDOWN_SECONDS = 60
 
 
 def _build_recommendations_text() -> str:
     return (
-        "<b>🤖 Рекомендации от Дайри</b>\n\n"
+        "**🤖 Рекомендации от Дайри**\n\n"
         "Начни с базы — она работает всегда.\n\n"
-        "<b>Калории.</b>\n"
+        "**Калории.**\n"
         "Я рассчитываю твою суточную норму под цель.\n"
         "Твоя задача — просто попадать в цифры. Без догадок и «на глаз».\n\n"
-        "<b>Белок — обязателен.</b>\n"
+        "**Белок — обязателен.**\n"
         "Он помогает сохранить мышцы, ускоряет обмен веществ\n"
         "и снижает аппетит. Если контролировать что-то строго — то его.\n\n"
-        "Весь фокус здесь: <b>калории + белок</b>.\n"
+        "Весь фокус здесь: **калории + белок**.\n"
         "Неважно, кето это, ПП или интуитивное питание.\n"
         "Есть дефицит и достаточно белка — тело будет меняться.\n\n"
-        "<b>Режим питания — для комфорта, не для строгости.</b>\n"
+        "**Режим питания — для комфорта, не для строгости.**\n"
         "— Первый приём пищи через 1–2 часа после пробуждения.\n"
         "— Второй — в середине дня.\n"
         "— Последний — за 3–5 часов до сна.\n"
         "Так еда не мешает сну, а восстановление идёт лучше.\n\n"
-        "<b>Завтрак с белком (~40 г).</b>\n"
+        "**Завтрак с белком (~40 г).**\n"
         "Он стабилизирует уровень сахара,\n"
         "уменьшает вечерний голод\n"
         "и помогает удерживать мышечную форму.\n\n"
-        "<b>Вода — регулярно.</b>\n"
+        "**Вода — регулярно.**\n"
         "— После пробуждения.\n"
         "— Между приёмами пищи.\n"
         "— До и после еды.\n"
         "Часто самочувствие улучшается уже на этом этапе.\n\n"
-        "<b>8–10 тысяч шагов в день.</b>\n"
+        "**8–10 тысяч шагов в день.**\n"
         "Если много сидишь — гуляй во время звонков\n"
         "или используй дорожку под стол.\n"
         "Ходьба работает тихо, но стабильно.\n\n"
-        "<b>Алкоголь.</b>\n"
+        "**Алкоголь.**\n"
         "Когда ты пьёшь, тело занято переработкой алкоголя, а не жира.\n"
         "Жиросжигание в этот момент на паузе.\n"
         "Худеть и регулярно пить — можно,\n"
         "но это усложняет путь без реальной пользы.\n\n"
-        "<b>Отслеживай главное:</b>\n"
+        "**Отслеживай главное:**\n"
         "— Вес — примерно раз в неделю.\n"
         "— Тренировки и питание — по ходу.\n"
         "— Объём талии — раз в неделю.\n\n"
-        "<b>Дневник помогает больше, чем кажется.</b>\n"
+        "**Дневник помогает больше, чем кажется.**\n"
         "Пара строк о самочувствии и сложных моментах\n"
         "помогает видеть закономерности и не срываться.\n\n"
         "Я рядом, чтобы считать, напоминать\n"
         "и держать фокус там, где он действительно нужен 🤖\n\n"
     )
-
-
-async def _get_tips_link(message: Message) -> str:
-    bot_username = message.bot.username
-    if not bot_username:
-        me = await message.bot.get_me()
-        bot_username = me.username
-    return f'<a href="https://t.me/{bot_username}?start=tips">ℹ️ Рекомендации от Дайри</a>'
-
-
-async def send_tips_with_cooldown(message: Message) -> None:
-    """Отправляет советы с антиспам-ограничением."""
-    user_id = str(message.from_user.id)
-    now = datetime.now(timezone.utc)
-    last_sent_map = getattr(message.bot, "tips_last_sent_at", {})
-    last_sent_at = last_sent_map.get(user_id)
-
-    if last_sent_at and now - last_sent_at < timedelta(seconds=TIPS_COOLDOWN_SECONDS):
-        await message.answer("Я уже отправлял советы недавно 🙂")
-        return
-
-    await message.answer(_build_recommendations_text(), parse_mode="HTML")
-    last_sent_map[user_id] = now
-    message.bot.tips_last_sent_at = last_sent_map
-
 
 
 @router.message(lambda m: m.text in MAIN_MENU_BUTTON_ALIASES)
@@ -114,8 +87,7 @@ async def go_main_menu(message: Message, state: FSMContext):
     workouts_text = format_today_workouts_block(user_id, include_date=False)
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     
-    tips_link = await _get_tips_link(message)
-    welcome_text = f"{today_line}\n\n{workouts_text}\n\n{progress_text}\n\n{water_progress_text}\n\n{tips_link}"
+    welcome_text = f"{today_line}\n\n{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
     
     push_menu_stack(message.bot, main_menu)
     # Сначала отправляем текст с кратким днёвным статусом и inline-кнопками быстрых действий
@@ -199,13 +171,13 @@ async def quick_wellbeing(callback: CallbackQuery, state: FSMContext):
 async def quick_recommendations(callback: CallbackQuery):
     """Быстрый показ рекомендаций."""
     await callback.answer()
-    await send_tips_with_cooldown(callback.message)
+    await callback.message.answer(_build_recommendations_text(), parse_mode="Markdown")
 
 
 @router.message(lambda m: m.text == "🤖 Рекомендации")
 async def show_recommendations(message: Message):
     """Показывает рекомендации из главного меню."""
-    await send_tips_with_cooldown(message)
+    await message.answer(_build_recommendations_text(), parse_mode="Markdown")
 
 
 def register_common_handlers(dp):

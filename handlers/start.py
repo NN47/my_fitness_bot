@@ -1,12 +1,10 @@
 """Обработчики команды /start и главного меню."""
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 from aiogram import Router
 from aiogram.types import Message
 from aiogram.filters import Command
-from aiogram.filters.command import CommandObject
 from utils.keyboards import main_menu, push_menu_stack, quick_actions_inline
-from handlers.common import send_tips_with_cooldown, _get_tips_link
 from utils.progress_formatters import (
     format_progress_block,
     format_water_progress_block,
@@ -22,17 +20,10 @@ router = Router()
 
 
 @router.message(Command("start"))
-async def start(message: Message, command: CommandObject):
+async def start(message: Message):
     """Обработчик команды /start."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} started the bot")
-    start_param = (command.args or "").strip() if command else ""
-
-    if start_param == "tips":
-        logger.info("tips_link_open user_id=%s timestamp=%s", user_id, datetime.now(timezone.utc).isoformat())
-        await send_tips_with_cooldown(message)
-        return
-
     is_new_user = False
     
     # Создаём или обновляем пользователя в БД
@@ -87,10 +78,7 @@ async def start(message: Message, command: CommandObject):
                 f"{today_line}\n\n"
                 f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
             )
-
-    tips_link = await _get_tips_link(message)
-    welcome_text = f"{welcome_text}\n\n{tips_link}"
-
+    
     push_menu_stack(message.bot, main_menu)
     # Сначала отправляем основной текст с inline-кнопками быстрых действий
     try:
