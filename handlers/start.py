@@ -19,10 +19,24 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+async def _build_recommendations_link(message: Message) -> str:
+    """Возвращает HTML-ссылку на рекомендации от Дайри."""
+    me = await message.bot.get_me()
+    return f'🔗 <a href="https://t.me/{me.username}?start=recommendations">Рекомендации от Дайри</a>'
+
+
 @router.message(Command("start"))
 async def start(message: Message):
     """Обработчик команды /start."""
     user_id = str(message.from_user.id)
+
+    payload = ""
+    if message.text and " " in message.text:
+        payload = message.text.split(" ", 1)[1].strip().lower()
+    if payload == "recommendations":
+        from handlers.common import _build_recommendations_text
+        await message.answer(_build_recommendations_text(), parse_mode="Markdown")
+        return
     logger.info(f"User {user_id} started the bot")
     is_new_user = False
     
@@ -41,6 +55,7 @@ async def start(message: Message):
     water_progress_text = format_water_progress_block(user_id)
     workouts_text = format_today_workouts_block(user_id, include_date=False)
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
+    recommendations_link = await _build_recommendations_link(message)
     
     if is_new_user:
         # Мини-онбординг для новых пользователей
@@ -59,6 +74,7 @@ async def start(message: Message):
         welcome_text = (
             f"{today_line}\n\n"
             f"{welcome_intro}\n"
+            f"{recommendations_link}\n\n"
             f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
         )
     else:
@@ -71,11 +87,13 @@ async def start(message: Message):
             welcome_text = (
                 f"{today_line}\n\n"
                 f"{summary_text}\n\n"
+                f"{recommendations_link}\n\n"
                 f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
             )
         else:
             welcome_text = (
                 f"{today_line}\n\n"
+                f"{recommendations_link}\n\n"
                 f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
             )
     
