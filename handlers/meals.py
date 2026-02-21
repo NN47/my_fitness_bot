@@ -209,9 +209,8 @@ async def start_kbju_add_flow(message: Message, entry_date: date, state: FSMCont
     await state.update_data(entry_date=entry_date.isoformat())
     
     text = (
-        "🍱 Раздел КБЖУ\n\n"
-        "Выбери, как добавить приём пищи:\n"
-        "• 📝 Ввести приём пищи (анализ ИИ) — умный анализ на основе типичных значений (рекомендуется)\n"
+        "<b>Выбери, как добавить приём пищи:</b>\n"
+        "• 📝 Ввести приём пищи текстом (анализ ИИ) — умный анализ на основе типичных значений\n"
         "• 📷 Анализ еды по фото — отправь фото еды\n"
         "• 📋 Анализ этикетки — отправь фото этикетки/упаковки"
     )
@@ -238,13 +237,13 @@ async def kbju_add_via_calorieninjas(message: Message, state: FSMContext):
     await message.answer(text, reply_markup=kbju_add_menu)
 
 
-@router.message(lambda m: m.text == "📝 Ввести приём пищи (анализ ИИ)")
+@router.message(lambda m: m.text == "📝 Ввести приём пищи текстом (анализ ИИ)")
 async def kbju_add_via_ai(message: Message, state: FSMContext):
     """Обработчик добавления через Gemini AI."""
     await state.set_state(MealEntryStates.waiting_for_ai_food_input)
     
     text = (
-        "📝 Ввести приём пищи (анализ ИИ)\n\n"
+        "📝 Ввести приём пищи текстом (анализ ИИ)\n\n"
         "Напиши, что ты съел, с примерным весом в одном сообщении.\n\n"
         "Например: 200 г курицы, 100 г йогурта, 30 г орехов.\n\n"
         "ИИ автоматически определит КБЖУ на основе типичных значений продуктов."

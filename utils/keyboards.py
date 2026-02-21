@@ -247,7 +247,7 @@ kbju_goal_menu = ReplyKeyboardMarkup(
 
 kbju_add_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="📝 Ввести приём пищи (анализ ИИ)")],
+        [KeyboardButton(text="📝 Ввести приём пищи текстом (анализ ИИ)")],
         [KeyboardButton(text="📷 Анализ еды по фото")],
         [KeyboardButton(text="📋 Анализ этикетки")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
