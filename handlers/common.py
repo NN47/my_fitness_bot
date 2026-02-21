@@ -19,6 +19,14 @@ router = Router()
 TIPS_COOLDOWN_SECONDS = 60
 
 
+def is_main_menu_button(text: str | None) -> bool:
+    """Возвращает True, если сообщение соответствует кнопке главного меню."""
+    if not text:
+        return False
+    normalized = text.strip()
+    return normalized in MAIN_MENU_BUTTON_ALIASES or normalized.endswith("Главное меню")
+
+
 def _build_recommendations_text() -> str:
     return (
         "<b>🤖 Рекомендации от Дайри</b>\n\n"
@@ -92,7 +100,7 @@ async def send_tips_with_cooldown(message: Message) -> None:
 
 
 
-@router.message(lambda m: m.text in MAIN_MENU_BUTTON_ALIASES)
+@router.message(lambda m: is_main_menu_button(m.text))
 async def go_main_menu(message: Message, state: FSMContext):
     """Обработчик кнопки 'Главное меню'."""
     from datetime import date

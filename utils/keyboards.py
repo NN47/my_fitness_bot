@@ -4,7 +4,12 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 # Главная кнопка меню
 MAIN_MENU_BUTTON_TEXT = "🔄 Главное меню"
 LEGACY_MAIN_MENU_BUTTON_TEXT = "🏠 Главное меню"
-MAIN_MENU_BUTTON_ALIASES = {MAIN_MENU_BUTTON_TEXT, LEGACY_MAIN_MENU_BUTTON_TEXT}
+PLAIN_MAIN_MENU_BUTTON_TEXT = "Главное меню"
+MAIN_MENU_BUTTON_ALIASES = {
+    MAIN_MENU_BUTTON_TEXT,
+    LEGACY_MAIN_MENU_BUTTON_TEXT,
+    PLAIN_MAIN_MENU_BUTTON_TEXT,
+}
 main_menu_button = KeyboardButton(text=MAIN_MENU_BUTTON_TEXT)
 WELLBEING_BUTTON_TEXT = "🙂 Самочувствие"
 WELLBEING_AND_PROCEDURES_BUTTON_TEXT = "🙂 Самочувствие/\n💆 Процедуры"
