@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
+DAILY_REPORT_BUTTON_TEXTS = {"📊 Дневной отчёт", "📊 Дневной отчет"}
+
 
 def reset_user_state(message: Message, *, keep_supplements: bool = False):
     """Сбрасывает состояние пользователя."""
@@ -1023,7 +1025,7 @@ async def handle_weight_input(message: Message, state: FSMContext):
     await message.answer("\n".join(lines), reply_markup=kbju_after_meal_menu)
 
 
-@router.message(lambda m: m.text == "📊 Дневной отчёт")
+@router.message(lambda m: m.text in DAILY_REPORT_BUTTON_TEXTS)
 async def calories_today_results(message: Message):
     """Показывает дневной отчёт по КБЖУ."""
     reset_user_state(message)
@@ -1069,7 +1071,7 @@ async def handle_after_meal_menu_action(message: Message, state: FSMContext, tex
     """
     user_id = str(message.from_user.id)
 
-    if text == "📊 Дневной отчёт":
+    if text in DAILY_REPORT_BUTTON_TEXTS:
         await state.clear()
         await send_today_results(message, user_id)
         return True
@@ -1387,7 +1389,7 @@ async def handle_meal_weight_edit(message: Message, state: FSMContext):
     text = message.text.strip()
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
+    menu_buttons = ["⬅️ Назад", *DAILY_REPORT_BUTTON_TEXTS, "➕ Внести ещё приём", "✏️ Редактировать"]
     if text in menu_buttons or text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
         if text == "⬅️ Назад":
@@ -1601,7 +1603,7 @@ async def handle_meal_composition_edit(message: Message, state: FSMContext):
     user_text = message.text.strip()
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
+    menu_buttons = ["⬅️ Назад", *DAILY_REPORT_BUTTON_TEXTS, "➕ Внести ещё приём", "✏️ Редактировать"]
     if user_text in menu_buttons or user_text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
         if user_text == "⬅️ Назад":
@@ -1706,7 +1708,7 @@ async def handle_meal_edit_input(message: Message, state: FSMContext):
     new_text = message.text.strip()
     
     # Проверяем, не является ли это кнопкой меню
-    menu_buttons = ["⬅️ Назад", "📊 Дневной отчёт", "➕ Внести ещё приём", "✏️ Редактировать"]
+    menu_buttons = ["⬅️ Назад", *DAILY_REPORT_BUTTON_TEXTS, "➕ Внести ещё приём", "✏️ Редактировать"]
     if new_text in menu_buttons or new_text in MAIN_MENU_BUTTON_ALIASES:
         await state.clear()
         if new_text == "⬅️ Назад":
