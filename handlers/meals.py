@@ -1062,30 +1062,6 @@ async def send_today_results(message: Message, user_id: str):
     await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
-async def handle_after_meal_menu_action(message: Message, state: FSMContext, text: str) -> bool:
-    """Обрабатывает кнопки меню после приёма пищи в режимах редактирования.
-
-    Возвращает True, если кнопка была обработана и дальнейшая логика не нужна.
-    """
-    user_id = str(message.from_user.id)
-
-    if text == "📊 Дневной отчёт":
-        await state.clear()
-        await send_today_results(message, user_id)
-        return True
-
-    if text == "➕ Внести ещё приём":
-        await state.clear()
-        await start_kbju_add_flow(message, date.today(), state)
-        return True
-
-    if text == "✏️ Редактировать":
-        await message.answer("Выбери приём пищи для редактирования в дневном отчёте 👇")
-        return True
-
-    return False
-
-
 @router.message(lambda m: m.text == "📆 Календарь КБЖУ")
 async def calories_calendar(message: Message):
     """Показывает календарь КБЖУ."""
@@ -1397,9 +1373,7 @@ async def handle_meal_weight_edit(message: Message, state: FSMContext):
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
         else:
-            handled = await handle_after_meal_menu_action(message, state, text)
-            if not handled:
-                await message.answer("Редактирование отменено.")
+            await message.answer("Редактирование отменено.")
         return
     
     data = await state.get_data()
@@ -1611,9 +1585,7 @@ async def handle_meal_composition_edit(message: Message, state: FSMContext):
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
         else:
-            handled = await handle_after_meal_menu_action(message, state, user_text)
-            if not handled:
-                await message.answer("Редактирование отменено.")
+            await message.answer("Редактирование отменено.")
         return
     
     if not user_text:
@@ -1716,9 +1688,7 @@ async def handle_meal_edit_input(message: Message, state: FSMContext):
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
         else:
-            handled = await handle_after_meal_menu_action(message, state, new_text)
-            if not handled:
-                await message.answer("Редактирование отменено.")
+            await message.answer("Редактирование отменено.")
         return
     
     if not meal_id:
