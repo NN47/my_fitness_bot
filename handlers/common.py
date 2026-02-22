@@ -96,6 +96,7 @@ async def go_main_menu(message: Message, state: FSMContext):
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     intro_image = Path(__file__).resolve().parents[1] / "assets" / "dairy_intro.jpg"
     intro_text = (
+        f"{today_line}\n\n"
         "🤖 Привет!\n"
         "Это Дайри — твой AI-ассистент по тренировкам и КБЖУ.\n"
         "Слежу за твоим прогрессом и помогаю держать курс на цель.\n"
@@ -109,16 +110,13 @@ async def go_main_menu(message: Message, state: FSMContext):
     )
     
     push_menu_stack(message.bot, main_menu)
-    # Сначала отправляем дату
+    # Отправляем вводный блок одним сообщением
     try:
-        await message.answer(today_line, parse_mode="HTML")
-
-        # Затем — вводный блок с изображением и подписью
         if intro_image.exists():
-            await message.answer_photo(photo=FSInputFile(str(intro_image)), caption=intro_text)
+            await message.answer_photo(photo=FSInputFile(str(intro_image)), caption=intro_text, parse_mode="HTML")
         else:
             logger.warning("Файл intro-изображения не найден: %s", intro_image)
-            await message.answer(intro_text)
+            await message.answer(intro_text, parse_mode="HTML")
 
         # Потом отправляем текст с кратким дневным статусом и inline-кнопками быстрых действий
         await message.answer(
