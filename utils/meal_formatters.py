@@ -11,6 +11,16 @@ from database.models import Meal
 logger = logging.getLogger(__name__)
 
 
+def _as_float(value, default: Optional[float] = 0.0) -> Optional[float]:
+    """Безопасно приводит значение к float."""
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def format_today_meals(
     meals: list[Meal],
     daily_totals: dict,
@@ -57,17 +67,23 @@ def format_today_meals(
                     # Поддержка разных форматов данных (CalorieNinjas и Gemini API)
                     # CalorieNinjas использует: _calories, _protein_g, _fat_total_g, _carbohydrates_total_g
                     # Gemini API использует: kcal, protein, fat, carbs, grams
-                    cal = (p.get("calories") or p.get("_calories") or 
-                           p.get("kcal") or 0)
-                    prot = (p.get("protein_g") or p.get("_protein_g") or 
-                            p.get("protein") or 0)
-                    fat = (p.get("fat_total_g") or p.get("_fat_total_g") or 
-                           p.get("fat") or 0)
-                    carb = (p.get("carbohydrates_total_g") or p.get("_carbohydrates_total_g") or 
-                            p.get("carbs") or 0)
+                    cal = _as_float(
+                        p.get("calories") or p.get("_calories") or p.get("kcal")
+                    )
+                    prot = _as_float(
+                        p.get("protein_g") or p.get("_protein_g") or p.get("protein")
+                    )
+                    fat = _as_float(
+                        p.get("fat_total_g") or p.get("_fat_total_g") or p.get("fat")
+                    )
+                    carb = _as_float(
+                        p.get("carbohydrates_total_g")
+                        or p.get("_carbohydrates_total_g")
+                        or p.get("carbs")
+                    )
                     
                     # Если есть вес, показываем его
-                    grams = p.get("grams") or p.get("weight")
+                    grams = _as_float(p.get("grams") or p.get("weight"), default=None)
                     if grams:
                         lines.append(
                             f"• {html.escape(name)} ({grams:.0f} г) — {cal:.0f} ккал "
@@ -85,18 +101,24 @@ def format_today_meals(
                 )
         
         # Итого по этому приёму
-        lines.append(f"🔥 Калории: {meal.calories:.0f} ккал")
-        lines.append(f"💪 Белки: {meal.protein:.1f} г")
-        lines.append(f"🥑 Жиры: {meal.fat:.1f} г")
-        lines.append(f"🍩 Углеводы: {meal.carbs:.1f} г")
+        lines.append(f"🔥 Калории: {_as_float(meal.calories):.0f} ккал")
+        lines.append(f"💪 Белки: {_as_float(meal.protein):.1f} г")
+        lines.append(f"🥑 Жиры: {_as_float(meal.fat):.1f} г")
+        lines.append(f"🍩 Углеводы: {_as_float(meal.carbs):.1f} г")
         lines.append("— — — — —")
     
     # Итоги за день — тоже жирным
     lines.append("\n<b>Итого за день:</b>")
-    lines.append(f"🔥 Калории: {daily_totals.get('calories', 0):.0f} ккал")
-    lines.append(f"💪 Белки: {daily_totals.get('protein_g', daily_totals.get('protein', 0)):.1f} г")
-    lines.append(f"🥑 Жиры: {daily_totals.get('fat_total_g', daily_totals.get('fat', 0)):.1f} г")
-    lines.append(f"🍩 Углеводы: {daily_totals.get('carbohydrates_total_g', daily_totals.get('carbs', 0)):.1f} г")
+    lines.append(f"🔥 Калории: {_as_float(daily_totals.get('calories', 0)):.0f} ккал")
+    lines.append(
+        f"💪 Белки: {_as_float(daily_totals.get('protein_g', daily_totals.get('protein', 0))):.1f} г"
+    )
+    lines.append(
+        f"🥑 Жиры: {_as_float(daily_totals.get('fat_total_g', daily_totals.get('fat', 0))):.1f} г"
+    )
+    lines.append(
+        f"🍩 Углеводы: {_as_float(daily_totals.get('carbohydrates_total_g', daily_totals.get('carbs', 0))):.1f} г"
+    )
     
     return "\n".join(lines)
 
