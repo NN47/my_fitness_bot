@@ -1049,10 +1049,11 @@ async def send_today_results(message: Message, user_id: str):
     daily_totals = MealRepository.get_daily_totals(user_id, today)
     day_str = today.strftime("%d.%m.%Y")
 
-    await message.answer(f"📅 {day_str}")
+    date_line = f"📅 <b>{day_str}</b>"
 
     intro_image = Path(__file__).resolve().parents[1] / "assets" / "dairy_intro.jpg"
     intro_text = (
+        f"{date_line}\n\n"
         "🤖 Привет!\n"
         "Это Дайри — твой AI-ассистент по тренировкам и КБЖУ.\n"
         "Слежу за твоим прогрессом и помогаю держать курс на цель.\n"
@@ -1060,10 +1061,10 @@ async def send_today_results(message: Message, user_id: str):
     )
 
     if intro_image.exists():
-        await message.answer_photo(photo=FSInputFile(str(intro_image)), caption=intro_text)
+        await message.answer_photo(photo=FSInputFile(str(intro_image)), caption=intro_text, parse_mode="HTML")
     else:
         logger.warning("Файл intro-изображения не найден: %s", intro_image)
-        await message.answer(intro_text)
+        await message.answer(intro_text, parse_mode="HTML")
     
     from utils.meal_formatters import format_today_meals, build_meals_actions_keyboard
     text = format_today_meals(meals, daily_totals, day_str, include_date_header=False)
