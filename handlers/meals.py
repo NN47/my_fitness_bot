@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 DAILY_REPORT_BUTTON_TEXTS = {"📊 Дневной отчёт", "📊 Дневной отчет"}
+KBJU_STATE_SHORTCUTS = DAILY_REPORT_BUTTON_TEXTS | {
+    "🍱 КБЖУ",
+    "📆 Календарь КБЖУ",
+    "🎯 Цель / Норма КБЖУ",
+}
 
 
 def reset_user_state(message: Message, *, keep_supplements: bool = False):
@@ -221,6 +226,32 @@ async def start_kbju_add_flow(message: Message, entry_date: date, state: FSMCont
     await message.answer(text, reply_markup=kbju_add_menu)
 
 
+async def handle_kbju_state_shortcuts(message: Message, state: FSMContext, text: str) -> bool:
+    """Обрабатывает кнопки раздела КБЖУ, даже если пользователь находится в FSM-сценарии."""
+    if text not in KBJU_STATE_SHORTCUTS:
+        return False
+
+    await state.clear()
+
+    if text in DAILY_REPORT_BUTTON_TEXTS:
+        await calories_today_results(message)
+        return True
+
+    if text == "🍱 КБЖУ":
+        await calories(message, state)
+        return True
+
+    if text == "📆 Календарь КБЖУ":
+        await calories_calendar(message)
+        return True
+
+    if text == "🎯 Цель / Норма КБЖУ":
+        await show_kbju_goal(message, state)
+        return True
+
+    return False
+
+
 @router.message(lambda m: m.text == "➕ Через CalorieNinjas")
 async def kbju_add_via_calorieninjas(message: Message, state: FSMContext):
     """Обработчик добавления через CalorieNinjas."""
@@ -285,7 +316,11 @@ async def kbju_add_via_photo(message: Message, state: FSMContext):
 @router.message(MealEntryStates.waiting_for_food_input)
 async def handle_food_input(message: Message, state: FSMContext):
     """Обрабатывает ввод текста для CalorieNinjas."""
-    user_text = message.text.strip()
+    user_text = (message.text or "").strip()
+
+    if await handle_kbju_state_shortcuts(message, state, user_text):
+        return
+
     if not user_text:
         await message.answer("Напиши, пожалуйста, что ты съел(а) 🙏")
         return
@@ -388,7 +423,11 @@ async def handle_food_input(message: Message, state: FSMContext):
 @router.message(MealEntryStates.waiting_for_ai_food_input)
 async def handle_ai_food_input(message: Message, state: FSMContext):
     """Обрабатывает ввод текста для Gemini AI."""
-    user_text = message.text.strip()
+    user_text = (message.text or "").strip()
+
+    if await handle_kbju_state_shortcuts(message, state, user_text):
+        return
+
     if not user_text:
         await message.answer("Напиши, пожалуйста, что ты съел(а) 🙏")
         return
