@@ -5,6 +5,7 @@ import re
 from datetime import date
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
+from aiogram.exceptions import TelegramBadRequest
 from typing import Optional
 from aiogram.fsm.context import FSMContext
 from states.user_states import MealEntryStates
@@ -20,6 +21,7 @@ from database.repositories import MealRepository
 from services.nutrition_service import nutrition_service
 from services.gemini_service import gemini_service
 from utils.validators import parse_date
+from utils.telegram_text import split_telegram_message
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -1058,8 +1060,36 @@ async def send_today_results(message: Message, user_id: str):
     )
     text = f"{intro_text}\n\n{report_text}"
     keyboard = build_meals_actions_keyboard(meals, today)
-    
-    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+    logger.info("KBJU daily report length=%s", len(text))
+
+    async def _safe_send(chunk: str, *, with_keyboard: bool = False):
+        """Безопасная отправка chunk: сначала HTML, при ошибке — plain text."""
+        kwargs = {"parse_mode": "HTML"}
+        if with_keyboard:
+            kwargs["reply_markup"] = keyboard
+
+        try:
+            await message.answer(chunk, **kwargs)
+        except TelegramBadRequest as exc:
+            logger.warning(
+                "KBJU daily report chunk failed with HTML, fallback to plain text: %s",
+                exc,
+            )
+            fallback_kwargs = {}
+            if with_keyboard:
+                fallback_kwargs["reply_markup"] = keyboard
+            await message.answer(chunk, **fallback_kwargs)
+
+    if len(text) <= 4000:
+        await _safe_send(text, with_keyboard=True)
+        return
+
+    chunks = split_telegram_message(text)
+    logger.info("KBJU daily report split into %s chunk(s)", len(chunks))
+
+    for index, chunk in enumerate(chunks):
+        await _safe_send(chunk, with_keyboard=(index == 0))
 
 
 @router.message(lambda m: m.text == "📆 Календарь КБЖУ")
