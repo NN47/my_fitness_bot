@@ -13,14 +13,12 @@ from aiogram.types import (
     InlineKeyboardButton,
     CallbackQuery,
     PhotoSize,
-    FSInputFile,
 )
 from aiogram.filters import Command
 import os
 import json
 import html
 from datetime import date
-from pathlib import Path
 from dotenv import load_dotenv
 import threading
 import http.server
@@ -5645,8 +5643,6 @@ async def send_today_results(message: Message, user_id: str):
     daily_totals = get_daily_meal_totals(user_id, today)
     day_str = today.strftime("%d.%m.%Y")
     date_line = f"📅 <b>{day_str}</b>"
-
-    intro_image = Path(__file__).resolve().parent / "assets" / "dairy_intro.jpg"
     intro_text = (
         f"{date_line}\n\n"
         "🤖 Привет!\n"
@@ -5655,16 +5651,11 @@ async def send_today_results(message: Message, user_id: str):
         "Вот анализ за сегодня 👇"
     )
 
-    if intro_image.exists():
-        await message.answer_photo(photo=FSInputFile(str(intro_image)), caption=intro_text, parse_mode="HTML")
-    else:
-        logger.warning("Файл intro-изображения не найден: %s", intro_image)
-        await message.answer(intro_text, parse_mode="HTML")
-
     text = format_today_meals(meals, daily_totals, day_str)
     keyboard = build_meals_actions_keyboard(meals, today)
+    unified_report = f"{intro_text}\n\n{text}"
 
-    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    await message.answer(unified_report, reply_markup=keyboard, parse_mode="HTML")
 
 
 @dp.message(F.text == "🍱 КБЖУ")
