@@ -5837,7 +5837,7 @@ async def calories_add(message: Message):
     await start_kbju_add_flow(message, date.today())
 
 
-@dp.message(lambda m: m.text == "📊 Дневной отчёт" and getattr(m.bot, "kbju_menu_open", False))
+@dp.message(lambda m: m.text in {"📊 Дневной отчёт", "📊 Дневной отчет", "📊 Статистика за сегодня"})
 async def calories_today_results(message: Message):
     reset_user_state(message)
     message.bot.kbju_menu_open = True
