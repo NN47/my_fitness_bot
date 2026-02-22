@@ -2,10 +2,9 @@
 import logging
 import json
 import re
-from pathlib import Path
 from datetime import date
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery
 from typing import Optional
 from aiogram.fsm.context import FSMContext
 from states.user_states import MealEntryStates
@@ -1049,25 +1048,16 @@ async def send_today_results(message: Message, user_id: str):
     daily_totals = MealRepository.get_daily_totals(user_id, today)
     day_str = today.strftime("%d.%m.%Y")
 
-    date_line = f"📅 <b>{day_str}</b>"
-
-    intro_image = Path(__file__).resolve().parents[1] / "assets" / "dairy_intro.jpg"
+    from utils.meal_formatters import format_today_meals, build_meals_actions_keyboard
+    report_text = format_today_meals(meals, daily_totals, day_str, include_date_header=False)
     intro_text = (
-        f"{date_line}\n\n"
+        f"📅 <b>{day_str}</b>\n\n"
         "🤖 Привет!\n"
         "Это Дайри — твой AI-ассистент по тренировкам и КБЖУ.\n"
         "Слежу за твоим прогрессом и помогаю держать курс на цель.\n"
         "Вот анализ за сегодня 👇"
     )
-
-    if intro_image.exists():
-        await message.answer_photo(photo=FSInputFile(str(intro_image)), caption=intro_text, parse_mode="HTML")
-    else:
-        logger.warning("Файл intro-изображения не найден: %s", intro_image)
-        await message.answer(intro_text, parse_mode="HTML")
-    
-    from utils.meal_formatters import format_today_meals, build_meals_actions_keyboard
-    text = format_today_meals(meals, daily_totals, day_str, include_date_header=False)
+    text = f"{intro_text}\n\n{report_text}"
     keyboard = build_meals_actions_keyboard(meals, today)
     
     await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
