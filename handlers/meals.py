@@ -1060,7 +1060,7 @@ async def send_today_results(message: Message, user_id: str):
     )
 
     if intro_image.exists():
-        await message.answer_photo(photo=FSInputFile(intro_image), caption=intro_text)
+        await message.answer_photo(photo=FSInputFile(str(intro_image)), caption=intro_text)
     else:
         logger.warning("Файл intro-изображения не найден: %s", intro_image)
         await message.answer(intro_text)
