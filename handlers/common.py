@@ -93,19 +93,18 @@ async def go_main_menu(message: Message, state: FSMContext):
     progress_text = format_progress_block(user_id)
     water_progress_text = format_water_progress_block(user_id)
     workouts_text = format_today_workouts_block(user_id, include_date=False)
-    today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     intro_image = Path(__file__).resolve().parents[1] / "assets" / "dairy_intro.jpg"
     intro_text = (
-        f"{today_line}\n\n"
         "🤖 Привет!\n"
         "Это Дайри — твой AI-ассистент по тренировкам и КБЖУ.\n"
         "Слежу за твоим прогрессом и помогаю держать курс на цель.\n"
-        "Вот анализ за сегодня 👇"
+        "Вот общие рекомендации и анализ за сегодня 👇"
     )
     recommendations_link = await _build_recommendations_link(message)
 
+    today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     welcome_text = (
-        f"{recommendations_link}\n\n"
+        f"{today_line}\n\n{recommendations_link}\n\n"
         f"{workouts_text}\n\n{progress_text}\n\n{water_progress_text}"
     )
     
