@@ -1,11 +1,10 @@
 """Обработчики для КБЖУ и питания."""
 import logging
 import json
-import os
 import re
 from datetime import date
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery
 from typing import Optional
 from aiogram.fsm.context import FSMContext
 from states.user_states import MealEntryStates
@@ -27,13 +26,6 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-DAIRY_INTRO_IMAGE_PATH = "assets/dairy_intro.jpg"
-DAIRY_INTRO_TEXT = (
-    "🤖 Привет!\n"
-    "Это Дайри — твой AI-ассистент по тренировкам и КБЖУ.\n"
-    "Слежу за твоим прогрессом и помогаю держать курс на цель.\n"
-    "Вот анализ за сегодня 👇"
-)
 
 def reset_user_state(message: Message, *, keep_supplements: bool = False):
     """Сбрасывает состояние пользователя."""
@@ -1057,20 +1049,9 @@ async def send_today_results(message: Message, user_id: str):
     day_str = today.strftime("%d.%m.%Y")
     
     from utils.meal_formatters import format_today_meals, build_meals_actions_keyboard
-    text = format_today_meals(meals, daily_totals, day_str, include_header=False)
+    text = format_today_meals(meals, daily_totals, day_str)
     keyboard = build_meals_actions_keyboard(meals, today)
-
-    await message.answer(f"Приём пищи за {day_str}:")
-
-    if os.path.exists(DAIRY_INTRO_IMAGE_PATH):
-        await message.answer_photo(
-            photo=FSInputFile(DAIRY_INTRO_IMAGE_PATH),
-            caption=DAIRY_INTRO_TEXT,
-        )
-    else:
-        logger.warning("Не найдено приветственное изображение: %s", DAIRY_INTRO_IMAGE_PATH)
-        await message.answer(DAIRY_INTRO_TEXT)
-
+    
     await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 

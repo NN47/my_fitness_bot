@@ -11,16 +11,10 @@ from database.models import Meal
 logger = logging.getLogger(__name__)
 
 
-def format_today_meals(
-    meals: list[Meal],
-    daily_totals: dict,
-    day_str: str,
-    include_header: bool = True,
-) -> str:
+def format_today_meals(meals: list[Meal], daily_totals: dict, day_str: str) -> str:
     """Форматирует список приёмов пищи за день."""
     lines: list[str] = []
-    if include_header:
-        lines.append(f"Приём пищи за {day_str}:\n")
+    lines.append(f"Приём пищи за {day_str}:\n")
     
     for idx, meal in enumerate(meals, start=1):
         # Что вводил пользователь
