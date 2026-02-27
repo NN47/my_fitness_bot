@@ -22,6 +22,7 @@ def get_kbju_goal_label(goal: str | None) -> str:
         "loss": "Похудение",
         "maintain": "Поддержание веса",
         "gain": "Набор массы",
+        "custom": "Своя норма",
     }
     if goal in labels:
         return labels[goal]

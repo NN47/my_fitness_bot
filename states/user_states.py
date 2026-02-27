@@ -65,6 +65,10 @@ class KbjuTestStates(StatesGroup):
     entering_weight = State()
     entering_activity = State()
     entering_goal = State()
+    entering_manual_calories = State()
+    entering_manual_protein = State()
+    entering_manual_fat = State()
+    entering_manual_carbs = State()
 
 
 class ProcedureStates(StatesGroup):
