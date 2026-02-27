@@ -366,6 +366,7 @@ async def analyze_activity_day(message: Message):
     """Анализ за день."""
     user_id = str(message.from_user.id)
     today = date.today()
+    await message.answer("⏳ Подожди немного, бот анализирует твой день...")
     analysis = await generate_activity_analysis(user_id, today, today, "за день")
     push_menu_stack(message.bot, activity_analysis_menu)
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
