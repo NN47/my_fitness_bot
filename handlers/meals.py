@@ -133,57 +133,27 @@ async def quick_meal_add(callback: CallbackQuery, state: FSMContext):
 
 @router.message(lambda m: m.text == "🎯 Цель / Норма КБЖУ")
 async def show_kbju_goal(message: Message, state: FSMContext):
-    """Показывает текущую цель КБЖУ или предлагает пройти тест."""
+    """Показывает текущую цель КБЖУ и варианты её настройки."""
+    from utils.formatters import format_current_kbju_goal
+    from utils.keyboards import kbju_intro_menu
+
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened KBJU goal settings")
-    
-    # Очищаем FSM состояние
+
     await state.clear()
-    
-    # Получаем текущие настройки
     settings = MealRepository.get_kbju_settings(user_id)
-    
+
     if settings:
-        # Показываем текущие настройки
-        goal_labels = {
-            "loss": "📉 Похудение",
-            "maintain": "⚖️ Поддержание веса",
-            "gain": "💪 Набор массы"
-        }
-        goal_label = goal_labels.get(settings.goal, "Не указана")
-        
-        from utils.formatters import format_kbju_goal_text
-        text = format_kbju_goal_text(
-            settings.calories,
-            settings.protein,
-            settings.fat,
-            settings.carbs,
-            goal_label
-        )
-        text += "\n\n💡 Хочешь изменить цель?"
-        
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Пройти тест заново", callback_data="kbju_test_start")]
-        ])
-        
-        push_menu_stack(message.bot, kbju_menu)
-        await message.answer(text, parse_mode="HTML", reply_markup=kbju_menu)
-        await message.answer("Нажми кнопку ниже, чтобы изменить цель:", reply_markup=inline_kb)
-    else:
-        # Предлагаем пройти тест
-        from utils.keyboards import kbju_gender_menu
-        from states.user_states import KbjuTestStates
-        
-        await state.clear()
-        await state.set_state(KbjuTestStates.entering_gender)
-        
-        push_menu_stack(message.bot, kbju_gender_menu)
-        await message.answer(
-            "Окей, пройдём небольшой тест 💪\n\n"
-            "Для начала — укажи пол:",
-            reply_markup=kbju_gender_menu,
-        )
+        text = format_current_kbju_goal(settings)
+        text += "\n\nВыбери, как хочешь обновить цель 👇"
+        await message.answer(text, parse_mode="HTML", reply_markup=kbju_intro_menu)
+        return
+
+    await message.answer(
+        "Цель по КБЖУ пока не настроена.\n"
+        "Выбери удобный вариант: быстрый тест или ручной ввод 👇",
+        reply_markup=kbju_intro_menu,
+    )
 
 
 @router.message(lambda m: m.text == "➕ Добавить")

@@ -9,11 +9,12 @@ from utils.keyboards import (
     kbju_activity_menu,
     kbju_goal_menu,
     kbju_menu,
+    kbju_intro_menu,
     push_menu_stack,
 )
 from services.kbju_calculator import calculate_kbju_from_test
 from database.repositories import MealRepository
-from utils.formatters import format_kbju_goal_text
+from utils.formatters import format_kbju_goal_text, format_current_kbju_goal
 
 logger = logging.getLogger(__name__)
 
@@ -22,37 +23,25 @@ router = Router()
 
 @router.message(lambda m: m.text == "🎯 Цель / Норма КБЖУ")
 async def show_kbju_goal(message: Message, state: FSMContext):
-    """Показывает текущую цель КБЖУ или предлагает пройти тест."""
+    """Показывает текущую цель КБЖУ и варианты её настройки."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened KBJU goal settings")
-    
-    # Получаем текущие настройки
+
+    await state.clear()
     settings = MealRepository.get_kbju_settings(user_id)
-    
+
     if settings:
-        # Показываем текущие настройки
-        goal_labels = {
-            "loss": "📉 Похудение",
-            "maintain": "⚖️ Поддержание веса",
-            "gain": "💪 Набор массы"
-        }
-        goal_label = goal_labels.get(settings.get("goal"), "Не указана")
-        
-        text = format_kbju_goal_text(
-            settings.get("calories"),
-            settings.get("protein"),
-            settings.get("fat"),
-            settings.get("carbs"),
-            goal_label
-        )
-        text += "\n\n💡 Хочешь изменить цель? Пройди тест заново, нажав кнопку ниже."
-        
-        push_menu_stack(message.bot, kbju_menu)
-        await message.answer(text, parse_mode="HTML")
-        await message.answer("Или можешь продолжить работу с текущими настройками:", reply_markup=kbju_menu)
-    else:
-        # Предлагаем пройти тест
-        await start_kbju_test(message, state)
+        text = format_current_kbju_goal(settings)
+        text += "\n\nВыбери, как хочешь обновить цель 👇"
+        push_menu_stack(message.bot, kbju_intro_menu)
+        await message.answer(text, parse_mode="HTML", reply_markup=kbju_intro_menu)
+        return
+
+    await message.answer(
+        "Цель по КБЖУ пока не настроена.\n"
+        "Выбери удобный вариант: быстрый тест или ручной ввод 👇",
+        reply_markup=kbju_intro_menu,
+    )
 
 
 @router.message(lambda m: m.text == "✅ Пройти быстрый тест КБЖУ")
@@ -69,6 +58,22 @@ async def start_kbju_test(message: Message, state: FSMContext):
         "Окей, пройдём небольшой тест 💪\n\n"
         "Для начала — укажи пол:",
         reply_markup=kbju_gender_menu,
+    )
+
+
+@router.message(lambda m: m.text == "✏️ Ввести свою норму")
+async def start_manual_kbju_goal(message: Message, state: FSMContext):
+    """Запускает ручной ввод нормы КБЖУ."""
+    user_id = str(message.from_user.id)
+    logger.info(f"User {user_id} started manual KBJU setup")
+
+    await state.clear()
+    await state.set_state(KbjuTestStates.entering_manual_calories)
+
+    push_menu_stack(message.bot, kbju_intro_menu)
+    await message.answer(
+        "Окей, настроим твою норму вручную ✍️\n\n"
+        "Введи цель по калориям в день (ккал), например: 2200"
     )
 
 
@@ -211,6 +216,89 @@ async def handle_kbju_test_goal(message: Message, state: FSMContext):
     push_menu_stack(message.bot, kbju_menu)
     await message.answer(text, parse_mode="HTML")
     await message.answer("Теперь можешь пользоваться разделом КБЖУ 👇", reply_markup=kbju_menu)
+
+
+@router.message(KbjuTestStates.entering_manual_calories)
+async def handle_manual_calories(message: Message, state: FSMContext):
+    """Обрабатывает ручной ввод калорий."""
+    try:
+        calories = float(message.text.replace(",", "."))
+        if calories <= 0 or calories > 10000:
+            raise ValueError
+    except ValueError:
+        await message.answer("Нужно ввести число от 1 до 10000, попробуй ещё раз 🙂")
+        return
+
+    await state.update_data(calories=calories)
+    await state.set_state(KbjuTestStates.entering_manual_protein)
+    await message.answer("Теперь укажи белки в граммах (например: 130)")
+
+
+@router.message(KbjuTestStates.entering_manual_protein)
+async def handle_manual_protein(message: Message, state: FSMContext):
+    """Обрабатывает ручной ввод белков."""
+    try:
+        protein = float(message.text.replace(",", "."))
+        if protein <= 0 or protein > 1000:
+            raise ValueError
+    except ValueError:
+        await message.answer("Нужно ввести число от 1 до 1000, попробуй ещё раз 🙂")
+        return
+
+    await state.update_data(protein=protein)
+    await state.set_state(KbjuTestStates.entering_manual_fat)
+    await message.answer("Укажи жиры в граммах (например: 70)")
+
+
+@router.message(KbjuTestStates.entering_manual_fat)
+async def handle_manual_fat(message: Message, state: FSMContext):
+    """Обрабатывает ручной ввод жиров."""
+    try:
+        fat = float(message.text.replace(",", "."))
+        if fat <= 0 or fat > 1000:
+            raise ValueError
+    except ValueError:
+        await message.answer("Нужно ввести число от 1 до 1000, попробуй ещё раз 🙂")
+        return
+
+    await state.update_data(fat=fat)
+    await state.set_state(KbjuTestStates.entering_manual_carbs)
+    await message.answer("И последний шаг: укажи углеводы в граммах (например: 220)")
+
+
+@router.message(KbjuTestStates.entering_manual_carbs)
+async def handle_manual_carbs(message: Message, state: FSMContext):
+    """Обрабатывает ручной ввод углеводов и сохраняет норму."""
+    user_id = str(message.from_user.id)
+
+    try:
+        carbs = float(message.text.replace(",", "."))
+        if carbs <= 0 or carbs > 1000:
+            raise ValueError
+    except ValueError:
+        await message.answer("Нужно ввести число от 1 до 1000, попробуй ещё раз 🙂")
+        return
+
+    data = await state.get_data()
+    calories = data.get("calories")
+    protein = data.get("protein")
+    fat = data.get("fat")
+
+    MealRepository.save_kbju_settings(
+        user_id=user_id,
+        calories=calories,
+        protein=protein,
+        fat=fat,
+        carbs=carbs,
+        goal="custom",
+    )
+
+    await state.clear()
+
+    text = format_kbju_goal_text(calories, protein, fat, carbs, "✍️ Своя норма")
+    push_menu_stack(message.bot, kbju_menu)
+    await message.answer(text, parse_mode="HTML")
+    await message.answer("Готово! Ручная норма сохранена ✅", reply_markup=kbju_menu)
 
 
 def register_kbju_test_handlers(dp):
