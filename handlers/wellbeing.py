@@ -66,6 +66,13 @@ COMMENT_FINISH_RESPONSES = [
 ]
 
 
+async def show_wellbeing_menu(message: Message, state: FSMContext, text: str):
+    """Возвращает пользователя в меню самочувствия с корректным состоянием."""
+    await state.set_state(WellbeingStates.choosing_mode)
+    push_menu_stack(message.bot, wellbeing_menu)
+    await message.answer(text, reply_markup=wellbeing_menu)
+
+
 @router.message(lambda m: m.text == WELLBEING_BUTTON_TEXT)
 async def start_wellbeing(message: Message, state: FSMContext):
     """Стартует меню самочувствия."""
@@ -340,11 +347,7 @@ async def handle_comment(message: Message, state: FSMContext):
         await show_wellbeing_day(message, str(message.from_user.id), entry_date)
         return
 
-    push_menu_stack(message.bot, wellbeing_menu)
-    await message.answer(
-        random.choice(COMMENT_FINISH_RESPONSES),
-        reply_markup=wellbeing_menu,
-    )
+    await show_wellbeing_menu(message, state, random.choice(COMMENT_FINISH_RESPONSES))
 
 
 @router.message(WellbeingStates.editing_comment)
@@ -382,8 +385,7 @@ async def handle_edit_comment(message: Message, state: FSMContext):
         await show_wellbeing_day(message, str(message.from_user.id), entry_date)
         return
 
-    push_menu_stack(message.bot, wellbeing_menu)
-    await message.answer("✅ Запись обновлена.", reply_markup=wellbeing_menu)
+    await show_wellbeing_menu(message, state, "✅ Запись обновлена.")
 
 
 async def finalize_quick_entry(message: Message, state: FSMContext, difficulty: str | None):
@@ -398,8 +400,7 @@ async def finalize_quick_entry(message: Message, state: FSMContext, difficulty: 
         logger.warning("Incomplete wellbeing quick survey data")
         await message.answer("Не удалось сохранить ответ. Попробуй ещё раз.")
         await state.clear()
-        push_menu_stack(message.bot, wellbeing_menu)
-        await message.answer("Возвращаю в меню самочувствия.", reply_markup=wellbeing_menu)
+        await show_wellbeing_menu(message, state, "Возвращаю в меню самочувствия.")
         return
 
     WellbeingRepository.save_quick_entry(
@@ -414,11 +415,7 @@ async def finalize_quick_entry(message: Message, state: FSMContext, difficulty: 
         await show_wellbeing_day(message, str(message.from_user.id), entry_date)
         return
 
-    push_menu_stack(message.bot, wellbeing_menu)
-    await message.answer(
-        random.choice(QUICK_FINISH_RESPONSES),
-        reply_markup=wellbeing_menu,
-    )
+    await show_wellbeing_menu(message, state, random.choice(QUICK_FINISH_RESPONSES))
 
 
 @router.message(WellbeingStates.editing_quick_mood)
@@ -502,8 +499,7 @@ async def finalize_quick_edit(message: Message, state: FSMContext, difficulty: s
         await show_wellbeing_day(message, str(message.from_user.id), entry_date)
         return
 
-    push_menu_stack(message.bot, wellbeing_menu)
-    await message.answer("✅ Запись обновлена.", reply_markup=wellbeing_menu)
+    await show_wellbeing_menu(message, state, "✅ Запись обновлена.")
 
 
 def register_wellbeing_handlers(dp):
