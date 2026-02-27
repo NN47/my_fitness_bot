@@ -368,6 +368,7 @@ activity_analysis_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="📆 Анализ за неделю")],
         [KeyboardButton(text="📊 Анализ за месяц")],
         [KeyboardButton(text="📈 Анализ за все время")],
+        [KeyboardButton(text="🗓 Календарь анализов")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,

@@ -13,6 +13,7 @@ from database.repositories import (
     WaterRepository,
 )
 from database.repositories.wellbeing_repository import WellbeingRepository
+from database.repositories.activity_analysis_repository import ActivityAnalysisRepository
 
 logger = logging.getLogger(__name__)
 
@@ -490,6 +491,58 @@ def build_measurement_day_actions_keyboard(measurement, target_date: date) -> In
             InlineKeyboardButton(
                 text="⬅️ Назад к календарю",
                 callback_data=f"meas_cal_back:{target_date.year}-{target_date.month:02d}",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_month_activity_analysis_days(user_id: str, year: int, month: int) -> set[int]:
+    """Получает дни месяца, в которые есть сохранённые ИИ-анализы."""
+    return ActivityAnalysisRepository.get_month_days(user_id, year, month)
+
+
+def build_activity_analysis_calendar_keyboard(user_id: str, year: int, month: int) -> InlineKeyboardMarkup:
+    """Строит календарь сохранённых ИИ-анализов деятельности."""
+    return build_calendar_keyboard(
+        user_id=user_id,
+        year=year,
+        month=month,
+        callback_prefix="act_cal",
+        marker="🤖",
+        get_days_func=get_month_activity_analysis_days,
+    )
+
+
+def build_activity_analysis_day_actions_keyboard(entries: list, target_date: date) -> InlineKeyboardMarkup:
+    """Строит клавиатуру действий для дня календаря ИИ-анализов."""
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for entry in entries:
+        source_label = "ИИ" if getattr(entry, "source", "manual") == "generated" else "ручной"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🗑 Удалить ({source_label}) #{entry.id}",
+                    callback_data=f"act_cal_del:{target_date.isoformat()}:{entry.id}",
+                )
+            ]
+        )
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить анализ",
+                callback_data=f"act_cal_add:{target_date.isoformat()}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад к календарю",
+                callback_data=f"act_cal_back:{target_date.year}-{target_date.month:02d}",
             )
         ]
     )
