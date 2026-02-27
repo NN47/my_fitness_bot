@@ -531,8 +531,15 @@ async def handle_count_input(message: Message, state: FSMContext):
     if message.text == "✅ Завершить упражнение":
         # Завершаем и возвращаемся в меню
         await state.clear()
+        from utils.progress_formatters import format_today_workouts_block
+
+        workouts_text = format_today_workouts_block(user_id, include_date=False)
         push_menu_stack(message.bot, training_menu)
-        await message.answer("✅ Тренировка завершена!", reply_markup=training_menu)
+        await message.answer(
+            f"✅ Тренировка завершена!\n\n{workouts_text}\n\nВыбери действие:",
+            reply_markup=training_menu,
+            parse_mode="HTML",
+        )
         return
     
     try:
