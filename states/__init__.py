@@ -6,6 +6,7 @@ from .user_states import (
     SupplementStates,
     WaterStates,
     KbjuTestStates,
+    ActivityAnalysisStates,
 )
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "SupplementStates",
     "WaterStates",
     "KbjuTestStates",
+    "ActivityAnalysisStates",
 ]
 

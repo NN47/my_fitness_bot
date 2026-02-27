@@ -140,3 +140,15 @@ class WellbeingEntry(Base):
     comment = Column(Text, nullable=True)
     date = Column(Date, default=date.today)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ActivityAnalysisEntry(Base):
+    """Модель сохранённого ИИ-анализа деятельности."""
+    __tablename__ = "activity_analysis_entries"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    analysis_text = Column(Text, nullable=False)
+    date = Column(Date, default=date.today)
+    source = Column(String, nullable=False, default="manual")
+    created_at = Column(DateTime, default=datetime.utcnow)

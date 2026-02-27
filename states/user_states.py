@@ -71,6 +71,10 @@ class KbjuTestStates(StatesGroup):
     entering_manual_carbs = State()
 
 
+class ActivityAnalysisStates(StatesGroup):
+    """Состояния для календаря ИИ-анализа деятельности."""
+    entering_manual_analysis = State()
+
 class ProcedureStates(StatesGroup):
     """Состояния для работы с процедурами."""
     entering_name = State()

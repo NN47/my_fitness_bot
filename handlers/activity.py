@@ -4,8 +4,15 @@ import re
 from datetime import date, timedelta
 from collections import Counter
 from aiogram import Router
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
 from utils.keyboards import activity_analysis_menu, push_menu_stack
+from utils.calendar_utils import (
+    build_activity_analysis_calendar_keyboard,
+    build_activity_analysis_day_actions_keyboard,
+)
+from database.repositories.activity_analysis_repository import ActivityAnalysisRepository
+from states.user_states import ActivityAnalysisStates
 from services.gemini_service import gemini_service
 
 logger = logging.getLogger(__name__)
@@ -361,6 +368,135 @@ async def analyze_activity(message: Message):
     )
 
 
+@router.message(lambda m: m.text == "🗓 Календарь анализов")
+async def show_activity_analysis_calendar(message: Message, state: FSMContext):
+    """Открывает календарь сохранённых анализов деятельности."""
+    await state.clear()
+    user_id = str(message.from_user.id)
+    await show_activity_analysis_calendar_view(message, user_id)
+
+
+async def show_activity_analysis_calendar_view(
+    message: Message,
+    user_id: str,
+    year: int | None = None,
+    month: int | None = None,
+):
+    """Показывает календарь ИИ-анализов деятельности."""
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    keyboard = build_activity_analysis_calendar_keyboard(user_id, year, month)
+    await message.answer(
+        "🗓 Календарь ИИ-анализов\n\nВыбери день, чтобы посмотреть прошлые анализы, добавить новый или удалить:",
+        reply_markup=keyboard,
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("act_cal_nav:"))
+async def navigate_activity_analysis_calendar(callback: CallbackQuery):
+    """Навигация по календарю анализов."""
+    await callback.answer()
+    year, month = map(int, callback.data.split(":")[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_activity_analysis_calendar_view(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("act_cal_back:"))
+async def back_to_activity_analysis_calendar(callback: CallbackQuery):
+    """Возврат к календарю анализов."""
+    await callback.answer()
+    year, month = map(int, callback.data.split(":")[1].split("-"))
+    user_id = str(callback.from_user.id)
+    await show_activity_analysis_calendar_view(callback.message, user_id, year, month)
+
+
+@router.callback_query(lambda c: c.data.startswith("act_cal_day:"))
+async def select_activity_analysis_day(callback: CallbackQuery):
+    """Открывает выбранный день в календаре анализов."""
+    await callback.answer()
+    target_date = date.fromisoformat(callback.data.split(":")[1])
+    user_id = str(callback.from_user.id)
+    await show_activity_analysis_day(callback.message, user_id, target_date)
+
+
+@router.callback_query(lambda c: c.data.startswith("act_cal_add:"))
+async def add_activity_analysis_from_calendar(callback: CallbackQuery, state: FSMContext):
+    """Запускает добавление ручного анализа на выбранный день."""
+    await callback.answer()
+    target_date = date.fromisoformat(callback.data.split(":")[1])
+    await state.clear()
+    await state.update_data(entry_date=target_date.isoformat())
+    await state.set_state(ActivityAnalysisStates.entering_manual_analysis)
+    await callback.message.answer(
+        f"📝 Введи текст анализа за {target_date.strftime('%d.%m.%Y')}.\nОн сохранится в календаре.",
+        reply_markup=activity_analysis_menu,
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("act_cal_del:"))
+async def delete_activity_analysis(callback: CallbackQuery):
+    """Удаляет сохранённый анализ из календаря."""
+    await callback.answer()
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[1])
+    entry_id = int(parts[2])
+    user_id = str(callback.from_user.id)
+
+    success = ActivityAnalysisRepository.delete_entry(entry_id, user_id)
+    if success:
+        await callback.message.answer("✅ Анализ удалён")
+    else:
+        await callback.message.answer("❌ Не удалось удалить анализ")
+    await show_activity_analysis_day(callback.message, user_id, target_date)
+
+
+async def show_activity_analysis_day(message: Message, user_id: str, target_date: date):
+    """Показывает сохранённые анализы за конкретный день."""
+    entries = ActivityAnalysisRepository.get_entries_for_date(user_id, target_date)
+
+    if not entries:
+        await message.answer(
+            f"📅 {target_date.strftime('%d.%m.%Y')}\n\nЗа этот день анализов нет.",
+            reply_markup=build_activity_analysis_day_actions_keyboard([], target_date),
+        )
+        return
+
+    lines = [f"📅 {target_date.strftime('%d.%m.%Y')}\n\nСохранённые анализы:"]
+    for idx, entry in enumerate(entries, start=1):
+        source = "🤖 ИИ" if entry.source == "generated" else "📝 Ручной"
+        preview = entry.analysis_text[:250] + ("..." if len(entry.analysis_text) > 250 else "")
+        lines.append(f"{idx}. {source}\n{preview}")
+
+    await message.answer(
+        "\n\n".join(lines),
+        reply_markup=build_activity_analysis_day_actions_keyboard(entries, target_date),
+    )
+
+
+@router.message(ActivityAnalysisStates.entering_manual_analysis)
+async def save_manual_activity_analysis(message: Message, state: FSMContext):
+    """Сохраняет ручной анализ, введённый для выбранного дня."""
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer("❌ Текст пустой. Введи анализ текстом.")
+        return
+
+    data = await state.get_data()
+    entry_date_raw = data.get("entry_date")
+    if not entry_date_raw:
+        await state.clear()
+        await message.answer("❌ Не удалось определить дату. Открой календарь анализов заново.")
+        return
+
+    entry_date = date.fromisoformat(entry_date_raw)
+    user_id = str(message.from_user.id)
+    ActivityAnalysisRepository.create_entry(user_id, text, entry_date, source="manual")
+    await state.clear()
+    await message.answer("✅ Анализ сохранён в календаре.")
+    await show_activity_analysis_day(message, user_id, entry_date)
+
+
 @router.message(lambda m: m.text == "📅 Анализ за день")
 async def analyze_activity_day(message: Message):
     """Анализ за день."""
@@ -368,6 +504,7 @@ async def analyze_activity_day(message: Message):
     today = date.today()
     await message.answer("⏳ Подожди немного, бот анализирует твой день...")
     analysis = await generate_activity_analysis(user_id, today, today, "за день")
+    ActivityAnalysisRepository.create_entry(user_id, analysis, today, source="generated")
     push_menu_stack(message.bot, activity_analysis_menu)
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
@@ -399,12 +536,10 @@ async def analyze_activity_all_time(message: Message):
     """Анализ за все время."""
     user_id = str(message.from_user.id)
     today = date.today()
-    # Берём последние 365 дней
     all_time_start = today - timedelta(days=365)
     analysis = await generate_activity_analysis(user_id, all_time_start, today, "за все время")
     push_menu_stack(message.bot, activity_analysis_menu)
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
-
 
 def register_activity_handlers(dp):
     """Регистрирует обработчики анализа деятельности."""

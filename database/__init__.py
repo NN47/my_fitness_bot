@@ -12,6 +12,8 @@ from .models import (
     SupplementEntry,
     Procedure,
     WaterEntry,
+    WellbeingEntry,
+    ActivityAnalysisEntry,
 )
 
 __all__ = [
@@ -30,5 +32,6 @@ __all__ = [
     "SupplementEntry",
     "Procedure",
     "WaterEntry",
+    "WellbeingEntry",
+    "ActivityAnalysisEntry",
 ]
-
