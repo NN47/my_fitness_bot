@@ -192,6 +192,7 @@ async def log_supplement_intake(message: Message, state: FSMContext):
     """Обрабатывает выбор добавки для отметки приёма."""
     user_id = str(message.from_user.id)
     supplements_list = SupplementRepository.get_supplements(user_id)
+    state_data = await state.get_data()
     
     # Проверяем, не является ли это кнопкой меню
     menu_buttons = ["⬅️ Назад", "❌ Отменить"]
@@ -217,7 +218,14 @@ async def log_supplement_intake(message: Message, state: FSMContext):
         )
         return
     
-    target_date = date.today()
+    entry_date_raw = state_data.get("entry_date")
+    if isinstance(entry_date_raw, str):
+        try:
+            target_date = date.fromisoformat(entry_date_raw)
+        except ValueError:
+            target_date = date.today()
+    else:
+        target_date = date.today()
     await state.update_data(
         supplement_name=target["name"],
         supplement_id=target["id"],
