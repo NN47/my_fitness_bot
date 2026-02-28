@@ -2335,7 +2335,6 @@ kbju_intro_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="✅ Пройти быстрый тест КБЖУ")],
         [KeyboardButton(text="✏️ Ввести свою норму")],
-        [KeyboardButton(text="➡️ Пока без цели")],
         [main_menu_button],
     ],
     resize_keyboard=True,
@@ -5752,16 +5751,6 @@ async def kbju_intro_choice(message: Message):
             "Напиши свою дневную норму в формате, например:\n\n"
             "<code>2000 ккал, Б 140, Ж 70, У 220</code>\n\n"
             "Я просто возьму первые четыре числа: калории, белки, жиры, углеводы.",
-            reply_markup=kbju_menu,
-        )
-        return
-
-    if choice == "➡️ Пока без цели":
-        message.bot.awaiting_kbju_choice = False
-        message.bot.kbju_menu_open = True
-        await answer_with_menu(
-            message,
-            "Ок, буду просто считать КБЖУ без цели 🎯\n\nВыбери действие:",
             reply_markup=kbju_menu,
         )
         return
