@@ -4,12 +4,7 @@ import re
 from datetime import date, timedelta
 from collections import Counter
 from aiogram import Router
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-)
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from utils.keyboards import activity_analysis_menu, push_menu_stack
 from utils.calendar_utils import (
@@ -524,40 +519,26 @@ async def analyze_activity_day(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "📆 За неделю/за месяц")
-async def choose_activity_analysis_period(message: Message):
-    """Показывает выбор периода между неделей и месяцем."""
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📆 За неделю", callback_data="activity_period:week")],
-            [InlineKeyboardButton(text="📊 За месяц", callback_data="activity_period:month")],
-        ]
-    )
-    await message.answer("Выбери период анализа:", reply_markup=keyboard)
-
-
-@router.callback_query(lambda c: c.data == "activity_period:week")
+@router.message(lambda m: m.text == "📆 Анализ за неделю")
 async def analyze_activity_week(message: Message):
     """Анализ за неделю."""
-    await message.answer()
     user_id = str(message.from_user.id)
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
     analysis = await generate_activity_analysis(user_id, week_start, today, "за неделю")
-    push_menu_stack(message.message.bot, activity_analysis_menu)
-    await message.message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
+    push_menu_stack(message.bot, activity_analysis_menu)
+    await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.callback_query(lambda c: c.data == "activity_period:month")
+@router.message(lambda m: m.text == "📊 Анализ за месяц")
 async def analyze_activity_month(message: Message):
     """Анализ за месяц."""
-    await message.answer()
     user_id = str(message.from_user.id)
     today = date.today()
     month_start = date(today.year, today.month, 1)
     analysis = await generate_activity_analysis(user_id, month_start, today, "за месяц")
-    push_menu_stack(message.message.bot, activity_analysis_menu)
-    await message.message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
+    push_menu_stack(message.bot, activity_analysis_menu)
+    await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 def register_activity_handlers(dp):
     """Регистрирует обработчики анализа деятельности."""
