@@ -211,7 +211,6 @@ kbju_intro_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="✅ Пройти быстрый тест КБЖУ")],
         [KeyboardButton(text="✏️ Ввести свою норму")],
-        [KeyboardButton(text="➡️ Пока без цели")],
         [main_menu_button],
     ],
     resize_keyboard=True,
