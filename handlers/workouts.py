@@ -11,8 +11,7 @@ from utils.keyboards import (
     training_date_menu,
     other_day_menu,
     exercise_category_menu,
-    bodyweight_exercise_menu,
-    weighted_exercise_menu,
+    build_exercise_menu,
     count_menu,
     bodyweight_exercises,
     weighted_exercises,
@@ -23,6 +22,7 @@ from utils.keyboards import (
 )
 from states.user_states import WorkoutStates
 from database.repositories import WorkoutRepository
+from database.repositories import CustomWorkoutExerciseRepository
 from utils.workout_utils import calculate_workout_calories
 from utils.validators import parse_date
 from utils.formatters import format_count_with_unit
@@ -32,6 +32,12 @@ from utils.workout_formatters import build_day_actions_keyboard
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+
+def _get_exercise_menu(user_id: str, category: str):
+    """Возвращает меню упражнений c учётом пользовательских."""
+    custom_exercises = CustomWorkoutExerciseRepository.get_user_exercises(user_id, category)
+    return build_exercise_menu(category, custom_exercises)
 
 
 def reset_user_state(message: Message, *, keep_supplements: bool = False):
@@ -310,14 +316,16 @@ async def choose_category(message: Message, state: FSMContext):
         category = "bodyweight"
         await state.update_data(category=category)
         await state.set_state(WorkoutStates.choosing_exercise)
-        push_menu_stack(message.bot, bodyweight_exercise_menu)
-        await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+        menu = _get_exercise_menu(str(message.from_user.id), "bodyweight")
+        push_menu_stack(message.bot, menu)
+        await message.answer("Выбери упражнение:", reply_markup=menu)
     elif message.text == "С утяжелителем":
         category = "weighted"
         await state.update_data(category=category)
         await state.set_state(WorkoutStates.choosing_exercise)
-        push_menu_stack(message.bot, weighted_exercise_menu)
-        await message.answer("Выбери упражнение:", reply_markup=weighted_exercise_menu)
+        menu = _get_exercise_menu(str(message.from_user.id), "weighted")
+        push_menu_stack(message.bot, menu)
+        await message.answer("Выбери упражнение:", reply_markup=menu)
     else:
         await message.answer("Выбери категорию из меню")
 
@@ -345,7 +353,9 @@ async def choose_exercise(message: Message, state: FSMContext):
     # Обрабатываем "Другое"
     if exercise == "Другое":
         await state.set_state(WorkoutStates.entering_custom_exercise)
-        await message.answer("Введи название упражнения:")
+        await message.answer(
+            "🆕 Создай своё упражнение: напиши название, и я сохраню его в список для будущих тренировок."
+        )
         return
     
     # Особый случай: подтягивания - спрашиваем тип хвата
@@ -403,8 +413,9 @@ async def choose_grip_type(message: Message, state: FSMContext):
     if grip_type == "⬅️ Назад" or grip_type in MAIN_MENU_BUTTON_ALIASES:
         if grip_type == "⬅️ Назад":
             await state.set_state(WorkoutStates.choosing_exercise)
-            push_menu_stack(message.bot, bodyweight_exercise_menu)
-            await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+            menu = _get_exercise_menu(str(message.from_user.id), "bodyweight")
+            push_menu_stack(message.bot, menu)
+            await message.answer("Выбери упражнение:", reply_markup=menu)
         else:
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
@@ -439,11 +450,13 @@ async def handle_custom_exercise(message: Message, state: FSMContext):
             category = data.get("category", "bodyweight")
             await state.set_state(WorkoutStates.choosing_exercise)
             if category == "weighted":
-                push_menu_stack(message.bot, weighted_exercise_menu)
-                await message.answer("Выбери упражнение:", reply_markup=weighted_exercise_menu)
+                menu = _get_exercise_menu(str(message.from_user.id), "weighted")
+                push_menu_stack(message.bot, menu)
+                await message.answer("Выбери упражнение:", reply_markup=menu)
             else:
-                push_menu_stack(message.bot, bodyweight_exercise_menu)
-                await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+                menu = _get_exercise_menu(str(message.from_user.id), "bodyweight")
+                push_menu_stack(message.bot, menu)
+                await message.answer("Выбери упражнение:", reply_markup=menu)
         else:
             from handlers.common import go_main_menu
             await go_main_menu(message, state)
@@ -452,7 +465,21 @@ async def handle_custom_exercise(message: Message, state: FSMContext):
     data = await state.get_data()
     category = data.get("category", "bodyweight")
     
-    exercise = message.text
+    exercise = (message.text or "").strip()
+    if not exercise:
+        await message.answer("⚠️ Название упражнения не может быть пустым. Введи текстом.")
+        return
+
+    if len(exercise) > 64:
+        await message.answer("⚠️ Слишком длинное название. Ограничение — 64 символа.")
+        return
+
+    CustomWorkoutExerciseRepository.save_exercise(
+        user_id=str(message.from_user.id),
+        category=category,
+        name=exercise,
+    )
+
     await state.update_data(exercise=exercise)
     
     if category == "weighted":
@@ -463,7 +490,10 @@ async def handle_custom_exercise(message: Message, state: FSMContext):
     await state.update_data(variant=variant)
     await state.set_state(WorkoutStates.entering_count)
     push_menu_stack(message.bot, count_menu)
-    await message.answer("Отлично! Теперь введи количество повторений:", reply_markup=count_menu)
+    await message.answer(
+        f"✅ Упражнение «{exercise}» сохранено. Теперь введи количество:",
+        reply_markup=count_menu,
+    )
 
 
 @router.message(WorkoutStates.entering_count)
@@ -483,11 +513,13 @@ async def handle_count_input(message: Message, state: FSMContext):
         
         await state.set_state(WorkoutStates.choosing_exercise)
         if category == "weighted":
-            push_menu_stack(message.bot, weighted_exercise_menu)
-            await message.answer("Выбери упражнение:", reply_markup=weighted_exercise_menu)
+            menu = _get_exercise_menu(str(message.from_user.id), "weighted")
+            push_menu_stack(message.bot, menu)
+            await message.answer("Выбери упражнение:", reply_markup=menu)
         else:
-            push_menu_stack(message.bot, bodyweight_exercise_menu)
-            await message.answer("Выбери упражнение:", reply_markup=bodyweight_exercise_menu)
+            menu = _get_exercise_menu(str(message.from_user.id), "bodyweight")
+            push_menu_stack(message.bot, menu)
+            await message.answer("Выбери упражнение:", reply_markup=menu)
         return
     
     if message.text in MAIN_MENU_BUTTON_ALIASES:

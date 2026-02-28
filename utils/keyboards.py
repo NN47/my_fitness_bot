@@ -188,6 +188,34 @@ weighted_exercise_menu = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+
+def build_exercise_menu(category: str, custom_exercises: list[str] | None = None) -> ReplyKeyboardMarkup:
+    """Строит меню упражнений с учётом пользовательских упражнений."""
+    base_exercises = bodyweight_exercises if category == "bodyweight" else weighted_exercises
+    custom_exercises = custom_exercises or []
+
+    base_without_other = [ex for ex in base_exercises if ex != "Другое"]
+    normalized_base = {ex.casefold() for ex in base_without_other}
+
+    filtered_custom = []
+    seen_custom = set()
+    for exercise in custom_exercises:
+        clean_name = exercise.strip()
+        if not clean_name:
+            continue
+        key = clean_name.casefold()
+        if key in normalized_base or key in seen_custom:
+            continue
+        seen_custom.add(key)
+        filtered_custom.append(clean_name)
+
+    exercise_rows = [[KeyboardButton(text=ex)] for ex in base_without_other]
+    exercise_rows += [[KeyboardButton(text=ex)] for ex in filtered_custom]
+    exercise_rows.append([KeyboardButton(text="Другое")])
+    exercise_rows.append([KeyboardButton(text="⬅️ Назад"), main_menu_button])
+
+    return ReplyKeyboardMarkup(keyboard=exercise_rows, resize_keyboard=True)
+
 # Меню КБЖУ
 kbju_menu = ReplyKeyboardMarkup(
     keyboard=[
