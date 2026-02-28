@@ -7,6 +7,7 @@ from .supplement_repository import SupplementRepository
 from .procedure_repository import ProcedureRepository
 from .wellbeing_repository import WellbeingRepository
 from .activity_analysis_repository import ActivityAnalysisRepository
+from .custom_workout_exercise_repository import CustomWorkoutExerciseRepository
 
 __all__ = [
     "MealRepository",
@@ -17,4 +18,5 @@ __all__ = [
     "ProcedureRepository",
     "WellbeingRepository",
     "ActivityAnalysisRepository",
+    "CustomWorkoutExerciseRepository",
 ]

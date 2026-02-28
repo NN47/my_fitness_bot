@@ -34,6 +34,16 @@ class Workout(Base):
     calories = Column(Float, default=0)
 
 
+class CustomWorkoutExercise(Base):
+    """Модель пользовательского упражнения для тренировок."""
+    __tablename__ = "custom_workout_exercises"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=False)  # bodyweight | weighted
+
+
 class Weight(Base):
     """Модель веса."""
     __tablename__ = "weights"
