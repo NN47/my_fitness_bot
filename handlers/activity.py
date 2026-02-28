@@ -236,32 +236,42 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
     
     # 🔹 Вес и история веса
     weights = WeightRepository.get_weights_for_date_range(user_id, start_date, end_date)
-    
-    if weights:
-        current_weight = weights[0]
-        if len(weights) > 1:
-            first_weight = weights[-1]
-            change = float(str(current_weight.value).replace(",", ".")) - float(str(first_weight.value).replace(",", "."))
-            change_percent = (change / float(str(first_weight.value).replace(",", ".")) * 100) if float(str(first_weight.value).replace(",", ".")) > 0 else 0
+
+    # Для коротких периодов (например, анализа за день) всё равно берём минимум неделю,
+    # чтобы ИИ видел динамику и мог оценить прогресс за последние дни.
+    weight_trend_start = min(start_date, end_date - timedelta(days=6))
+    trend_weights = WeightRepository.get_weights_for_date_range(user_id, weight_trend_start, end_date)
+
+    if trend_weights:
+        current_weight = trend_weights[0]
+        if len(trend_weights) > 1:
+            first_weight = trend_weights[-1]
+            current_weight_value = float(str(current_weight.value).replace(",", "."))
+            first_weight_value = float(str(first_weight.value).replace(",", "."))
+            change = current_weight_value - first_weight_value
+            change_percent = (change / first_weight_value * 100) if first_weight_value > 0 else 0
             change_text = f" ({'+' if change >= 0 else ''}{change:.1f} кг, {change_percent:+.1f}%)"
         else:
             change_text = ""
+
         history_lines = [
             f"{w.date.strftime('%d.%m')}: {w.value} кг"
-            for w in weights[:10]
+            for w in trend_weights[:10]
         ]
+        trend_window = (
+            f"{weight_trend_start.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}"
+        )
+        period_note = ""
+        if not weights:
+            period_note = f" За {period_name.lower()} новых измерений не было."
+
         weight_summary = (
             f"Текущий вес: {current_weight.value} кг (от {current_weight.date.strftime('%d.%m.%Y')}){change_text}. "
-            f"История измерений: " + "; ".join(history_lines)
+            f"Динамика веса за период {trend_window}: " + "; ".join(history_lines) + "."
+            f"{period_note}"
         )
     else:
-        # Если нет веса за период, показываем последний известный вес
-        all_weights = WeightRepository.get_weights(user_id, limit=1)
-        if all_weights:
-            w = all_weights[0]
-            weight_summary = f"Последний зафиксированный вес: {w.value} кг (от {w.date.strftime('%d.%m.%Y')}). За {period_name.lower()} новых измерений не было."
-        else:
-            weight_summary = "Записей по весу ещё нет."
+        weight_summary = "Записей по весу ещё нет."
     
     # 🔹 Сравнение с предыдущим периодом (для недели и месяца)
     comparison_summary = ""
