@@ -3048,7 +3048,11 @@ async def enter_manual_count(message: Message):
 
 
 # пользователь ввёл название упражнения в "Другое"
-@dp.message(F.text, lambda m: getattr(m.bot, "expecting_custom_exercise", False))
+@dp.message(
+    F.text,
+    lambda m: getattr(m.bot, "expecting_custom_exercise", False)
+    and m.text not in {"⬅️ Назад", "🔄 Главное меню", "🏠 Главное меню"},
+)
 async def handle_custom_exercise(message: Message):
     message.bot.current_exercise = message.text
     category = getattr(message.bot, "current_category", None)
