@@ -1,6 +1,7 @@
 """Обработчики для анализа деятельности."""
 import logging
 import re
+import html
 from datetime import date, timedelta
 from collections import Counter
 from aiogram import Router
@@ -475,7 +476,8 @@ async def show_activity_analysis_day(message: Message, user_id: str, target_date
     lines = [f"📅 {target_date.strftime('%d.%m.%Y')}\n\nСохранённые анализы:"]
     for idx, entry in enumerate(entries, start=1):
         source = "🤖 ИИ" if entry.source == "generated" else "📝 Ручной"
-        preview = entry.analysis_text[:250] + ("..." if len(entry.analysis_text) > 250 else "")
+        raw_preview = entry.analysis_text[:250] + ("..." if len(entry.analysis_text) > 250 else "")
+        preview = html.escape(raw_preview)
         lines.append(f"{idx}. {source}\n{preview}")
 
     await message.answer(
