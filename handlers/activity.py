@@ -398,7 +398,7 @@ async def show_activity_analysis_calendar_view(
     month = month or today.month
     keyboard = build_activity_analysis_calendar_keyboard(user_id, year, month)
     await message.answer(
-        "🗓 Календарь ИИ-анализов\n\nВыбери день, чтобы посмотреть прошлые анализы, добавить новый или удалить:",
+        "🗓 Календарь ИИ-анализа",
         reply_markup=keyboard,
     )
 
