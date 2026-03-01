@@ -80,6 +80,7 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
     total_protein = sum(m.protein or 0 for m in meals)
     total_fat = sum(m.fat or 0 for m in meals)
     total_carbs = sum(m.carbs or 0 for m in meals)
+    net_calories = total_calories - total_workout_calories
     
     # 🔹 Цель / норма КБЖУ и проценты выполнения
     settings = MealRepository.get_kbju_settings(user_id)
@@ -91,6 +92,7 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
         goal_carbs = settings.carbs * days_count
         
         calories_percent = (total_calories / goal_calories * 100) if goal_calories > 0 else 0
+        net_calories_percent = (net_calories / goal_calories * 100) if goal_calories > 0 else 0
         protein_percent = (total_protein / goal_protein * 100) if goal_protein > 0 else 0
         fat_percent = (total_fat / goal_fat * 100) if goal_fat > 0 else 0
         carbs_percent = (total_carbs / goal_carbs * 100) if goal_carbs > 0 else 0
@@ -99,7 +101,8 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
             f"Калории: {total_calories:.0f} / {goal_calories:.0f} ккал ({calories_percent:.0f}%), "
             f"Белки: {total_protein:.1f} / {goal_protein:.1f} г ({protein_percent:.0f}%), "
             f"Жиры: {total_fat:.1f} / {goal_fat:.1f} г ({fat_percent:.0f}%), "
-            f"Углеводы: {total_carbs:.1f} / {goal_carbs:.1f} г ({carbs_percent:.0f}%)."
+            f"Углеводы: {total_carbs:.1f} / {goal_carbs:.1f} г ({carbs_percent:.0f}%). "
+            f"С учётом тренировок: чистые калории {net_calories:.0f} / {goal_calories:.0f} ккал ({net_calories_percent:.0f}%)."
         )
         
         kbju_goal_summary = (
@@ -111,7 +114,8 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
             f"Калории: {total_calories:.0f} ккал, "
             f"Белки: {total_protein:.1f} г, "
             f"Жиры: {total_fat:.1f} г, "
-            f"Углеводы: {total_carbs:.1f} г."
+            f"Углеводы: {total_carbs:.1f} г. "
+            f"С учётом тренировок: чистые калории {net_calories:.0f} ккал."
         )
         kbju_goal_summary = "Цель по КБЖУ ещё не настроена."
     
@@ -281,6 +285,10 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
         
         prev_workouts = WorkoutRepository.get_workouts_for_period(user_id, prev_start, prev_end)
         prev_workout_days = len(set(w.date for w in prev_workouts))
+        prev_workout_calories = sum(
+            w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
+            for w in prev_workouts
+        )
         
         prev_meals = []
         prev_date = prev_start
@@ -288,16 +296,24 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
             prev_meals.extend(MealRepository.get_meals_for_date(user_id, prev_date))
             prev_date += timedelta(days=1)
         prev_calories = sum(m.calories or 0 for m in prev_meals)
+        prev_net_calories = prev_calories - prev_workout_calories
+        current_net_calories = total_calories - total_workout_calories
         
-        if prev_workout_days > 0 or prev_calories > 0:
+        if prev_workout_days > 0 or prev_calories > 0 or prev_workout_calories > 0:
             workout_change = workout_days_count - prev_workout_days
             calories_change = total_calories - prev_calories
+            net_calories_change = current_net_calories - prev_net_calories
+            workout_burn_change = total_workout_calories - prev_workout_calories
             
             comparison_lines = []
             if workout_change != 0:
                 comparison_lines.append(f"Тренировочных дней: {workout_change:+d} к предыдущему периоду")
             if calories_change != 0:
                 comparison_lines.append(f"Калорий: {calories_change:+.0f} ккал к предыдущему периоду")
+            if workout_burn_change != 0:
+                comparison_lines.append(f"Сожжено на тренировках: {workout_burn_change:+.0f} ккал к предыдущему периоду")
+            if net_calories_change != 0:
+                comparison_lines.append(f"Чистые калории (еда - тренировки): {net_calories_change:+.0f} ккал к предыдущему периоду")
             
             if comparison_lines:
                 comparison_summary = "\n\nСравнение с предыдущим периодом:\n" + "\n".join(comparison_lines)
@@ -332,6 +348,7 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 - История веса может включать несколько измерений — используй её для оценки тенденции, не говори, что измерение одно, если в данных есть история.
 - Используй HTML-теги <b>текст</b> для выделения важных цифр и фактов жирным шрифтом.
 - Обрати внимание на проценты выполнения целей КБЖУ — выдели их жирным и дай оценку.
+- В блоке питания обязательно учитывай чистые калории (еда минус расход на тренировках), если они есть в данных.
 - Если есть сравнение с предыдущим периодом, обязательно упомяни это в анализе.
 - Если есть статистика по дням недели, используй её для выявления паттернов активности.
 
