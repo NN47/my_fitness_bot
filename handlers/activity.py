@@ -2,6 +2,7 @@
 import logging
 import re
 import html
+import json
 from datetime import date, timedelta
 from collections import Counter
 from aiogram import Router
@@ -19,6 +20,28 @@ from services.gemini_service import gemini_service
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+
+def _normalize_workout_type(exercise: str, variant: str | None = None) -> str:
+    """Нормализует тип упражнения в короткий machine-readable формат."""
+    text = f"{exercise or ''} {variant or ''}".lower()
+    if any(token in text for token in ["шаг", "steps", "ходьб", "прогул"]):
+        return "steps"
+    if any(token in text for token in ["отжим", "push"]):
+        return "pushups"
+    if any(token in text for token in ["присед", "squat"]):
+        return "squats"
+    if any(token in text for token in ["пресс", "abs", "скручив"]):
+        return "abs"
+    if any(token in text for token in ["подтяг", "pullup"]):
+        return "pullups"
+    if any(token in text for token in ["бег", "run", "кардио", "вел", "bike"]):
+        return "cardio"
+    return "other"
+
+
+def _is_strength_type(workout_type: str) -> bool:
+    return workout_type in {"pushups", "squats", "abs", "pullups"}
 
 
 async def generate_activity_analysis(user_id: str, start_date: date, end_date: date, period_name: str) -> str:
@@ -61,10 +84,78 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
                 f"- {exercise}{variant_text}: {formatted_count}, ~{data['calories']:.0f} ккал"
             )
         workout_summary = "\n".join(workout_lines)
-        workout_summary += f"\n\nВсего тренировочных дней: {workout_days_count} из {days_count} ({workout_days_count * 100 // days_count if days_count > 0 else 0}%)."
+        workout_summary += f"\n\nВсего тренировочных дней: {workout_days_count} из {days_count}"
+        if days_count > 1:
+            workout_summary += f" ({workout_days_count * 100 // days_count if days_count > 0 else 0}%)."
+        else:
+            workout_summary += "."
         workout_summary += f"\nСредний расход калорий за тренировочный день: ~{avg_workout_calories:.0f} ккал."
     else:
         workout_summary = f"За {period_name.lower()} тренировки не записаны."
+
+    # Структурированный input для блока "Тренировки"
+    today_workouts = WorkoutRepository.get_workouts_for_day(user_id, end_date)
+    today_workouts_by_type = {}
+    today_steps = 0
+    today_workout_kcal = 0.0
+    today_strength_volume_score = 0
+
+    for w in today_workouts:
+        w_type = _normalize_workout_type(w.exercise, w.variant)
+        unit = "steps" if w_type == "steps" else "reps"
+        cals = w.calories or calculate_workout_calories(user_id, w.exercise, w.variant, w.count)
+        today_workout_kcal += cals
+
+        if w_type == "steps":
+            today_steps += int(w.count or 0)
+            continue
+
+        if _is_strength_type(w_type):
+            today_strength_volume_score += int(w.count or 0)
+
+        item = today_workouts_by_type.setdefault(w_type, {"type": w_type, "value": 0, "unit": unit})
+        item["value"] += int(w.count or 0)
+
+    # История за последние 7 дней (включая выбранную дату)
+    hist_start = end_date - timedelta(days=6)
+    history_workouts = WorkoutRepository.get_workouts_for_period(user_id, hist_start, end_date)
+    day_steps = {}
+    day_strength_score = {}
+    for w in history_workouts:
+        day_key = w.date.isoformat()
+        w_type = _normalize_workout_type(w.exercise, w.variant)
+        day_steps.setdefault(day_key, 0)
+        day_strength_score.setdefault(day_key, 0)
+        if w_type == "steps":
+            day_steps[day_key] += int(w.count or 0)
+        if _is_strength_type(w_type):
+            day_strength_score[day_key] += int(w.count or 0)
+
+    last7_avg_steps = (sum(day_steps.values()) / 7) if day_steps else 0
+    last7_avg_strength = (sum(day_strength_score.values()) / 7) if day_strength_score else 0
+    yesterday_key = (end_date - timedelta(days=1)).isoformat()
+    yesterday_strength = day_strength_score.get(yesterday_key)
+
+    settings = MealRepository.get_kbju_settings(user_id)
+    user_goal = settings.goal if settings else None
+
+    workout_ai_input = {
+        "date": end_date.isoformat(),
+        "workouts": list(today_workouts_by_type.values()),
+        "steps": today_steps,
+        "estimated_kcal_burn": round(today_workout_kcal),
+        "plan": {
+            "planned_training_day": None,
+            "planned_types": None,
+        },
+        "history": {
+            "last7_avg_steps": round(last7_avg_steps),
+            "last7_avg_strength_volume_score": round(last7_avg_strength),
+            "today_strength_volume_score": today_strength_volume_score,
+            "yesterday_strength_volume_score": yesterday_strength,
+        },
+        "user_goal": user_goal,
+    }
     
     # 🔹 КБЖУ за период
     meals = []
@@ -335,6 +426,7 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 - Обрати внимание на проценты выполнения целей КБЖУ — выдели их жирным и дай оценку.
 - Если есть сравнение с предыдущим периодом, обязательно упомяни это в анализе.
 - Если есть статистика по дням недели, используй её для выявления паттернов активности.
+- Если период анализа = 1 день, не используй формулировки про проценты тренировочных дней и «за период». Пиши выводы только про текущий день.
 
 Всегда начинай анализ с приветствия:
 "Привет, это Дайри на связи! Вот твой отчёт {period_name.lower()}👇"
@@ -342,11 +434,38 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 Данные пользователя за период:
 {summary}
 
+Структурированный input для блока "Тренировки" (JSON, используй как главный источник для этого блока):
+{json.dumps(workout_ai_input, ensure_ascii=False, indent=2)}
+
 Сделай краткий отчёт по 4 блокам. ОБЯЗАТЕЛЬНО используй следующий формат для заголовков блоков (без решеток #, только жирный текст с эмодзи):
 <b>1) 🏋️ Тренировки</b>
 <b>2) 🍱 Питание (КБЖУ)</b>
 <b>3) ⚖️ Вес</b>
 <b>4) 📈 Общий прогресс и мотивация</b>
+
+Для блока <b>1) 🏋️ Тренировки</b> отвечай строго по шаблону (5-7 строк, без лишнего текста):
+• Тип дня: <силовая/кардио/смешанный/активность без тренировки>
+• Нагрузка: <низкая/средняя/высокая> (<почему 3-6 слов>)
+• Ключевое: <1 строка про главное достижение>
+• Энергия: ~<ккал> ккал (оценка)
+• Совет на завтра: <1 конкретное действие>
+
+Правила для блока тренировок:
+- Не используй общие фразы типа «отличная работа» чаще 1 раза.
+- Не повторяй все числа списком, выбери 2-3 ключевых.
+- Всегда делай: тип дня → вывод → 1 рекомендация.
+- Если history = null / неполная, не придумывай сравнения.
+- Эвристики:
+  - Если есть >=2 силовых упражнения (pushups/squats/abs/pullups) → тип дня «силовая» или «смешанный» (если шагов много).
+  - Шаги: <5000 = низко, 5000-9999 = средне, >=10000 = высоко.
+  - Нагрузка:
+    - силовые + шаги >=8000 → «средняя»
+    - маленький силовой объём и шаги <8000 → «низкая»
+    - большой силовой объём или есть кардио → «высокая»
+  - Совет на завтра:
+    - при низкой нагрузке: «добавь 1 подход / +2000 шагов»
+    - при высокой: «восстановление: прогулка/растяжка/сон»
+- Обязательно учитывай оценку сожжённых калорий на тренировках в поле "Энергия" и выводах по нагрузке.
 
 Пиши структурированно, но компактно. Используй <b>жирный шрифт</b> для выделения важных цифр, фактов и процентов выполнения целей.
 Учитывай блок самочувствия и отражай его выводы в "Общий прогресс и мотивация" (или там, где это уместно).
