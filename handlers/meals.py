@@ -1327,11 +1327,11 @@ async def handle_edit_type_choice(message: Message, state: FSMContext):
             grams = p.get("grams", 0)
             edit_lines.append(f"{i}. {name}, {grams:.0f} г")
         
-        edit_lines.append("\nВведи номер продукта и новый вес в формате:")
+        edit_lines.append("\nВведи номер и новый вес. Можно несколько через запятую или с новой строки:")
         edit_lines.append("номер вес")
-        edit_lines.append("\nПример:")
+        edit_lines.append("\nПримеры:")
         edit_lines.append("1 200")
-        edit_lines.append("(изменит вес первого продукта на 200 г)")
+        edit_lines.append("1 200, 3 80, 4 110")
         
         push_menu_stack(message.bot, kbju_after_meal_menu)
         await message.answer("\n".join(edit_lines), reply_markup=kbju_after_meal_menu)
@@ -1386,111 +1386,122 @@ async def handle_meal_weight_edit(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    # Парсим ввод: "номер вес" или "номер, вес"
+    # Парсим ввод: "номер вес" или несколько пар через запятую/новую строку
     try:
-        parts = text.replace(",", " ").split()
-        if len(parts) < 2:
+        raw_updates = [part.strip() for part in text.replace("\n", ",").split(",") if part.strip()]
+        if not raw_updates:
             await message.answer(
                 "❌ Неверный формат. Введи номер продукта и новый вес.\n"
-                "Пример: 1 200 (изменит вес первого продукта на 200 г)"
+                "Примеры: 1 200 или 1 200, 3 80, 4 110"
             )
             return
-        
-        product_num = int(parts[0])
-        new_weight = float(parts[1].replace(",", "."))
-        
-        if product_num < 1 or product_num > len(saved_products):
-            await message.answer(
-                f"❌ Неверный номер продукта. Введи число от 1 до {len(saved_products)}."
-            )
-            return
-        
-        if new_weight <= 0:
-            await message.answer("❌ Вес должен быть больше нуля.")
-            return
-        
-        # Получаем продукт для редактирования
-        product = saved_products[product_num - 1]
-        
-        logger.debug(f"Editing product: {product}")
-        
-        # Получаем КБЖУ на 100г (проверяем разные форматы данных)
-        calories_per_100g = product.get("calories_per_100g")
-        protein_per_100g = product.get("protein_per_100g")
-        fat_per_100g = product.get("fat_per_100g")
-        carbs_per_100g = product.get("carbs_per_100g")
-        
-        # Если нет значений на 100г, вычисляем из сохраненных данных
-        if not calories_per_100g or calories_per_100g == 0:
-            orig_grams = product.get("grams", 0)
-            if orig_grams > 0:
-                # Поддерживаем разные форматы: Gemini (kcal, protein, fat, carbs) и CalorieNinjas (calories, protein_g, fat_total_g, carbohydrates_total_g)
-                orig_calories = product.get("kcal") or product.get("calories") or product.get("_calories") or 0
-                orig_protein = product.get("protein") or product.get("protein_g") or product.get("_protein_g") or 0
-                orig_fat = product.get("fat") or product.get("fat_total_g") or product.get("_fat_total_g") or 0
-                orig_carbs = product.get("carbs") or product.get("carbohydrates_total_g") or product.get("_carbohydrates_total_g") or 0
-                
-                logger.debug(f"Original values: grams={orig_grams}, kcal={orig_calories}, protein={orig_protein}, fat={orig_fat}, carbs={orig_carbs}")
-                
-                # Преобразуем в числа
-                try:
-                    orig_calories = float(orig_calories) if orig_calories else 0
-                    orig_protein = float(orig_protein) if orig_protein else 0
-                    orig_fat = float(orig_fat) if orig_fat else 0
-                    orig_carbs = float(orig_carbs) if orig_carbs else 0
-                except (TypeError, ValueError) as e:
-                    logger.error(f"Error converting values to float: {e}, product={product}")
-                    orig_calories = orig_protein = orig_fat = orig_carbs = 0
-                
-                # Вычисляем КБЖУ на 100г, если есть хотя бы калории
-                if orig_calories > 0:
-                    calories_per_100g = (orig_calories / orig_grams) * 100
-                    protein_per_100g = (orig_protein / orig_grams) * 100
-                    fat_per_100g = (orig_fat / orig_grams) * 100
-                    carbs_per_100g = (orig_carbs / orig_grams) * 100
-                    logger.debug(f"Calculated per 100g: kcal={calories_per_100g}, protein={protein_per_100g}, fat={fat_per_100g}, carbs={carbs_per_100g}")
-                else:
-                    # Если калории нулевые, но есть другие данные, все равно вычисляем
-                    if orig_grams > 0:
-                        calories_per_100g = 0
-                        protein_per_100g = (orig_protein / orig_grams) * 100 if orig_protein else 0
-                        fat_per_100g = (orig_fat / orig_grams) * 100 if orig_fat else 0
-                        carbs_per_100g = (orig_carbs / orig_grams) * 100 if orig_carbs else 0
+        parsed_updates = []
+        for update in raw_updates:
+            parts = update.split()
+            if len(parts) != 2:
+                raise ValueError(f"Invalid update format: {update}")
+
+            product_num = int(parts[0])
+            new_weight = float(parts[1].replace(",", "."))
+
+            if product_num < 1 or product_num > len(saved_products):
+                await message.answer(
+                    f"❌ Неверный номер продукта. Введи число от 1 до {len(saved_products)}."
+                )
+                return
+
+            if new_weight <= 0:
+                await message.answer("❌ Вес должен быть больше нуля.")
+                return
+
+            parsed_updates.append((product_num, new_weight))
+
+        # Последнее изменение для одного и того же номера имеет приоритет
+        updates_by_product = {product_num: new_weight for product_num, new_weight in parsed_updates}
+
+        for product_num, new_weight in updates_by_product.items():
+            # Получаем продукт для редактирования
+            product = saved_products[product_num - 1]
+
+            logger.debug(f"Editing product: {product}")
+
+            # Получаем КБЖУ на 100г (проверяем разные форматы данных)
+            calories_per_100g = product.get("calories_per_100g")
+            protein_per_100g = product.get("protein_per_100g")
+            fat_per_100g = product.get("fat_per_100g")
+            carbs_per_100g = product.get("carbs_per_100g")
+
+            # Если нет значений на 100г, вычисляем из сохраненных данных
+            if not calories_per_100g or calories_per_100g == 0:
+                orig_grams = product.get("grams", 0)
+                if orig_grams > 0:
+                    # Поддерживаем разные форматы: Gemini (kcal, protein, fat, carbs) и CalorieNinjas (calories, protein_g, fat_total_g, carbohydrates_total_g)
+                    orig_calories = product.get("kcal") or product.get("calories") or product.get("_calories") or 0
+                    orig_protein = product.get("protein") or product.get("protein_g") or product.get("_protein_g") or 0
+                    orig_fat = product.get("fat") or product.get("fat_total_g") or product.get("_fat_total_g") or 0
+                    orig_carbs = product.get("carbs") or product.get("carbohydrates_total_g") or product.get("_carbohydrates_total_g") or 0
+
+                    logger.debug(f"Original values: grams={orig_grams}, kcal={orig_calories}, protein={orig_protein}, fat={orig_fat}, carbs={orig_carbs}")
+
+                    # Преобразуем в числа
+                    try:
+                        orig_calories = float(orig_calories) if orig_calories else 0
+                        orig_protein = float(orig_protein) if orig_protein else 0
+                        orig_fat = float(orig_fat) if orig_fat else 0
+                        orig_carbs = float(orig_carbs) if orig_carbs else 0
+                    except (TypeError, ValueError) as e:
+                        logger.error(f"Error converting values to float: {e}, product={product}")
+                        orig_calories = orig_protein = orig_fat = orig_carbs = 0
+
+                    # Вычисляем КБЖУ на 100г, если есть хотя бы калории
+                    if orig_calories > 0:
+                        calories_per_100g = (orig_calories / orig_grams) * 100
+                        protein_per_100g = (orig_protein / orig_grams) * 100
+                        fat_per_100g = (orig_fat / orig_grams) * 100
+                        carbs_per_100g = (orig_carbs / orig_grams) * 100
+                        logger.debug(f"Calculated per 100g: kcal={calories_per_100g}, protein={protein_per_100g}, fat={fat_per_100g}, carbs={carbs_per_100g}")
                     else:
-                        logger.warning(f"Product {product.get('name')} has zero grams, cannot calculate per 100g")
-        
-        # Проверяем, что мы получили валидные значения
-        if not calories_per_100g and not protein_per_100g and not fat_per_100g and not carbs_per_100g:
-            logger.error(f"Cannot calculate KBJU per 100g for product: {product}")
-            await message.answer(
-                "❌ Не удалось определить КБЖУ для этого продукта.\n"
-                "Попробуй использовать вариант «Изменить состав продуктов»."
-            )
-            return
-        
-        # Пересчитываем КБЖУ для нового веса
-        new_calories = (calories_per_100g * new_weight) / 100 if calories_per_100g else 0
-        new_protein = (protein_per_100g * new_weight) / 100 if protein_per_100g else 0
-        new_fat = (fat_per_100g * new_weight) / 100 if fat_per_100g else 0
-        new_carbs = (carbs_per_100g * new_weight) / 100 if carbs_per_100g else 0
-        
-        # Обновляем продукт (сохраняем в обоих форматах для совместимости)
-        product["grams"] = new_weight
-        # Обновляем в формате Gemini
-        product["kcal"] = new_calories
-        product["protein"] = new_protein
-        product["fat"] = new_fat
-        product["carbs"] = new_carbs
-        # Обновляем в формате CalorieNinjas
-        product["calories"] = new_calories
-        product["protein_g"] = new_protein
-        product["fat_total_g"] = new_fat
-        product["carbohydrates_total_g"] = new_carbs
-        # Сохраняем значения на 100г для будущих пересчетов
-        product["calories_per_100g"] = calories_per_100g
-        product["protein_per_100g"] = protein_per_100g
-        product["fat_per_100g"] = fat_per_100g
-        product["carbs_per_100g"] = carbs_per_100g
+                        # Если калории нулевые, но есть другие данные, все равно вычисляем
+                        if orig_grams > 0:
+                            calories_per_100g = 0
+                            protein_per_100g = (orig_protein / orig_grams) * 100 if orig_protein else 0
+                            fat_per_100g = (orig_fat / orig_grams) * 100 if orig_fat else 0
+                            carbs_per_100g = (orig_carbs / orig_grams) * 100 if orig_carbs else 0
+                        else:
+                            logger.warning(f"Product {product.get('name')} has zero grams, cannot calculate per 100g")
+
+            # Проверяем, что мы получили валидные значения
+            if not calories_per_100g and not protein_per_100g and not fat_per_100g and not carbs_per_100g:
+                logger.error(f"Cannot calculate KBJU per 100g for product: {product}")
+                await message.answer(
+                    "❌ Не удалось определить КБЖУ для одного из продуктов.\n"
+                    "Попробуй использовать вариант «Изменить состав продуктов»."
+                )
+                return
+
+            # Пересчитываем КБЖУ для нового веса
+            new_calories = (calories_per_100g * new_weight) / 100 if calories_per_100g else 0
+            new_protein = (protein_per_100g * new_weight) / 100 if protein_per_100g else 0
+            new_fat = (fat_per_100g * new_weight) / 100 if fat_per_100g else 0
+            new_carbs = (carbs_per_100g * new_weight) / 100 if carbs_per_100g else 0
+
+            # Обновляем продукт (сохраняем в обоих форматах для совместимости)
+            product["grams"] = new_weight
+            # Обновляем в формате Gemini
+            product["kcal"] = new_calories
+            product["protein"] = new_protein
+            product["fat"] = new_fat
+            product["carbs"] = new_carbs
+            # Обновляем в формате CalorieNinjas
+            product["calories"] = new_calories
+            product["protein_g"] = new_protein
+            product["fat_total_g"] = new_fat
+            product["carbohydrates_total_g"] = new_carbs
+            # Сохраняем значения на 100г для будущих пересчетов
+            product["calories_per_100g"] = calories_per_100g
+            product["protein_per_100g"] = protein_per_100g
+            product["fat_per_100g"] = fat_per_100g
+            product["carbs_per_100g"] = carbs_per_100g
         
         # Суммируем КБЖУ всех продуктов (проверяем разные форматы)
         totals = {
@@ -1557,14 +1568,18 @@ async def handle_meal_weight_edit(message: Message, state: FSMContext):
         else:
             target_date = date.today()
         
-        await message.answer("✅ Вес продукта обновлён! КБЖУ пересчитано.")
+        updated_count = len(updates_by_product)
+        if updated_count == 1:
+            await message.answer("✅ Вес продукта обновлён! КБЖУ пересчитано.")
+        else:
+            await message.answer(f"✅ Обновлён вес {updated_count} продуктов! КБЖУ пересчитано.")
         await show_day_meals(message, user_id, target_date)
         
     except (ValueError, IndexError) as e:
         logger.error(f"Error parsing weight edit input: {e}")
         await message.answer(
             "❌ Неверный формат. Введи номер продукта и новый вес.\n"
-            "Пример: 1 200 (изменит вес первого продукта на 200 г)"
+            "Примеры: 1 200 или 1 200, 3 80, 4 110"
         )
 
 
