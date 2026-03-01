@@ -44,6 +44,38 @@ def _is_strength_type(workout_type: str) -> bool:
     return workout_type in {"pushups", "squats", "abs", "pullups"}
 
 
+def _extract_analysis_short_summary(analysis_text: str, max_len: int = 220) -> str:
+    """Возвращает короткий подитог из полного текста ИИ-отчёта."""
+    # Убираем HTML-разметку и лишние пробелы
+    clean_text = re.sub(r"<[^>]+>", "", analysis_text or "")
+    clean_text = re.sub(r"\s+", " ", clean_text).strip()
+    if not clean_text:
+        return "Короткий подитог недоступен."
+
+    # Пробуем взять раздел с итогом/мотивацией — обычно это самый полезный подитог отчёта
+    summary_match = re.search(
+        r"(?:4\)\s*📈\s*Общий прогресс и мотивация|Общий прогресс и мотивация)\s*(.+)",
+        clean_text,
+        flags=re.IGNORECASE,
+    )
+    if summary_match:
+        tail = summary_match.group(1).strip(" :.-")
+        first_sentence = re.split(r"(?<=[.!?])\s+", tail, maxsplit=1)[0].strip()
+        if first_sentence:
+            return first_sentence[: max_len - 1] + "…" if len(first_sentence) > max_len else first_sentence
+
+    # Фолбэк: первая содержательная строка после приветствия
+    lines = [line.strip(" •-") for line in re.split(r"[\n\r]+", clean_text) if line.strip()]
+    for line in lines:
+        if "дайри" in line.lower() or "вот твой отчёт" in line.lower():
+            continue
+        if len(line) < 12:
+            continue
+        return line[: max_len - 1] + "…" if len(line) > max_len else line
+
+    return clean_text[: max_len - 1] + "…" if len(clean_text) > max_len else clean_text
+
+
 async def generate_activity_analysis(user_id: str, start_date: date, end_date: date, period_name: str) -> str:
     """Генерирует анализ активности за указанный период через Gemini."""
     from database.repositories import (
@@ -601,9 +633,9 @@ async def show_activity_analysis_day(message: Message, user_id: str, target_date
     lines = [f"📅 {target_date.strftime('%d.%m.%Y')}\n\nСохранённые анализы:"]
     for idx, entry in enumerate(entries, start=1):
         source = "🤖 ИИ" if entry.source == "generated" else "📝 Ручной"
-        raw_preview = entry.analysis_text[:250] + ("..." if len(entry.analysis_text) > 250 else "")
-        preview = html.escape(raw_preview)
-        lines.append(f"{idx}. {source}\n{preview}")
+        short_summary = _extract_analysis_short_summary(entry.analysis_text)
+        preview = html.escape(short_summary)
+        lines.append(f"{idx}. {source}\nПодитог: {preview}")
 
     await message.answer(
         "\n\n".join(lines),
