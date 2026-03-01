@@ -552,16 +552,22 @@ async def select_activity_analysis_day(callback: CallbackQuery):
 
 @router.callback_query(lambda c: c.data.startswith("act_cal_add:"))
 async def add_activity_analysis_from_calendar(callback: CallbackQuery, state: FSMContext):
-    """Запускает добавление ручного анализа на выбранный день."""
+    """Генерирует ИИ-анализ за выбранный день и сохраняет его в календарь."""
     await callback.answer()
     target_date = date.fromisoformat(callback.data.split(":")[1])
     await state.clear()
-    await state.update_data(entry_date=target_date.isoformat())
-    await state.set_state(ActivityAnalysisStates.entering_manual_analysis)
+
     await callback.message.answer(
-        f"📝 Введи текст анализа за {target_date.strftime('%d.%m.%Y')}.\nОн сохранится в календаре.",
+        f"⏳ Подожди немного, бот анализирует день {target_date.strftime('%d.%m.%Y')}...",
         reply_markup=activity_analysis_menu,
     )
+
+    user_id = str(callback.from_user.id)
+    analysis = await generate_activity_analysis(user_id, target_date, target_date, "за день")
+    ActivityAnalysisRepository.create_entry(user_id, analysis, target_date, source="generated")
+
+    await callback.message.answer("✅ Анализ сохранён в календаре.")
+    await show_activity_analysis_day(callback.message, user_id, target_date)
 
 
 @router.callback_query(lambda c: c.data.startswith("act_cal_del:"))
