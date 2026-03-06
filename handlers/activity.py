@@ -209,21 +209,53 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
     settings = MealRepository.get_kbju_settings(user_id)
     if settings:
         goal_label = get_kbju_goal_label(settings.goal)
-        goal_calories = settings.calories * days_count
-        goal_protein = settings.protein * days_count
-        goal_fat = settings.fat * days_count
-        goal_carbs = settings.carbs * days_count
+        base_goal_calories = settings.calories * days_count
+        base_goal_protein = settings.protein * days_count
+        base_goal_fat = settings.fat * days_count
+        base_goal_carbs = settings.carbs * days_count
+
+        workout_calorie_bonus = total_workout_calories
+        goal_calories = base_goal_calories + workout_calorie_bonus
+
+        goal_macros_kcal = (base_goal_protein * 4) + (base_goal_fat * 9) + (base_goal_carbs * 4)
+        if goal_macros_kcal > 0 and workout_calorie_bonus > 0:
+            protein_share = (base_goal_protein * 4) / goal_macros_kcal
+            fat_share = (base_goal_fat * 9) / goal_macros_kcal
+            carbs_share = (base_goal_carbs * 4) / goal_macros_kcal
+
+            protein_bonus = (workout_calorie_bonus * protein_share) / 4
+            fat_bonus = (workout_calorie_bonus * fat_share) / 9
+            carbs_bonus = (workout_calorie_bonus * carbs_share) / 4
+        else:
+            protein_bonus = 0
+            fat_bonus = 0
+            carbs_bonus = 0
+
+        goal_protein = base_goal_protein + protein_bonus
+        goal_fat = base_goal_fat + fat_bonus
+        goal_carbs = base_goal_carbs + carbs_bonus
         
         calories_percent = (total_calories / goal_calories * 100) if goal_calories > 0 else 0
         protein_percent = (total_protein / goal_protein * 100) if goal_protein > 0 else 0
         fat_percent = (total_fat / goal_fat * 100) if goal_fat > 0 else 0
         carbs_percent = (total_carbs / goal_carbs * 100) if goal_carbs > 0 else 0
         
+        if workout_calorie_bonus > 0:
+            calories_goal_text = f"{goal_calories:.0f}({base_goal_calories:.0f}+{workout_calorie_bonus:.0f})"
+            protein_goal_text = f"{goal_protein:.1f}({base_goal_protein:.1f}+{protein_bonus:.1f})"
+            fat_goal_text = f"{goal_fat:.1f}({base_goal_fat:.1f}+{fat_bonus:.1f})"
+            carbs_goal_text = f"{goal_carbs:.1f}({base_goal_carbs:.1f}+{carbs_bonus:.1f})"
+        else:
+            calories_goal_text = f"{goal_calories:.0f}"
+            protein_goal_text = f"{goal_protein:.1f}"
+            fat_goal_text = f"{goal_fat:.1f}"
+            carbs_goal_text = f"{goal_carbs:.1f}"
+
         meals_summary = (
-            f"Калории: {total_calories:.0f} / {goal_calories:.0f} ккал ({calories_percent:.0f}%), "
-            f"Белки: {total_protein:.1f} / {goal_protein:.1f} г ({protein_percent:.0f}%), "
-            f"Жиры: {total_fat:.1f} / {goal_fat:.1f} г ({fat_percent:.0f}%), "
-            f"Углеводы: {total_carbs:.1f} / {goal_carbs:.1f} г ({carbs_percent:.0f}%)."
+            f"Калории: {total_calories:.0f} / {calories_goal_text} ккал ({calories_percent:.0f}%), "
+            f"Белки: {total_protein:.1f} / {protein_goal_text} г ({protein_percent:.0f}%), "
+            f"Жиры: {total_fat:.1f} / {fat_goal_text} г ({fat_percent:.0f}%), "
+            f"Углеводы: {total_carbs:.1f} / {carbs_goal_text} г ({carbs_percent:.0f}%)."
         )
         
         kbju_goal_summary = (
