@@ -3,11 +3,13 @@ import asyncio
 import logging
 import json
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 from aiogram import Bot
 from database.session import get_db_session
 from database.models import User, Supplement
 
 logger = logging.getLogger(__name__)
+MSK_TZ = ZoneInfo("Europe/Moscow")
 
 
 class NotificationScheduler:
@@ -51,8 +53,9 @@ class NotificationScheduler:
     
     def calculate_next_time(self, target_time: time) -> float:
         """Вычисляет время до следующего указанного времени в секундах."""
-        now = datetime.now()
+        now = datetime.now(MSK_TZ)
         target_datetime = datetime.combine(now.date(), target_time)
+        target_datetime = target_datetime.replace(tzinfo=MSK_TZ)
         
         # Если время уже прошло сегодня, планируем на завтра
         if now.time() >= target_time:
@@ -123,7 +126,7 @@ class NotificationScheduler:
     async def check_and_send_supplement_notifications(self):
         """Проверяет добавки и отправляет уведомления, если наступило время приёма."""
         try:
-            now = datetime.now()
+            now = datetime.now(MSK_TZ)
             current_time_str = now.strftime("%H:%M")
             current_weekday = self._get_weekday_name(now.weekday())
             today_date = now.date()
@@ -202,4 +205,3 @@ class NotificationScheduler:
         """Останавливает планировщик уведомлений."""
         self.running = False
         logger.info("Планировщик уведомлений остановлен")
-
