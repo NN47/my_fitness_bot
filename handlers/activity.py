@@ -698,7 +698,7 @@ async def save_manual_activity_analysis(message: Message, state: FSMContext):
     await show_activity_analysis_day(message, user_id, entry_date)
 
 
-@router.message(lambda m: m.text == "Проанализировать день")
+@router.message(lambda m: m.text in {"📅 Анализ за день", "Проанализировать день"})
 async def analyze_activity_day(message: Message):
     """Анализ за день."""
     user_id = str(message.from_user.id)
@@ -710,7 +710,7 @@ async def analyze_activity_day(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "проанализировать неделю")
+@router.message(lambda m: m.text in {"📆 Анализ за неделю", "проанализировать неделю"})
 async def analyze_activity_week(message: Message):
     """Анализ за неделю."""
     user_id = str(message.from_user.id)
@@ -721,7 +721,7 @@ async def analyze_activity_week(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "проанализировать месяц")
+@router.message(lambda m: m.text in {"📊 Анализ за месяц", "проанализировать месяц"})
 async def analyze_activity_month(message: Message):
     """Анализ за месяц."""
     user_id = str(message.from_user.id)
