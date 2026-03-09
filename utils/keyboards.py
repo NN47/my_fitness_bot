@@ -391,8 +391,8 @@ water_quick_add_inline = InlineKeyboardMarkup(
 # Меню анализа
 activity_analysis_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="📅 Анализ за день")],
-        [KeyboardButton(text="📆 Анализ за неделю"), KeyboardButton(text="📊 Анализ за месяц")],
+        [KeyboardButton(text="🔍 Проанализировать день")],
+        [KeyboardButton(text="🔍 Проанализировать неделю"), KeyboardButton(text="🔍 Проанализировать месяц")],
         [KeyboardButton(text="🗓 Календарь")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
