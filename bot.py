@@ -2458,7 +2458,7 @@ water_amount_menu = ReplyKeyboardMarkup(
 activity_analysis_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🔍 Проанализировать день")],
-        [KeyboardButton(text="🔍 Проанализировать неделю"), KeyboardButton(text="🔍 Проанализировать месяц")],
+        [KeyboardButton(text="🔍 Проанализировать\nнеделю"), KeyboardButton(text="🔍 Проанализировать\nмесяц")],
         [KeyboardButton(text="📈 Анализ за все время")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
@@ -2883,7 +2883,7 @@ async def analyze_activity_day(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text.in_({"🔍 Проанализировать неделю", "📆 Анализ за неделю"}))
+@dp.message(F.text.in_({"🔍 Проанализировать\nнеделю", "🔍 Проанализировать неделю", "📆 Анализ за неделю"}))
 async def analyze_activity_week(message: Message):
     """Анализ активности за последние 7 дней"""
     user_id = str(message.from_user.id)
@@ -2893,7 +2893,7 @@ async def analyze_activity_week(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text.in_({"🔍 Проанализировать месяц", "📊 Анализ за месяц"}))
+@dp.message(F.text.in_({"🔍 Проанализировать\nмесяц", "🔍 Проанализировать месяц", "📊 Анализ за месяц"}))
 async def analyze_activity_month(message: Message):
     """Анализ активности за последние 30 дней"""
     user_id = str(message.from_user.id)
