@@ -16,7 +16,7 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="💊 Добавки"), KeyboardButton(text="💧 Контроль воды")],
         [KeyboardButton(text=WELLBEING_AND_PROCEDURES_BUTTON_TEXT), KeyboardButton(text=WEIGHT_AND_MEASUREMENTS_BUTTON_TEXT)],
-        [KeyboardButton(text="🤖 ИИ анализ деятельности")],
+        [KeyboardButton(text="📊 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки"), main_menu_button],
     ],
     resize_keyboard=True
@@ -391,8 +391,8 @@ water_quick_add_inline = InlineKeyboardMarkup(
 # Меню анализа
 activity_analysis_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🔍 Проанализировать день")],
-        [KeyboardButton(text="🔍 Проанализировать\nнеделю"), KeyboardButton(text="🔍 Проанализировать\nмесяц")],
+        [KeyboardButton(text="📅 Анализ за день")],
+        [KeyboardButton(text="📆 Анализ за неделю"), KeyboardButton(text="📊 Анализ за месяц")],
         [KeyboardButton(text="🗓 Календарь")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
