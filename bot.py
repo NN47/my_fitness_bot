@@ -2274,10 +2274,16 @@ main_menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="🏋️ Тренировка"), KeyboardButton(text="🍱 КБЖУ")],
         [KeyboardButton(text="⚖️ Вес / 📏 Замеры"), KeyboardButton(text="💊 Добавки")],
         [KeyboardButton(text="💆 Процедуры"), KeyboardButton(text="💧 Контроль воды")],
-        [KeyboardButton(text="🤖 ИИ анализ деятельности")],
         [KeyboardButton(text="⚙️ Настройки")],
     ],
     resize_keyboard=True
+)
+
+# Inline-кнопки быстрых действий под текстом главного экрана
+quick_actions_inline = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="ℹ️", callback_data="quick_recommendations")],
+    ]
 )
 
 main_menu_button = KeyboardButton(text="🏠 Главное меню")
@@ -2641,7 +2647,8 @@ async def start(message: Message):
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
     
     welcome = f"{today_line}\n\n{progress_text}\n\n{water_progress_text}\n\n{workouts_text}"
-    await answer_with_menu(message, welcome, reply_markup=main_menu, parse_mode="HTML")
+    await answer_with_menu(message, welcome, reply_markup=quick_actions_inline, parse_mode="HTML")
+    await answer_with_menu(message, "⬇️ Главное меню", reply_markup=main_menu)
 
 
 async def generate_activity_analysis(user_id: str, start_date: date, end_date: date, period_name: str):
@@ -2841,6 +2848,13 @@ async def analyze_activity(message: Message):
         reply_markup=activity_analysis_menu,
         parse_mode="HTML",
     )
+
+
+@dp.callback_query(F.data == "quick_recommendations")
+async def quick_recommendations(callback: CallbackQuery):
+    """Быстрое открытие меню рекомендаций из верхней панели."""
+    await callback.answer()
+    await analyze_activity(callback.message)
 
 
 @dp.message(F.text == "📅 Анализ за день")
@@ -3980,9 +3994,10 @@ async def go_main_menu(message: Message):
     await answer_with_menu(
         message,
         main_menu_text,
-        reply_markup=main_menu,
+        reply_markup=quick_actions_inline,
         parse_mode="HTML",
     )
+    await answer_with_menu(message, "⬇️ Главное меню", reply_markup=main_menu)
 
 
 @dp.message(F.text == "⬅️ Назад")
