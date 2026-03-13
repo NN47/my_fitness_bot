@@ -2432,10 +2432,10 @@ water_amount_menu = ReplyKeyboardMarkup(
 
 activity_analysis_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="📅 Анализ за день")],
-        [KeyboardButton(text="📆 Анализ за неделю")],
-        [KeyboardButton(text="📊 Анализ за месяц")],
-        [KeyboardButton(text="📈 Анализ за все время")],
+        [KeyboardButton(text="📅 День")],
+        [KeyboardButton(text="📆 Неделя")],
+        [KeyboardButton(text="📊 Месяц")],
+        [KeyboardButton(text="📈 Все время")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
@@ -2839,12 +2839,12 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
     return result
 
 
-@dp.message(F.text == "🤖 ИИ анализ деятельности")
+@dp.message(F.text == "🧠 Анализ активности")
 async def analyze_activity(message: Message):
     """Показывает меню выбора периода для анализа"""
     await answer_with_menu(
         message,
-        "🤖 <b>ИИ анализ деятельности</b>\n\nВыбери период для анализа:",
+        "🧠 <b>Анализ активности</b>\n\nВыбери период для анализа:",
         reply_markup=activity_analysis_menu,
         parse_mode="HTML",
     )
@@ -2857,7 +2857,7 @@ async def quick_recommendations(callback: CallbackQuery):
     await analyze_activity(callback.message)
 
 
-@dp.message(F.text == "📅 Анализ за день")
+@dp.message(F.text == "📅 День")
 async def analyze_activity_day(message: Message):
     """Анализ активности за сегодня"""
     user_id = str(message.from_user.id)
@@ -2866,7 +2866,7 @@ async def analyze_activity_day(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text == "📆 Анализ за неделю")
+@dp.message(F.text == "📆 Неделя")
 async def analyze_activity_week(message: Message):
     """Анализ активности за последние 7 дней"""
     user_id = str(message.from_user.id)
@@ -2876,7 +2876,7 @@ async def analyze_activity_week(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text == "📊 Анализ за месяц")
+@dp.message(F.text == "📊 Месяц")
 async def analyze_activity_month(message: Message):
     """Анализ активности за последние 30 дней"""
     user_id = str(message.from_user.id)
@@ -2886,7 +2886,7 @@ async def analyze_activity_month(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text == "📈 Анализ за все время")
+@dp.message(F.text == "📈 Все время")
 async def analyze_activity_all_time(message: Message):
     """Анализ активности за все время"""
     user_id = str(message.from_user.id)
@@ -4735,7 +4735,7 @@ async def supplements_list_view(message: Message):
 async def choose_supplement_for_view(message: Message):
     # Проверяем, не является ли это кнопкой меню
     menu_buttons = ["⬅️ Назад", "🍱 КБЖУ", "📆 Календарь", "💆 Процедуры", "💧 Контроль воды", 
-                    "🏋️ Тренировка", "⚖️ Вес / 📏 Замеры", "💊 Добавки", "🤖 ИИ анализ деятельности", 
+                    "🏋️ Тренировка", "⚖️ Вес / 📏 Замеры", "💊 Добавки", "🧠 Анализ активности", 
                     "⚙️ Настройки", "🏠 Главное меню", "📆 Календарь добавок", "✅ Отметить приём",
                     "➕ Создать добавку", "✏️ Редактировать добавку", "📅 Редактировать дни",
                     "✏️ Редактировать время"]
@@ -4984,7 +4984,7 @@ async def set_supplement_amount(message: Message):
 async def choose_supplement_for_history(message: Message):
     # Проверяем, не является ли это кнопкой меню
     menu_buttons = ["⬅️ Назад", "🍱 КБЖУ", "📆 Календарь", "💆 Процедуры", "💧 Контроль воды", 
-                    "🏋️ Тренировка", "⚖️ Вес / 📏 Замеры", "💊 Добавки", "🤖 ИИ анализ деятельности", 
+                    "🏋️ Тренировка", "⚖️ Вес / 📏 Замеры", "💊 Добавки", "🧠 Анализ активности", 
                     "⚙️ Настройки", "🏠 Главное меню", "📆 Календарь добавок", "✅ Отметить приём",
                     "➕ Создать добавку", "✏️ Редактировать добавку", "📅 Редактировать дни",
                     "✏️ Редактировать время"]
@@ -5373,7 +5373,7 @@ async def edit_supplement_placeholder(message: Message):
 async def choose_supplement_to_edit(message: Message):
     # Проверяем, не является ли это кнопкой меню
     menu_buttons = ["⬅️ Назад", "🍱 КБЖУ", "📆 Календарь", "💆 Процедуры", "💧 Контроль воды", 
-                    "🏋️ Тренировка", "⚖️ Вес / 📏 Замеры", "💊 Добавки", "🤖 ИИ анализ деятельности", 
+                    "🏋️ Тренировка", "⚖️ Вес / 📏 Замеры", "💊 Добавки", "🧠 Анализ активности", 
                     "⚙️ Настройки", "🏠 Главное меню", "📆 Календарь добавок", "✅ Отметить приём",
                     "➕ Создать добавку", "✏️ Редактировать добавку", "📅 Редактировать дни",
                     "✏️ Редактировать время"]

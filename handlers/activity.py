@@ -302,20 +302,20 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
     return result
 
 
-@router.message(lambda m: m.text == "🤖 ИИ анализ деятельности")
+@router.message(lambda m: m.text == "🧠 Анализ активности")
 async def analyze_activity(message: Message):
     """Показывает меню анализа деятельности."""
     user_id = str(message.from_user.id)
     logger.info(f"User {user_id} opened activity analysis")
     push_menu_stack(message.bot, activity_analysis_menu)
     await message.answer(
-        "🤖 <b>ИИ анализ деятельности</b>\n\nВыбери период для анализа:",
+        "🧠 <b>Анализ активности</b>\n\nВыбери период для анализа:",
         parse_mode="HTML",
         reply_markup=activity_analysis_menu,
     )
 
 
-@router.message(lambda m: m.text == "📅 Анализ за день")
+@router.message(lambda m: m.text == "📅 День")
 async def analyze_activity_day(message: Message):
     """Анализ за день."""
     user_id = str(message.from_user.id)
@@ -325,7 +325,7 @@ async def analyze_activity_day(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "📆 Анализ за неделю")
+@router.message(lambda m: m.text == "📆 Неделя")
 async def analyze_activity_week(message: Message):
     """Анализ за неделю."""
     user_id = str(message.from_user.id)
@@ -336,7 +336,7 @@ async def analyze_activity_week(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "📊 Анализ за месяц")
+@router.message(lambda m: m.text == "📊 Месяц")
 async def analyze_activity_month(message: Message):
     """Анализ за месяц."""
     user_id = str(message.from_user.id)
@@ -347,7 +347,7 @@ async def analyze_activity_month(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "📈 Анализ за все время")
+@router.message(lambda m: m.text == "📈 Все время")
 async def analyze_activity_all_time(message: Message):
     """Анализ за все время."""
     user_id = str(message.from_user.id)

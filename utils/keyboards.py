@@ -281,10 +281,10 @@ water_amount_menu = ReplyKeyboardMarkup(
 # Меню анализа
 activity_analysis_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="📅 Анализ за день")],
-        [KeyboardButton(text="📆 Анализ за неделю")],
-        [KeyboardButton(text="📊 Анализ за месяц")],
-        [KeyboardButton(text="📈 Анализ за все время")],
+        [KeyboardButton(text="📅 День")],
+        [KeyboardButton(text="📆 Неделя")],
+        [KeyboardButton(text="📊 Месяц")],
+        [KeyboardButton(text="📈 Все время")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
