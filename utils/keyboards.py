@@ -1,6 +1,12 @@
 """Клавиатуры для бота."""
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
+ANALYSIS_BUTTON_EMOJI = "🤖"
+ACTIVITY_ANALYZE_DAY_TEXT = f"{ANALYSIS_BUTTON_EMOJI} Анализировать день"
+ACTIVITY_ANALYZE_WEEK_TEXT = f"{ANALYSIS_BUTTON_EMOJI} Анализировать неделю"
+ACTIVITY_ANALYZE_MONTH_TEXT = f"{ANALYSIS_BUTTON_EMOJI} Анализировать месяц"
+ACTIVITY_ANALYZE_ALL_TIME_TEXT = f"{ANALYSIS_BUTTON_EMOJI} Анализировать все время"
+
 # Главная кнопка меню
 main_menu_button = KeyboardButton(text="🏠 Главное меню")
 
@@ -281,10 +287,10 @@ water_amount_menu = ReplyKeyboardMarkup(
 # Меню анализа
 activity_analysis_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🤖 Анализировать день")],
-        [KeyboardButton(text="🤖 Анализировать неделю")],
-        [KeyboardButton(text="🤖 Анализировать месяц")],
-        [KeyboardButton(text="🤖 Анализировать все время")],
+        [KeyboardButton(text=ACTIVITY_ANALYZE_DAY_TEXT)],
+        [KeyboardButton(text=ACTIVITY_ANALYZE_WEEK_TEXT)],
+        [KeyboardButton(text=ACTIVITY_ANALYZE_MONTH_TEXT)],
+        [KeyboardButton(text=ACTIVITY_ANALYZE_ALL_TIME_TEXT)],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,

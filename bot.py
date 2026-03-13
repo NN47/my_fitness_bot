@@ -2286,6 +2286,12 @@ quick_actions_inline = InlineKeyboardMarkup(
     ]
 )
 
+ANALYSIS_BUTTON_EMOJI = "🤖"
+ACTIVITY_ANALYZE_DAY_TEXT = f"{ANALYSIS_BUTTON_EMOJI} Анализировать день"
+ACTIVITY_ANALYZE_WEEK_TEXT = f"{ANALYSIS_BUTTON_EMOJI} Анализировать неделю"
+ACTIVITY_ANALYZE_MONTH_TEXT = f"{ANALYSIS_BUTTON_EMOJI} Анализировать месяц"
+ACTIVITY_ANALYZE_ALL_TIME_TEXT = f"{ANALYSIS_BUTTON_EMOJI} Анализировать все время"
+
 main_menu_button = KeyboardButton(text="🏠 Главное меню")
 
 kbju_menu = ReplyKeyboardMarkup(
@@ -2432,10 +2438,10 @@ water_amount_menu = ReplyKeyboardMarkup(
 
 activity_analysis_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🤖 Анализировать день")],
-        [KeyboardButton(text="🤖 Анализировать неделю")],
-        [KeyboardButton(text="🤖 Анализировать месяц")],
-        [KeyboardButton(text="🤖 Анализировать все время")],
+        [KeyboardButton(text=ACTIVITY_ANALYZE_DAY_TEXT)],
+        [KeyboardButton(text=ACTIVITY_ANALYZE_WEEK_TEXT)],
+        [KeyboardButton(text=ACTIVITY_ANALYZE_MONTH_TEXT)],
+        [KeyboardButton(text=ACTIVITY_ANALYZE_ALL_TIME_TEXT)],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
@@ -2857,7 +2863,7 @@ async def quick_recommendations(callback: CallbackQuery):
     await analyze_activity(callback.message)
 
 
-@dp.message(F.text == "🤖 Анализировать день")
+@dp.message(F.text == ACTIVITY_ANALYZE_DAY_TEXT)
 async def analyze_activity_day(message: Message):
     """Анализ активности за сегодня"""
     user_id = str(message.from_user.id)
@@ -2866,7 +2872,7 @@ async def analyze_activity_day(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text == "🤖 Анализировать неделю")
+@dp.message(F.text == ACTIVITY_ANALYZE_WEEK_TEXT)
 async def analyze_activity_week(message: Message):
     """Анализ активности за последние 7 дней"""
     user_id = str(message.from_user.id)
@@ -2876,7 +2882,7 @@ async def analyze_activity_week(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text == "🤖 Анализировать месяц")
+@dp.message(F.text == ACTIVITY_ANALYZE_MONTH_TEXT)
 async def analyze_activity_month(message: Message):
     """Анализ активности за последние 30 дней"""
     user_id = str(message.from_user.id)
@@ -2886,7 +2892,7 @@ async def analyze_activity_month(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text == "🤖 Анализировать все время")
+@dp.message(F.text == ACTIVITY_ANALYZE_ALL_TIME_TEXT)
 async def analyze_activity_all_time(message: Message):
     """Анализ активности за все время"""
     user_id = str(message.from_user.id)

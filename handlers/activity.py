@@ -4,7 +4,14 @@ import re
 from datetime import date, timedelta
 from aiogram import Router
 from aiogram.types import Message
-from utils.keyboards import activity_analysis_menu, push_menu_stack
+from utils.keyboards import (
+    ACTIVITY_ANALYZE_ALL_TIME_TEXT,
+    ACTIVITY_ANALYZE_DAY_TEXT,
+    ACTIVITY_ANALYZE_MONTH_TEXT,
+    ACTIVITY_ANALYZE_WEEK_TEXT,
+    activity_analysis_menu,
+    push_menu_stack,
+)
 from services.gemini_service import gemini_service
 
 logger = logging.getLogger(__name__)
@@ -315,7 +322,7 @@ async def analyze_activity(message: Message):
     )
 
 
-@router.message(lambda m: m.text == "🤖 Анализировать день")
+@router.message(lambda m: m.text == ACTIVITY_ANALYZE_DAY_TEXT)
 async def analyze_activity_day(message: Message):
     """Анализ за день."""
     user_id = str(message.from_user.id)
@@ -325,7 +332,7 @@ async def analyze_activity_day(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "🤖 Анализировать неделю")
+@router.message(lambda m: m.text == ACTIVITY_ANALYZE_WEEK_TEXT)
 async def analyze_activity_week(message: Message):
     """Анализ за неделю."""
     user_id = str(message.from_user.id)
@@ -336,7 +343,7 @@ async def analyze_activity_week(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "🤖 Анализировать месяц")
+@router.message(lambda m: m.text == ACTIVITY_ANALYZE_MONTH_TEXT)
 async def analyze_activity_month(message: Message):
     """Анализ за месяц."""
     user_id = str(message.from_user.id)
@@ -347,7 +354,7 @@ async def analyze_activity_month(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "🤖 Анализировать все время")
+@router.message(lambda m: m.text == ACTIVITY_ANALYZE_ALL_TIME_TEXT)
 async def analyze_activity_all_time(message: Message):
     """Анализ за все время."""
     user_id = str(message.from_user.id)
