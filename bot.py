@@ -2432,10 +2432,10 @@ water_amount_menu = ReplyKeyboardMarkup(
 
 activity_analysis_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="📅 День")],
-        [KeyboardButton(text="📆 Неделя")],
-        [KeyboardButton(text="📊 Месяц")],
-        [KeyboardButton(text="📈 Все время")],
+        [KeyboardButton(text="🤖 Анализировать день")],
+        [KeyboardButton(text="🤖 Анализировать неделю")],
+        [KeyboardButton(text="🤖 Анализировать месяц")],
+        [KeyboardButton(text="🤖 Анализировать все время")],
         [KeyboardButton(text="⬅️ Назад"), main_menu_button],
     ],
     resize_keyboard=True,
@@ -2857,7 +2857,7 @@ async def quick_recommendations(callback: CallbackQuery):
     await analyze_activity(callback.message)
 
 
-@dp.message(F.text == "📅 День")
+@dp.message(F.text == "🤖 Анализировать день")
 async def analyze_activity_day(message: Message):
     """Анализ активности за сегодня"""
     user_id = str(message.from_user.id)
@@ -2866,7 +2866,7 @@ async def analyze_activity_day(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text == "📆 Неделя")
+@dp.message(F.text == "🤖 Анализировать неделю")
 async def analyze_activity_week(message: Message):
     """Анализ активности за последние 7 дней"""
     user_id = str(message.from_user.id)
@@ -2876,7 +2876,7 @@ async def analyze_activity_week(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text == "📊 Месяц")
+@dp.message(F.text == "🤖 Анализировать месяц")
 async def analyze_activity_month(message: Message):
     """Анализ активности за последние 30 дней"""
     user_id = str(message.from_user.id)
@@ -2886,7 +2886,7 @@ async def analyze_activity_month(message: Message):
     await message.answer(result, parse_mode="HTML")
 
 
-@dp.message(F.text == "📈 Все время")
+@dp.message(F.text == "🤖 Анализировать все время")
 async def analyze_activity_all_time(message: Message):
     """Анализ активности за все время"""
     user_id = str(message.from_user.id)
