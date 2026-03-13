@@ -168,7 +168,7 @@ async def analyze_activity(message: Message):
     )
 
 
-@router.message(lambda m: m.text == "📅 Анализ за день")
+@router.message(lambda m: m.text == "📊 Анализировать день")
 async def analyze_activity_day(message: Message):
     """Анализ за день."""
     user_id = str(message.from_user.id)
@@ -178,7 +178,7 @@ async def analyze_activity_day(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "📆 Анализ за неделю")
+@router.message(lambda m: m.text == "📊 Анализировать неделю")
 async def analyze_activity_week(message: Message):
     """Анализ за неделю."""
     user_id = str(message.from_user.id)
@@ -189,7 +189,7 @@ async def analyze_activity_week(message: Message):
     await message.answer(analysis, parse_mode="HTML", reply_markup=activity_analysis_menu)
 
 
-@router.message(lambda m: m.text == "📊 Анализ за месяц")
+@router.message(lambda m: m.text == "📊 Анализировать месяц")
 async def analyze_activity_month(message: Message):
     """Анализ за месяц."""
     user_id = str(message.from_user.id)
