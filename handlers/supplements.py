@@ -54,8 +54,8 @@ async def supplements(message: Message):
         await message.answer("Произошла ошибка при загрузке добавок. Попробуйте позже.")
         return
     
-    dairi_description = (
-        "Привет, это Дайри на связи! 🤖\n\n"
+    assistant_description = (
+        "Привет! Я бот-ассистент. 🤖\n\n"
         "💊 Раздел «Добавки»\n\n"
         "Здесь ты можешь записывать свои добавки: лекарства, витамины, БАДы и любые другие препараты. "
         "Я помогу тебе отслеживать их приём, настроить расписание и получать статистику.\n\n"
@@ -66,13 +66,13 @@ async def supplements(message: Message):
     if not supplements_list:
         push_menu_stack(message.bot, supplements_main_menu(has_items=False))
         await message.answer(
-            dairi_description + "Готов начать? Создай свою первую добавку!",
+            assistant_description + "Готов начать? Создай свою первую добавку!",
             reply_markup=supplements_main_menu(has_items=False),
         )
         return
     
     # Если добавки есть, показываем описание и список
-    lines = [dairi_description + "📋 Твои добавки:\n"]
+    lines = [assistant_description + "📋 Твои добавки:\n"]
     for item in supplements_list:
         days = ", ".join(item["days"]) if item["days"] else "не выбрано"
         times = ", ".join(item["times"]) if item["times"] else "не выбрано"
