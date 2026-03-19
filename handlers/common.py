@@ -1,9 +1,7 @@
 """Общие обработчики (назад, главное меню и т.д.)."""
 import logging
-from pathlib import Path
 from aiogram import Router
 from aiogram.types import Message, CallbackQuery
-from aiogram.types import FSInputFile
 from aiogram.types.link_preview_options import LinkPreviewOptions
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -93,13 +91,6 @@ async def go_main_menu(message: Message, state: FSMContext):
     progress_text = format_progress_block(user_id)
     water_progress_text = format_water_progress_block(user_id)
     workouts_text = format_today_workouts_block(user_id, include_date=False)
-    intro_image = Path(__file__).resolve().parents[1] / "assets" / "dairy_intro.jpg"
-    intro_text = (
-        "🤖 Привет!\n"
-        "Это Дайри — твой AI-ассистент по тренировкам и КБЖУ.\n"
-        "Слежу за твоим прогрессом и помогаю держать курс на цель.\n"
-        "Вот общие рекомендации и анализ за сегодня 👇"
-    )
     recommendations_link = await _build_recommendations_link(message)
 
     today_line = f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>"
@@ -109,15 +100,8 @@ async def go_main_menu(message: Message, state: FSMContext):
     )
     
     push_menu_stack(message.bot, main_menu)
-    # Отправляем вводный блок одним сообщением
+    # Отправляем текст с кратким дневным статусом и inline-кнопками быстрых действий
     try:
-        if intro_image.exists():
-            await message.answer_photo(photo=FSInputFile(str(intro_image)), caption=intro_text, parse_mode="HTML")
-        else:
-            logger.warning("Файл intro-изображения не найден: %s", intro_image)
-            await message.answer(intro_text, parse_mode="HTML")
-
-        # Потом отправляем текст с кратким дневным статусом и inline-кнопками быстрых действий
         await message.answer(
             welcome_text,
             reply_markup=quick_actions_inline,

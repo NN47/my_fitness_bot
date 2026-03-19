@@ -5677,18 +5677,9 @@ async def send_today_results(message: Message, user_id: str):
 
     daily_totals = get_daily_meal_totals(user_id, today)
     day_str = today.strftime("%d.%m.%Y")
-    intro_text = (
-        "🤖 Привет!\n"
-        "Это Дайри — твой AI-ассистент по тренировкам и КБЖУ.\n"
-        "Слежу за твоим прогрессом и помогаю держать курс на цель.\n"
-        "Вот общие рекомендации и анализ за сегодня 👇"
-    )
-
     text = format_today_meals(meals, daily_totals, day_str)
     keyboard = build_meals_actions_keyboard(meals, today)
-    unified_report = f"{intro_text}\n\n{text}"
-
-    await message.answer(unified_report, reply_markup=keyboard, parse_mode="HTML")
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 @dp.message(F.text == "🍱 КБЖУ")
