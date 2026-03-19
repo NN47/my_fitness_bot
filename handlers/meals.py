@@ -1022,13 +1022,7 @@ async def send_today_results(message: Message, user_id: str):
 
     from utils.meal_formatters import format_today_meals, build_meals_actions_keyboard
     report_text = format_today_meals(meals, daily_totals, day_str, include_date_header=True)
-    intro_text = (
-        "🤖 Привет!\n"
-        "Это Дайри — твой AI-ассистент по тренировкам и КБЖУ.\n"
-        "Слежу за твоим прогрессом и помогаю держать курс на цель.\n"
-        "Вот общие рекомендации и анализ за сегодня 👇"
-    )
-    text = f"{intro_text}\n\n{report_text}"
+    text = report_text
     keyboard = build_meals_actions_keyboard(meals, today)
 
     logger.info("KBJU daily report length=%s", len(text))
