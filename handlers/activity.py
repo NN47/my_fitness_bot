@@ -67,7 +67,7 @@ def _extract_analysis_short_summary(analysis_text: str, max_len: int = 220) -> s
     # Фолбэк: первая содержательная строка после приветствия
     lines = [line.strip(" •-") for line in re.split(r"[\n\r]+", clean_text) if line.strip()]
     for line in lines:
-        if "дайри" in line.lower() or "вот твой отчёт" in line.lower():
+        if "я на связи" in line.lower() or "вот твой отчёт" in line.lower():
             continue
         if len(line) < 12:
             continue
@@ -445,9 +445,9 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 {weight_summary}{comparison_summary}
 """
     
-    # 🔹 Промпт для робота Дайри
+    # 🔹 Промпт для бота-ассистента
     prompt = f"""
-Ты — робот Дайри 🤖, персональный фитнес-помощник пользователя.
+Ты — бот-ассистент 🤖, персональный фитнес-помощник пользователя.
 Говори дружелюбно, уверенно и по делу.
 
 Очень важно:
@@ -461,7 +461,7 @@ async def generate_activity_analysis(user_id: str, start_date: date, end_date: d
 - Если период анализа = 1 день, не используй формулировки про проценты тренировочных дней и «за период». Пиши выводы только про текущий день.
 
 Всегда начинай анализ с приветствия:
-"Привет, это Дайри на связи! Вот твой отчёт {period_name.lower()}👇"
+"Привет! Я на связи и уже подготовил твой отчёт {period_name.lower()}👇"
 
 Данные пользователя за период:
 {summary}

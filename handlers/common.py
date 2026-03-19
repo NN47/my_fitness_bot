@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 async def _build_recommendations_link(message: Message) -> str:
-    """Возвращает HTML-ссылку на рекомендации от Дайри."""
+    """Возвращает HTML-ссылку на рекомендации от бота."""
     me = await message.bot.get_me()
-    return f'🔗 <a href="https://t.me/{me.username}?start=recommendations">Рекомендации от Дайри</a>'
+    return f'🔗 <a href="https://t.me/{me.username}?start=recommendations">Рекомендации от бота</a>'
 
 
 def _build_recommendations_text() -> str:
     return (
-        "**🤖 Рекомендации от Дайри**\n\n"
+        "**🤖 Рекомендации от бота**\n\n"
         "Начни с базы — она работает всегда.\n\n"
         "**Калории.**\n"
         "Я рассчитываю твою суточную норму под цель.\n"
@@ -63,7 +63,7 @@ def _build_recommendations_text() -> str:
         "— Вес — примерно раз в неделю.\n"
         "— Тренировки и питание — по ходу.\n"
         "— Объём талии — раз в неделю.\n\n"
-        "**Дневник помогает больше, чем кажется.**\n"
+        "**Короткие заметки помогают больше, чем кажется.**\n"
         "Пара строк о самочувствии и сложных моментах\n"
         "помогает видеть закономерности и не срываться.\n\n"
         "Я рядом, чтобы считать, напоминать\n"
