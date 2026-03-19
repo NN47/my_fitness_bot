@@ -21,9 +21,9 @@ router = Router()
 
 
 async def _build_recommendations_link(message: Message) -> str:
-    """Возвращает HTML-ссылку на рекомендации от Дайри."""
+    """Возвращает HTML-ссылку на рекомендации от бота."""
     me = await message.bot.get_me()
-    return f'🔗 <a href="https://t.me/{me.username}?start=recommendations">Рекомендации от Дайри</a>'
+    return f'🔗 <a href="https://t.me/{me.username}?start=recommendations">Рекомендации от бота</a>'
 
 
 @router.message(Command("start"))
